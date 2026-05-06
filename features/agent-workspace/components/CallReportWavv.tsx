@@ -1,11 +1,10 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Phone,
   Loader2,
   RefreshCw,
   AlertCircle,
-  PhoneIncoming,
-  CheckCircle,
+  PhoneCall,
   Clock,
   Calendar,
   ChevronDown,
@@ -13,16 +12,16 @@ import {
   ChevronRight,
   ChevronUp,
   Users,
-  BarChart3,
+  Contact,
   Search,
-  TrendingUp,
+  Activity,
 } from 'lucide-react';
 import {
-  callReportPolicytekApi,
-  PolicytekCallEntry,
+  callReportWavvApi,
+  WavvCallEntry,
   getCurrentWeekStart,
   toDateStr,
-} from '../services/callReportPolicytekApi';
+} from '../services/callReportWavvApi';
 
 // ── Date Range Picker ─────────────────────────────────────────────────────────
 
@@ -108,7 +107,6 @@ const DateRangePicker: React.FC<{
 
   return (
     <div ref={ref} className="relative">
-      {/* Trigger pill */}
       <button
         onClick={() => { setTempStart(startDate); setTempEnd(endDate); setSelecting('start'); setOpen(o => !o); }}
         className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold text-slate-700 hover:border-brand-300 hover:shadow-md transition-all group"
@@ -120,10 +118,8 @@ const DateRangePicker: React.FC<{
         <ChevronDown className={`w-3 h-3 text-slate-400 ml-0.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl shadow-slate-900/10 border border-slate-100 p-5 w-72">
-          {/* Presets */}
           <div className="flex gap-1.5 mb-4">
             {presets.map(p => (
               <button
@@ -140,7 +136,6 @@ const DateRangePicker: React.FC<{
             ))}
           </div>
 
-          {/* Month navigation */}
           <div className="flex items-center justify-between mb-3">
             <button onClick={prevMonth} className="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
               <ChevronLeft className="w-3.5 h-3.5 text-slate-600" />
@@ -151,14 +146,12 @@ const DateRangePicker: React.FC<{
             </button>
           </div>
 
-          {/* Day-of-week headers */}
           <div className="grid grid-cols-7 mb-1">
             {DAY_LABELS.map(d => (
               <div key={d} className="text-center text-[10px] font-black text-slate-400 py-0.5">{d}</div>
             ))}
           </div>
 
-          {/* Calendar grid */}
           <div className="grid grid-cols-7 gap-y-0.5">
             {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
             {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -188,7 +181,6 @@ const DateRangePicker: React.FC<{
             })}
           </div>
 
-          {/* Footer */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
             <span className="text-[10px] font-bold text-slate-400 truncate">
               {fmtDisplay(tempStart)} – {fmtDisplay(tempEnd)}
@@ -215,14 +207,14 @@ const formatDuration = (seconds: number): string => {
 };
 
 const AVATAR_COLORS = [
-  'bg-violet-900/40 text-violet-300',
+  'bg-cyan-900/40 text-cyan-300',
+  'bg-teal-900/40 text-teal-300',
   'bg-sky-900/40 text-sky-300',
   'bg-emerald-900/40 text-emerald-300',
-  'bg-amber-900/40 text-amber-300',
-  'bg-rose-900/40 text-rose-300',
+  'bg-violet-900/40 text-violet-300',
   'bg-indigo-900/40 text-indigo-300',
-  'bg-teal-900/40 text-teal-300',
-  'bg-orange-900/40 text-orange-300',
+  'bg-blue-900/40 text-blue-300',
+  'bg-amber-900/40 text-amber-300',
 ];
 
 const AgentAvatar = ({ name, index }: { name: string; index: number }) => {
@@ -242,13 +234,13 @@ const getDefaultDates = () => {
   return { start: toDateStr(fri), end: toDateStr(thu) };
 };
 
-export const CallReportPolicytek: React.FC = () => {
+export const CallReportWavv: React.FC = () => {
   const defaults = getDefaultDates();
   const [startDate, setStartDate] = useState(defaults.start);
   const [endDate, setEndDate] = useState(defaults.end);
-  const [entries, setEntries] = useState<PolicytekCallEntry[]>([]);
+  const [entries, setEntries] = useState<WavvCallEntry[]>([]);
   const [agentSearch, setAgentSearch] = useState('');
-  const [sortKey, setSortKey] = useState<'name' | 'calls_received' | 'valid_calls' | 'rate' | 'total_duration' | 'averageMin_perCall' | 'submitted' | 'totalSpend' | 'submitted_premium' | 'scpa' | 'close' | 'roas' | 'spend'>('valid_calls');
+  const [sortKey, setSortKey] = useState<'name' | 'calls' | 'conversations' | 'contactsCalled' | 'talktime' | 'dialtime' | 'avgCallLength' | 'connectRate'>('calls');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,8 +250,8 @@ export const CallReportPolicytek: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await callReportPolicytekApi.getCallReport(s, e);
-      setEntries(data);
+      const data = await callReportWavvApi.getCallReport(s, e);
+      setEntries(Array.isArray(data) ? data : []);
       setLastUpdated(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load call report');
@@ -269,8 +261,7 @@ export const CallReportPolicytek: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load once on mount with defaults
-  useEffect(() => { load(startDate, endDate); }, []);  // eslint-disable-line
+  useEffect(() => { load(startDate, endDate); }, []); // eslint-disable-line
 
   const handleDateChange = (s: string, e: string) => {
     setStartDate(s);
@@ -278,22 +269,27 @@ export const CallReportPolicytek: React.FC = () => {
     load(s, e);
   };
 
-  const totalCalls = entries.reduce((s, e) => s + (e.calls_received ?? 0), 0);
-  const totalValid = entries.reduce((s, e) => s + (e.valid_calls ?? 0), 0);
-  const totalDuration = entries.reduce((s, e) => s + (e.total_duration ?? 0), 0);
-  const totalSubmitted = entries.reduce((s, e) => s + (e.submitted ?? 0), 0);
-  const totalSpend = entries.reduce((s, e) => s + (e.totalSpend ?? 0), 0);
-  const totalSubmittedPremium = entries.reduce((s, e) => s + (e.submitted_premium ?? 0), 0);
+  const totalCalls = entries.reduce((s, e) => s + (e.calls ?? 0), 0);
+  const totalConversations = entries.reduce((s, e) => s + (e.conversations ?? 0), 0);
+  const totalContacts = entries.reduce((s, e) => s + (e.contactsCalled ?? 0), 0);
+  const totalTalktime = entries.reduce((s, e) => s + (e.talktime ?? 0), 0);
+  const totalDialtime = entries.reduce((s, e) => s + (e.dialtime ?? 0), 0);
+  const connectRate = totalCalls > 0 ? (totalConversations / totalCalls) * 100 : 0;
+  const avgCallLen = totalConversations > 0
+    ? entries.reduce((s, e) => s + (e.avgCallLength ?? 0) * (e.conversations ?? 0), 0) / totalConversations
+    : 0;
 
   return (
     <div className="animate-in fade-in duration-300 -mx-6 -mt-4 -mb-12">
-      {/* ── Dark Background ──────────────────────────────────────────────── */}
-      <div style={{ background: 'linear-gradient(160deg, #0e0e1c 0%, #08080f 100%)', minHeight: '100%' }} className="px-8 pt-7 pb-16">
+      <div style={{ background: 'linear-gradient(160deg, #061018 0%, #03080f 100%)', minHeight: '100%' }} className="px-8 pt-7 pb-16">
 
-        {/* ── Header ────────────────────────────────────────────────────── */}
+        {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-black text-white tracking-tight">Activity Dashboard</h1>
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-2xl font-black text-white tracking-tight">Activity Dashboard</h1>
+              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest" style={{ background: 'rgba(6,182,212,0.15)', color: '#22d3ee', border: '1px solid rgba(6,182,212,0.2)' }}>Wavv</span>
+            </div>
             <p className="text-xs font-medium mt-0.5" style={{ color: '#4b5563' }}>
               {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading data...'}
             </p>
@@ -313,119 +309,114 @@ export const CallReportPolicytek: React.FC = () => {
           </div>
         </div>
 
-        {/* ── KPI Pills ─────────────────────────────────────────────────── */}
+        {/* ── KPI Pills ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-6 gap-3 mb-8">
-          {/* Cost / Call */}
-          <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#ca8a04', boxShadow: '0 8px 28px rgba(202,138,4,0.4)' }}>
+          {/* Total Calls */}
+          <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#0e7490', boxShadow: '0 8px 28px rgba(14,116,144,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <Phone className="w-4 h-4 text-yellow-100" />
+              <Phone className="w-4 h-4 text-cyan-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-yellow-200">Cost / Call</p>
-              <p className="text-base font-black text-white leading-none">
-                {totalCalls > 0 && totalSpend > 0 ? `$${(totalSpend / totalCalls).toFixed(2)}` : '—'}
-              </p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-cyan-200">Total Calls</p>
+              <p className="text-base font-black text-white leading-none">{totalCalls.toLocaleString()}</p>
             </div>
           </div>
-          {/* SCPA */}
+          {/* Conversations */}
           <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#7c3aed', boxShadow: '0 8px 28px rgba(124,58,237,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <BarChart3 className="w-4 h-4 text-purple-100" />
+              <PhoneCall className="w-4 h-4 text-purple-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-purple-200">SCPA</p>
-              <p className="text-base font-black text-white leading-none">
-                {totalSubmitted > 0 && totalSpend > 0 ? `$${(totalSpend / totalSubmitted).toFixed(2)}` : '—'}
-              </p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-purple-200">Conversations</p>
+              <p className="text-base font-black text-white leading-none">{totalConversations.toLocaleString()}</p>
             </div>
           </div>
-          {/* ROAS */}
+          {/* Connect Rate */}
           <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#059669', boxShadow: '0 8px 28px rgba(5,150,105,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <TrendingUp className="w-4 h-4 text-emerald-100" />
+              <Activity className="w-4 h-4 text-emerald-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-emerald-200">ROAS</p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-emerald-200">Connect %</p>
               <p className="text-base font-black text-white leading-none">
-                {totalSpend > 0 ? `${(totalSubmittedPremium / totalSpend).toFixed(2)}×` : '—'}
+                {totalCalls > 0 ? `${connectRate.toFixed(1)}%` : '—'}
               </p>
             </div>
           </div>
-          {/* Cost / Valid */}
+          {/* Contacts Called */}
           <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#0284c7', boxShadow: '0 8px 28px rgba(2,132,199,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <PhoneIncoming className="w-4 h-4 text-sky-100" />
+              <Users className="w-4 h-4 text-sky-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-sky-200">Cost / Valid</p>
-              <p className="text-base font-black text-white leading-none">
-                {totalValid > 0 && totalSpend > 0 ? `$${(totalSpend / totalValid).toFixed(2)}` : '—'}
-              </p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-sky-200">Contacts</p>
+              <p className="text-base font-black text-white leading-none">{totalContacts.toLocaleString()}</p>
             </div>
           </div>
-          {/* Submitted */}
+          {/* Total Talk Time */}
           <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#e11d48', boxShadow: '0 8px 28px rgba(225,29,72,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <CheckCircle className="w-4 h-4 text-rose-100" />
+              <Clock className="w-4 h-4 text-rose-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-rose-200">Submitted</p>
-              <p className="text-base font-black text-white leading-none">{totalSubmitted}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-rose-200">Talk Time</p>
+              <p className="text-base font-black text-white leading-none">{formatDuration(totalTalktime)}</p>
             </div>
           </div>
-          {/* Close % */}
+          {/* Avg Call Length */}
           <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#2563eb', boxShadow: '0 8px 28px rgba(37,99,235,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <Users className="w-4 h-4 text-blue-100" />
+              <Clock className="w-4 h-4 text-blue-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-blue-200">Close %</p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-blue-200">Avg / Convo</p>
               <p className="text-base font-black text-white leading-none">
-                {totalValid > 0 ? `${((totalSubmitted / totalValid) * 100).toFixed(1)}%` : '—'}
+                {totalConversations > 0 ? formatDuration(Math.round(avgCallLen)) : '—'}
               </p>
             </div>
           </div>
         </div>
 
-        {/* ── Main Dark Card ─────────────────────────────────────────────── */}
-        <div className="rounded-3xl overflow-hidden" style={{ background: '#0d0d1a', border: '1px solid rgba(255,255,255,0.06)' }}>
+        {/* ── Main Dark Card ──────────────────────────────────────────────── */}
+        <div className="rounded-3xl overflow-hidden" style={{ background: '#060d14', border: '1px solid rgba(255,255,255,0.06)' }}>
 
           {/* Summary Stats Strip */}
           <div className="grid grid-cols-4 divide-x divide-white/5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="px-7 py-5">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>ROAS</p>
-              <p className="text-3xl font-black text-white leading-none">
-                {totalSpend > 0 ? `${(totalSubmittedPremium / totalSpend).toFixed(2)}×` : '—'}
-              </p>
-              {totalSpend > 0 && totalSubmittedPremium > 0 && (
-                <p className="text-xs font-bold mt-1.5" style={{ color: '#10b981' }}>
-                  from ${totalSubmittedPremium.toLocaleString(undefined, { maximumFractionDigits: 0 })} premium
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Total Calls</p>
+              <p className="text-3xl font-black text-white leading-none">{totalCalls.toLocaleString()}</p>
+              {totalContacts > 0 && (
+                <p className="text-xs font-bold mt-1.5" style={{ color: '#22d3ee' }}>
+                  {totalContacts.toLocaleString()} contacts reached
                 </p>
               )}
             </div>
             <div className="px-7 py-5">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Submitted Premium</p>
-              <p className="text-3xl font-black text-white leading-none">
-                ${totalSubmittedPremium.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Conversations</p>
+              <p className="text-3xl font-black text-white leading-none">{totalConversations.toLocaleString()}</p>
+              {totalCalls > 0 && (
+                <p className="text-xs font-bold mt-1.5" style={{ color: '#a78bfa' }}>
+                  {connectRate.toFixed(1)}% connect rate
+                </p>
+              )}
             </div>
             <div className="px-7 py-5">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Total Spend</p>
-              <p className="text-3xl font-black text-white leading-none">
-                ${totalSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
-              {totalSubmitted > 0 && (
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Talk Time</p>
+              <p className="text-3xl font-black text-white leading-none">{formatDuration(totalTalktime)}</p>
+              {totalDialtime > 0 && (
                 <p className="text-xs font-bold mt-1.5" style={{ color: '#f472b6' }}>
-                  ${(totalSpend / totalSubmitted).toFixed(2)} SCPA
+                  {formatDuration(totalDialtime)} total dial
                 </p>
               )}
             </div>
             <div className="px-7 py-5">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Submitted</p>
-              <p className="text-3xl font-black text-white leading-none">{totalSubmitted}</p>
-              {totalValid > 0 && (
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#4b5563' }}>Avg / Convo</p>
+              <p className="text-3xl font-black text-white leading-none">
+                {totalConversations > 0 ? formatDuration(Math.round(avgCallLen)) : '—'}
+              </p>
+              {entries.length > 0 && (
                 <p className="text-xs font-bold mt-1.5" style={{ color: '#60a5fa' }}>
-                  {((totalSubmitted / totalValid) * 100).toFixed(1)}% close rate
+                  across {entries.length} agents
                 </p>
               )}
             </div>
@@ -459,18 +450,15 @@ export const CallReportPolicytek: React.FC = () => {
               ? <ChevronUp className={`inline w-2.5 h-2.5 ml-0.5 transition-transform ${sortDir === 'asc' ? '' : 'rotate-180'}`} />
               : <ChevronUp className="inline w-2.5 h-2.5 ml-0.5 opacity-0 group-hover:opacity-30" />;
             return (
-              <div className="px-7 py-3 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_5rem_5.5rem_5.5rem_5rem_7rem_7rem] gap-3 text-[10px] font-black uppercase tracking-wider" style={{ background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#374151' }}>
+              <div className="px-7 py-3 grid grid-cols-[1fr_5rem_5rem_6rem_5rem_7rem_7rem_7rem] gap-3 text-[10px] font-black uppercase tracking-wider" style={{ background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#374151' }}>
                 <button onClick={() => toggleSort('name')} className="group flex items-center gap-0.5 text-left hover:text-slate-400 transition-colors">Agent<SortIcon col="name" /></button>
-                <button onClick={() => toggleSort('calls_received')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Total<SortIcon col="calls_received" /></button>
-                <button onClick={() => toggleSort('valid_calls')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Valid<SortIcon col="valid_calls" /></button>
-                <button onClick={() => toggleSort('rate')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Billable<SortIcon col="rate" /></button>
-                <button onClick={() => toggleSort('submitted')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Subs<SortIcon col="submitted" /></button>
-                <button onClick={() => toggleSort('close')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Close%<SortIcon col="close" /></button>
-                <button onClick={() => toggleSort('spend')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Spend<SortIcon col="spend" /></button>
-                <button onClick={() => toggleSort('scpa')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">SCPA<SortIcon col="scpa" /></button>
-                <button onClick={() => toggleSort('roas')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">ROAS<SortIcon col="roas" /></button>
-                <button onClick={() => toggleSort('total_duration')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Talk Time<SortIcon col="total_duration" /></button>
-                <button onClick={() => toggleSort('averageMin_perCall')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Avg / Call<SortIcon col="averageMin_perCall" /></button>
+                <button onClick={() => toggleSort('calls')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Calls<SortIcon col="calls" /></button>
+                <button onClick={() => toggleSort('conversations')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Convos<SortIcon col="conversations" /></button>
+                <button onClick={() => toggleSort('contactsCalled')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Contacts<SortIcon col="contactsCalled" /></button>
+                <button onClick={() => toggleSort('connectRate')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Connect%<SortIcon col="connectRate" /></button>
+                <button onClick={() => toggleSort('talktime')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Talk Time<SortIcon col="talktime" /></button>
+                <button onClick={() => toggleSort('dialtime')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Dial Time<SortIcon col="dialtime" /></button>
+                <button onClick={() => toggleSort('avgCallLength')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Avg / Convo<SortIcon col="avgCallLength" /></button>
               </div>
             );
           })()}
@@ -479,7 +467,7 @@ export const CallReportPolicytek: React.FC = () => {
           {isLoading && (
             <div className="flex items-center justify-center py-20 gap-3" style={{ color: '#374151' }}>
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-sm font-medium">Loading activity data...</span>
+              <span className="text-sm font-medium">Loading Wavv data...</span>
             </div>
           )}
 
@@ -507,7 +495,7 @@ export const CallReportPolicytek: React.FC = () => {
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
                 <Phone className="w-6 h-6" style={{ color: '#1f2937' }} />
               </div>
-              <p className="text-sm font-bold" style={{ color: '#374151' }}>No data for this period</p>
+              <p className="text-sm font-bold" style={{ color: '#374151' }}>No Wavv data for this period</p>
             </div>
           )}
 
@@ -519,25 +507,23 @@ export const CallReportPolicytek: React.FC = () => {
                   .filter(e => e.name?.toLowerCase().includes(agentSearch.toLowerCase()))
                   .sort((a, b) => {
                     let av: number, bv: number;
-                    if (sortKey === 'name') { av = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? av : -av; }
-                    if (sortKey === 'rate') { av = a.calls_received > 0 ? a.valid_calls / a.calls_received : 0; bv = b.calls_received > 0 ? b.valid_calls / b.calls_received : 0; }
-                    else if (sortKey === 'spend') { av = a.totalSpend ?? 0; bv = b.totalSpend ?? 0; }
-                    else if (sortKey === 'scpa') { av = (a.submitted ?? 0) > 0 ? (a.totalSpend ?? 0) / (a.submitted ?? 1) : 0; bv = (b.submitted ?? 0) > 0 ? (b.totalSpend ?? 0) / (b.submitted ?? 1) : 0; }
-                    else if (sortKey === 'close') { av = a.valid_calls > 0 ? ((a.submitted ?? 0) / a.valid_calls) * 100 : 0; bv = b.valid_calls > 0 ? ((b.submitted ?? 0) / b.valid_calls) * 100 : 0; }
-                    else if (sortKey === 'roas') { av = (a.totalSpend ?? 0) > 0 ? (a.submitted_premium ?? 0) / (a.totalSpend ?? 1) : 0; bv = (b.totalSpend ?? 0) > 0 ? (b.submitted_premium ?? 0) / (b.totalSpend ?? 1) : 0; }
-                    else { av = (a[sortKey as keyof typeof a] as number) ?? 0; bv = (b[sortKey as keyof typeof b] as number) ?? 0; }
+                    if (sortKey === 'name') { const v = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? v : -v; }
+                    if (sortKey === 'connectRate') {
+                      av = a.calls > 0 ? a.conversations / a.calls : 0;
+                      bv = b.calls > 0 ? b.conversations / b.calls : 0;
+                    } else {
+                      av = (a[sortKey as keyof WavvCallEntry] as number) ?? 0;
+                      bv = (b[sortKey as keyof WavvCallEntry] as number) ?? 0;
+                    }
                     return sortDir === 'desc' ? bv - av : av - bv;
                   })
                   .map((entry, idx) => {
-                    const connectPct = entry.calls_received > 0 ? (entry.valid_calls / entry.calls_received) * 100 : 0;
-                    const scpa = (entry.submitted ?? 0) > 0 ? (entry.totalSpend ?? 0) / (entry.submitted ?? 1) : null;
-                    const closePct = entry.valid_calls > 0 ? ((entry.submitted ?? 0) / entry.valid_calls) * 100 : null;
-                    const roas = (entry.totalSpend ?? 0) > 0 ? (entry.submitted_premium ?? 0) / (entry.totalSpend ?? 1) : null;
-                    const billableColor = connectPct >= 60 ? '#10b981' : connectPct >= 30 ? '#f59e0b' : '#374151';
+                    const connectPct = entry.calls > 0 ? (entry.conversations / entry.calls) * 100 : 0;
+                    const connectColor = connectPct >= 10 ? '#10b981' : connectPct >= 5 ? '#f59e0b' : '#374151';
                     return (
                       <div
-                        key={entry.id}
-                        className="px-7 py-3.5 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_5rem_5.5rem_5.5rem_5rem_7rem_7rem] gap-3 items-center transition-colors cursor-default"
+                        key={`${entry.name}-${idx}`}
+                        className="px-7 py-3.5 grid grid-cols-[1fr_5rem_5rem_6rem_5rem_7rem_7rem_7rem] gap-3 items-center transition-colors cursor-default"
                         style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -546,16 +532,13 @@ export const CallReportPolicytek: React.FC = () => {
                           <AgentAvatar name={entry.name} index={idx} />
                           <p className="text-sm font-semibold text-white truncate capitalize">{entry.name}</p>
                         </div>
-                        <p className="text-sm text-right tabular-nums" style={{ color: '#4b5563' }}>{entry.calls_received ?? 0}</p>
-                        <p className="text-sm font-bold text-white text-right tabular-nums">{entry.valid_calls ?? 0}</p>
-                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: billableColor }}>{connectPct.toFixed(1)}%</p>
-                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: '#38bdf8' }}>{entry.submitted ?? 0}</p>
-                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#34d399' }}>{closePct !== null ? `${closePct.toFixed(1)}%` : '—'}</p>
-                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#e879f9' }}>{(entry.totalSpend ?? 0) > 0 ? `$${(entry.totalSpend!).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</p>
-                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#f472b6' }}>{scpa !== null ? `$${scpa.toFixed(2)}` : '—'}</p>
-                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#fbbf24' }}>{roas !== null ? `${roas.toFixed(2)}×` : '—'}</p>
-                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#64748b' }}>{formatDuration(entry.total_duration)}</p>
-                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#334155' }}>{formatDuration(entry.averageMin_perCall)}</p>
+                        <p className="text-sm text-right tabular-nums" style={{ color: '#4b5563' }}>{(entry.calls ?? 0).toLocaleString()}</p>
+                        <p className="text-sm font-bold text-white text-right tabular-nums">{entry.conversations ?? 0}</p>
+                        <p className="text-sm text-right tabular-nums" style={{ color: '#38bdf8' }}>{(entry.contactsCalled ?? 0).toLocaleString()}</p>
+                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: connectColor }}>{connectPct.toFixed(1)}%</p>
+                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#34d399' }}>{formatDuration(entry.talktime)}</p>
+                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#64748b' }}>{formatDuration(entry.dialtime)}</p>
+                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#a78bfa' }}>{formatDuration(Math.round(entry.avgCallLength))}</p>
                       </div>
                     );
                   })}
@@ -563,30 +546,21 @@ export const CallReportPolicytek: React.FC = () => {
 
               {/* Totals Row */}
               <div
-                className="px-7 py-4 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_5rem_5.5rem_5.5rem_5rem_7rem_7rem] gap-3 items-center"
+                className="px-7 py-4 grid grid-cols-[1fr_5rem_5rem_6rem_5rem_7rem_7rem_7rem] gap-3 items-center"
                 style={{ background: 'rgba(255,255,255,0.03)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
               >
                 <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#4b5563' }}>TOTAL</p>
                 <p className="text-sm font-black text-white text-right tabular-nums">{totalCalls.toLocaleString()}</p>
-                <p className="text-sm font-black text-white text-right tabular-nums">{totalValid.toLocaleString()}</p>
+                <p className="text-sm font-black text-white text-right tabular-nums">{totalConversations.toLocaleString()}</p>
+                <p className="text-sm font-black text-right tabular-nums" style={{ color: '#38bdf8' }}>{totalContacts.toLocaleString()}</p>
                 <p className="text-sm font-black text-right tabular-nums" style={{ color: '#10b981' }}>
-                  {totalCalls > 0 ? `${((totalValid / totalCalls) * 100).toFixed(1)}%` : '—'}
+                  {totalCalls > 0 ? `${connectRate.toFixed(1)}%` : '—'}
                 </p>
-                <p className="text-sm font-black text-right tabular-nums" style={{ color: '#38bdf8' }}>{totalSubmitted}</p>
-                <p className="text-xs font-black text-right tabular-nums" style={{ color: '#34d399' }}>
-                  {totalValid > 0 ? `${((totalSubmitted / totalValid) * 100).toFixed(1)}%` : '—'}
+                <p className="text-xs font-mono font-black text-right tabular-nums" style={{ color: '#34d399' }}>{formatDuration(totalTalktime)}</p>
+                <p className="text-xs font-mono font-black text-right tabular-nums" style={{ color: '#64748b' }}>{formatDuration(totalDialtime)}</p>
+                <p className="text-xs font-mono font-black text-right tabular-nums" style={{ color: '#a78bfa' }}>
+                  {totalConversations > 0 ? formatDuration(Math.round(avgCallLen)) : '—'}
                 </p>
-                <p className="text-xs font-black text-right tabular-nums" style={{ color: '#e879f9' }}>
-                  {totalSpend > 0 ? `$${totalSpend.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
-                </p>
-                <p className="text-xs font-black text-right tabular-nums" style={{ color: '#f472b6' }}>
-                  {totalSubmitted > 0 ? `$${(totalSpend / totalSubmitted).toFixed(2)}` : '—'}
-                </p>
-                <p className="text-xs font-black text-right tabular-nums" style={{ color: '#fbbf24' }}>
-                  {totalSpend > 0 ? `${(totalSubmittedPremium / totalSpend).toFixed(2)}×` : '—'}
-                </p>
-                <p className="text-xs font-mono font-black text-right tabular-nums" style={{ color: '#64748b' }}>{formatDuration(totalDuration)}</p>
-                <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#1e293b' }}>—</p>
               </div>
             </>
           )}
@@ -597,4 +571,4 @@ export const CallReportPolicytek: React.FC = () => {
   );
 };
 
-export default CallReportPolicytek;
+export default CallReportWavv;

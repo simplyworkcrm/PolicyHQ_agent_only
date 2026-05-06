@@ -31,6 +31,7 @@ import { AgentDownlines } from './components/AgentDownlines';
 import { AgentTickets } from './components/AgentTickets';
 import { AgentleaderboardRealtime } from './components/AgentleaderboardRealtime';
 import { CallReportPolicytek } from './components/CallReportPolicytek';
+import { CallReportWavv } from './components/CallReportWavv';
 import { AgentStats } from './components/AgentStats';
 import { AgencyDetailPage } from './components/AgencyDetailPage';
 import { MyProfilePage } from './components/MyProfilePage';
@@ -133,7 +134,7 @@ const SidebarSubItem = ({
       flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all duration-200
       ${
         active
-          ? 'bg-white/10 text-white shadow-md'
+          ? dark ? 'bg-white/10 text-white shadow-md' : 'bg-slate-900 text-white shadow-md'
           : locked
           ? dark ? 'text-slate-700 cursor-not-allowed' : 'text-slate-400 cursor-not-allowed'
           : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -175,7 +176,7 @@ const SidebarItem = ({
           : 'w-full px-5 py-4 rounded-[1.25rem] gap-4 mb-2'
         }
         ${active 
-          ? 'bg-white/10 text-white shadow-xl shadow-black/30 scale-[1.02]' 
+          ? dark ? 'bg-white/10 text-white shadow-xl shadow-black/30 scale-[1.02]' : 'bg-slate-900 text-white shadow-xl shadow-slate-900/20 scale-[1.02]'
           : locked 
             ? 'opacity-50 cursor-not-allowed grayscale' 
             : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -394,7 +395,7 @@ const AgentLayout: React.FC = () => {
               dark={isDarkRoute}
             >
               <SidebarSubItem to="/call-report/policytek" label="PolicyTek" active={isActive('/call-report/policytek')} dark={isDarkRoute} />
-              <SidebarSubItem to="/call-report/wavv" label="Wavv" active={isActive('/call-report/wavv')} locked dark={isDarkRoute} />
+              <SidebarSubItem to="/call-report/wavv" label="Wavv" active={isActive('/call-report/wavv')} dark={isDarkRoute} />
               <SidebarSubItem to="/call-report/callx" label="CallX" active={isActive('/call-report/callx')} locked dark={isDarkRoute} />
             </SidebarGroup>
         </nav>
@@ -461,6 +462,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/" element={<AgentOverview />} />
                   <Route path="/leaderboard/realtime" element={<AgentleaderboardRealtime />} />
                   <Route path="/call-report/policytek" element={<CallReportPolicytek />} />
+                  <Route path="/call-report/wavv" element={<CallReportWavv />} />
                   <Route path="/agency/:teamId" element={<AgencyDetailPage />} />
                   <Route path="/stats" element={<AgentStats />} />
                   <Route path="/my-profile" element={<MyProfilePage />} />
