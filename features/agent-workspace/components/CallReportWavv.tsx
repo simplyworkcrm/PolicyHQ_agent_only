@@ -294,7 +294,8 @@ export const CallReportWavv: React.FC = () => {
               {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading data...'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: '#374151' }}>MST</span>
             <DateRangePicker startDate={startDate} endDate={endDate} onChange={handleDateChange} />
             <button
               onClick={() => load(startDate, endDate)}

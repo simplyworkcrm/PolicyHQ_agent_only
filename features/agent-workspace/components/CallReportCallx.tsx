@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Phone,
   Loader2,
@@ -6,7 +6,6 @@ import {
   AlertCircle,
   PhoneIncoming,
   CheckCircle,
-  Clock,
   Calendar,
   ChevronDown,
   ChevronLeft,
@@ -16,13 +15,14 @@ import {
   BarChart3,
   Search,
   TrendingUp,
+  CreditCard,
 } from 'lucide-react';
 import {
-  callReportPolicytekApi,
-  PolicytekCallEntry,
+  callReportCallxApi,
+  CallxCallEntry,
   getCurrentWeekStart,
   toDateStr,
-} from '../services/callReportPolicytekApi';
+} from '../services/callReportCallxApi';
 
 // ── Date Range Picker ─────────────────────────────────────────────────────────
 
@@ -108,7 +108,6 @@ const DateRangePicker: React.FC<{
 
   return (
     <div ref={ref} className="relative">
-      {/* Trigger pill */}
       <button
         onClick={() => { setTempStart(startDate); setTempEnd(endDate); setSelecting('start'); setOpen(o => !o); }}
         className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold text-slate-700 hover:border-brand-300 hover:shadow-md transition-all group"
@@ -120,10 +119,8 @@ const DateRangePicker: React.FC<{
         <ChevronDown className={`w-3 h-3 text-slate-400 ml-0.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-3xl shadow-2xl shadow-slate-900/10 border border-slate-100 p-5 w-72">
-          {/* Presets */}
           <div className="flex gap-1.5 mb-4">
             {presets.map(p => (
               <button
@@ -140,7 +137,6 @@ const DateRangePicker: React.FC<{
             ))}
           </div>
 
-          {/* Month navigation */}
           <div className="flex items-center justify-between mb-3">
             <button onClick={prevMonth} className="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors">
               <ChevronLeft className="w-3.5 h-3.5 text-slate-600" />
@@ -151,14 +147,12 @@ const DateRangePicker: React.FC<{
             </button>
           </div>
 
-          {/* Day-of-week headers */}
           <div className="grid grid-cols-7 mb-1">
             {DAY_LABELS.map(d => (
               <div key={d} className="text-center text-[10px] font-black text-slate-400 py-0.5">{d}</div>
             ))}
           </div>
 
-          {/* Calendar grid */}
           <div className="grid grid-cols-7 gap-y-0.5">
             {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
             {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -188,7 +182,6 @@ const DateRangePicker: React.FC<{
             })}
           </div>
 
-          {/* Footer */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
             <span className="text-[10px] font-bold text-slate-400 truncate">
               {fmtDisplay(tempStart)} – {fmtDisplay(tempEnd)}
@@ -204,14 +197,6 @@ const DateRangePicker: React.FC<{
       )}
     </div>
   );
-};
-
-const formatDuration = (seconds: number): string => {
-  const s = Math.round(seconds || 0);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return [h, m, sec].map((v) => String(v).padStart(2, '0')).join(':');
 };
 
 const AVATAR_COLORS = [
@@ -242,13 +227,13 @@ const getDefaultDates = () => {
   return { start: toDateStr(fri), end: toDateStr(thu) };
 };
 
-export const CallReportPolicytek: React.FC = () => {
+export const CallReportCallx: React.FC = () => {
   const defaults = getDefaultDates();
   const [startDate, setStartDate] = useState(defaults.start);
   const [endDate, setEndDate] = useState(defaults.end);
-  const [entries, setEntries] = useState<PolicytekCallEntry[]>([]);
+  const [entries, setEntries] = useState<CallxCallEntry[]>([]);
   const [agentSearch, setAgentSearch] = useState('');
-  const [sortKey, setSortKey] = useState<'name' | 'calls_received' | 'valid_calls' | 'rate' | 'total_duration' | 'averageMin_perCall' | 'submitted' | 'submitted_premium' | 'totalSpend' | 'scpa' | 'close' | 'roas' | 'spend'>('valid_calls');
+  const [sortKey, setSortKey] = useState<'name' | 'calls_received' | 'valid_calls' | 'paid_calls' | 'submitted' | 'submitted_premium' | 'totalSpend' | 'scpa' | 'close' | 'roas'>('valid_calls');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -258,7 +243,7 @@ export const CallReportPolicytek: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await callReportPolicytekApi.getCallReport(s, e);
+      const data = await callReportCallxApi.getCallReport(s, e);
       setEntries(data);
       setLastUpdated(new Date());
     } catch (err) {
@@ -269,8 +254,7 @@ export const CallReportPolicytek: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load once on mount with defaults
-  useEffect(() => { load(startDate, endDate); }, []);  // eslint-disable-line
+  useEffect(() => { load(startDate, endDate); }, []); // eslint-disable-line
 
   const handleDateChange = (s: string, e: string) => {
     setStartDate(s);
@@ -280,23 +264,32 @@ export const CallReportPolicytek: React.FC = () => {
 
   const totalCalls = entries.reduce((s, e) => s + (e.calls_received ?? 0), 0);
   const totalValid = entries.reduce((s, e) => s + (e.valid_calls ?? 0), 0);
-  const totalDuration = entries.reduce((s, e) => s + (e.total_duration ?? 0), 0);
+  const totalPaid = entries.reduce((s, e) => s + (e.paid_calls ?? 0), 0);
   const totalSubmitted = entries.reduce((s, e) => s + (e.submitted ?? 0), 0);
   const totalSpend = entries.reduce((s, e) => s + (e.totalSpend ?? 0), 0);
   const totalSubmittedPremium = entries.reduce((s, e) => s + (e.submitted_premium ?? 0), 0);
 
   return (
     <div className="animate-in fade-in duration-300 -mx-6 -mt-4 -mb-12">
-      {/* ── Dark Background ──────────────────────────────────────────────── */}
       <div style={{ background: 'linear-gradient(160deg, #0e0e1c 0%, #08080f 100%)', minHeight: '100%' }} className="px-8 pt-7 pb-16">
 
-        {/* ── Header ────────────────────────────────────────────────────── */}
+        {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-black text-white tracking-tight">Activity Dashboard</h1>
-            <p className="text-xs font-medium mt-0.5" style={{ color: '#4b5563' }}>
-              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading data...'}
-            </p>
+          <div className="flex items-center gap-3">
+            <div>
+              <div className="flex items-center gap-2.5 mb-0.5">
+                <h1 className="text-2xl font-black text-white tracking-tight">Activity Dashboard</h1>
+                <span
+                  className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg"
+                  style={{ background: 'rgba(249,115,22,0.15)', color: '#fb923c', border: '1px solid rgba(249,115,22,0.2)' }}
+                >
+                  CallX
+                </span>
+              </div>
+              <p className="text-xs font-medium mt-0.5" style={{ color: '#4b5563' }}>
+                {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Loading data...'}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: '#374151' }}>UTC</span>
@@ -314,15 +307,15 @@ export const CallReportPolicytek: React.FC = () => {
           </div>
         </div>
 
-        {/* ── KPI Pills ─────────────────────────────────────────────────── */}
+        {/* ── KPI Pills ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-6 gap-3 mb-8">
           {/* Cost / Call */}
-          <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#ca8a04', boxShadow: '0 8px 28px rgba(202,138,4,0.4)' }}>
+          <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#b45309', boxShadow: '0 8px 28px rgba(180,83,9,0.4)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <Phone className="w-4 h-4 text-yellow-100" />
+              <Phone className="w-4 h-4 text-amber-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-yellow-200">Cost / Call</p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-amber-200">Cost / Call</p>
               <p className="text-base font-black text-white leading-none">
                 {totalCalls > 0 && totalSpend > 0 ? `$${(totalSpend / totalCalls).toFixed(2)}` : '—'}
               </p>
@@ -352,16 +345,14 @@ export const CallReportPolicytek: React.FC = () => {
               </p>
             </div>
           </div>
-          {/* Cost / Valid */}
+          {/* Paid Calls */}
           <div className="rounded-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: '#0284c7', boxShadow: '0 8px 28px rgba(2,132,199,0.45)' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(0,0,0,0.2)' }}>
-              <PhoneIncoming className="w-4 h-4 text-sky-100" />
+              <CreditCard className="w-4 h-4 text-sky-100" />
             </div>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-sky-200">Cost / Valid</p>
-              <p className="text-base font-black text-white leading-none">
-                {totalValid > 0 && totalSpend > 0 ? `$${(totalSpend / totalValid).toFixed(2)}` : '—'}
-              </p>
+              <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-1 text-sky-200">Paid Calls</p>
+              <p className="text-base font-black text-white leading-none">{totalPaid.toLocaleString()}</p>
             </div>
           </div>
           {/* Submitted */}
@@ -460,19 +451,17 @@ export const CallReportPolicytek: React.FC = () => {
               ? <ChevronUp className={`inline w-2.5 h-2.5 ml-0.5 transition-transform ${sortDir === 'asc' ? '' : 'rotate-180'}`} />
               : <ChevronUp className="inline w-2.5 h-2.5 ml-0.5 opacity-0 group-hover:opacity-30" />;
             return (
-              <div className="px-7 py-3 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_6rem_5rem_5.5rem_5.5rem_5rem_7rem_7rem] gap-3 text-[10px] font-black uppercase tracking-wider" style={{ background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#374151' }}>
+              <div className="px-7 py-3 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_6rem_5rem_5.5rem_5.5rem_5rem] gap-3 text-[10px] font-black uppercase tracking-wider" style={{ background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid rgba(255,255,255,0.04)', color: '#374151' }}>
                 <button onClick={() => toggleSort('name')} className="group flex items-center gap-0.5 text-left hover:text-slate-400 transition-colors">Agent<SortIcon col="name" /></button>
                 <button onClick={() => toggleSort('calls_received')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Total<SortIcon col="calls_received" /></button>
                 <button onClick={() => toggleSort('valid_calls')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Valid<SortIcon col="valid_calls" /></button>
-                <button onClick={() => toggleSort('rate')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Billable<SortIcon col="rate" /></button>
+                <button onClick={() => toggleSort('paid_calls')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Paid<SortIcon col="paid_calls" /></button>
                 <button onClick={() => toggleSort('submitted')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Subs<SortIcon col="submitted" /></button>
                 <button onClick={() => toggleSort('submitted_premium')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Premium<SortIcon col="submitted_premium" /></button>
                 <button onClick={() => toggleSort('close')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Close%<SortIcon col="close" /></button>
-                <button onClick={() => toggleSort('spend')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Spend<SortIcon col="spend" /></button>
+                <button onClick={() => toggleSort('totalSpend')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Spend<SortIcon col="totalSpend" /></button>
                 <button onClick={() => toggleSort('scpa')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">SCPA<SortIcon col="scpa" /></button>
                 <button onClick={() => toggleSort('roas')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">ROAS<SortIcon col="roas" /></button>
-                <button onClick={() => toggleSort('total_duration')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Talk Time<SortIcon col="total_duration" /></button>
-                <button onClick={() => toggleSort('averageMin_perCall')} className="group flex items-center justify-end gap-0.5 hover:text-slate-400 transition-colors">Avg / Call<SortIcon col="averageMin_perCall" /></button>
               </div>
             );
           })()}
@@ -522,24 +511,20 @@ export const CallReportPolicytek: React.FC = () => {
                   .sort((a, b) => {
                     let av: number, bv: number;
                     if (sortKey === 'name') { av = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? av : -av; }
-                    if (sortKey === 'rate') { av = a.calls_received > 0 ? a.valid_calls / a.calls_received : 0; bv = b.calls_received > 0 ? b.valid_calls / b.calls_received : 0; }
-                    else if (sortKey === 'spend') { av = a.totalSpend ?? 0; bv = b.totalSpend ?? 0; }
-                    else if (sortKey === 'scpa') { av = (a.submitted ?? 0) > 0 ? (a.totalSpend ?? 0) / (a.submitted ?? 1) : 0; bv = (b.submitted ?? 0) > 0 ? (b.totalSpend ?? 0) / (b.submitted ?? 1) : 0; }
+                    if (sortKey === 'scpa') { av = (a.submitted ?? 0) > 0 ? (a.totalSpend ?? 0) / (a.submitted ?? 1) : 0; bv = (b.submitted ?? 0) > 0 ? (b.totalSpend ?? 0) / (b.submitted ?? 1) : 0; }
                     else if (sortKey === 'close') { av = a.valid_calls > 0 ? ((a.submitted ?? 0) / a.valid_calls) * 100 : 0; bv = b.valid_calls > 0 ? ((b.submitted ?? 0) / b.valid_calls) * 100 : 0; }
                     else if (sortKey === 'roas') { av = (a.totalSpend ?? 0) > 0 ? (a.submitted_premium ?? 0) / (a.totalSpend ?? 1) : 0; bv = (b.totalSpend ?? 0) > 0 ? (b.submitted_premium ?? 0) / (b.totalSpend ?? 1) : 0; }
                     else { av = (a[sortKey as keyof typeof a] as number) ?? 0; bv = (b[sortKey as keyof typeof b] as number) ?? 0; }
                     return sortDir === 'desc' ? bv - av : av - bv;
                   })
                   .map((entry, idx) => {
-                    const connectPct = entry.calls_received > 0 ? (entry.valid_calls / entry.calls_received) * 100 : 0;
                     const scpa = (entry.submitted ?? 0) > 0 ? (entry.totalSpend ?? 0) / (entry.submitted ?? 1) : null;
                     const closePct = entry.valid_calls > 0 ? ((entry.submitted ?? 0) / entry.valid_calls) * 100 : null;
                     const roas = (entry.totalSpend ?? 0) > 0 ? (entry.submitted_premium ?? 0) / (entry.totalSpend ?? 1) : null;
-                    const billableColor = connectPct >= 60 ? '#10b981' : connectPct >= 30 ? '#f59e0b' : '#374151';
                     return (
                       <div
                         key={entry.id}
-                        className="px-7 py-3.5 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_6rem_5rem_5.5rem_5.5rem_5rem_7rem_7rem] gap-3 items-center transition-colors cursor-default"
+                        className="px-7 py-3.5 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_6rem_5rem_5.5rem_5.5rem_5rem] gap-3 items-center transition-colors cursor-default"
                         style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -550,15 +535,13 @@ export const CallReportPolicytek: React.FC = () => {
                         </div>
                         <p className="text-sm text-right tabular-nums" style={{ color: '#4b5563' }}>{entry.calls_received ?? 0}</p>
                         <p className="text-sm font-bold text-white text-right tabular-nums">{entry.valid_calls ?? 0}</p>
-                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: billableColor }}>{connectPct.toFixed(1)}%</p>
-                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: '#38bdf8' }}>{entry.submitted ?? 0}</p>
-                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#a3e635' }}>{(entry.submitted_premium ?? 0) > 0 ? `$${(entry.submitted_premium!).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</p>
+                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: '#38bdf8' }}>{entry.paid_calls ?? 0}</p>
+                        <p className="text-sm font-bold text-right tabular-nums" style={{ color: '#a78bfa' }}>{entry.submitted ?? 0}</p>
+                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#a3e635' }}>{(entry.submitted_premium ?? 0) > 0 ? `$${(entry.submitted_premium).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</p>
                         <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#34d399' }}>{closePct !== null ? `${closePct.toFixed(1)}%` : '—'}</p>
-                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#e879f9' }}>{(entry.totalSpend ?? 0) > 0 ? `$${(entry.totalSpend!).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</p>
+                        <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#e879f9' }}>{(entry.totalSpend ?? 0) > 0 ? `$${(entry.totalSpend).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</p>
                         <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#f472b6' }}>{scpa !== null ? `$${scpa.toFixed(2)}` : '—'}</p>
                         <p className="text-xs font-bold text-right tabular-nums" style={{ color: '#fbbf24' }}>{roas !== null ? `${roas.toFixed(2)}×` : '—'}</p>
-                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#64748b' }}>{formatDuration(entry.total_duration)}</p>
-                        <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#334155' }}>{formatDuration(entry.averageMin_perCall)}</p>
                       </div>
                     );
                   })}
@@ -566,16 +549,14 @@ export const CallReportPolicytek: React.FC = () => {
 
               {/* Totals Row */}
               <div
-                className="px-7 py-4 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_6rem_5rem_5.5rem_5.5rem_5rem_7rem_7rem] gap-3 items-center"
+                className="px-7 py-4 grid grid-cols-[1fr_5rem_4rem_4rem_4rem_6rem_5rem_5.5rem_5.5rem_5rem] gap-3 items-center"
                 style={{ background: 'rgba(255,255,255,0.03)', borderTop: '1px solid rgba(255,255,255,0.08)' }}
               >
                 <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#4b5563' }}>TOTAL</p>
                 <p className="text-sm font-black text-white text-right tabular-nums">{totalCalls.toLocaleString()}</p>
                 <p className="text-sm font-black text-white text-right tabular-nums">{totalValid.toLocaleString()}</p>
-                <p className="text-sm font-black text-right tabular-nums" style={{ color: '#10b981' }}>
-                  {totalCalls > 0 ? `${((totalValid / totalCalls) * 100).toFixed(1)}%` : '—'}
-                </p>
-                <p className="text-sm font-black text-right tabular-nums" style={{ color: '#38bdf8' }}>{totalSubmitted}</p>
+                <p className="text-sm font-black text-right tabular-nums" style={{ color: '#38bdf8' }}>{totalPaid.toLocaleString()}</p>
+                <p className="text-sm font-black text-right tabular-nums" style={{ color: '#a78bfa' }}>{totalSubmitted}</p>
                 <p className="text-xs font-black text-right tabular-nums" style={{ color: '#a3e635' }}>
                   {totalSubmittedPremium > 0 ? `$${totalSubmittedPremium.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
                 </p>
@@ -591,8 +572,6 @@ export const CallReportPolicytek: React.FC = () => {
                 <p className="text-xs font-black text-right tabular-nums" style={{ color: '#fbbf24' }}>
                   {totalSpend > 0 ? `${(totalSubmittedPremium / totalSpend).toFixed(2)}×` : '—'}
                 </p>
-                <p className="text-xs font-mono font-black text-right tabular-nums" style={{ color: '#64748b' }}>{formatDuration(totalDuration)}</p>
-                <p className="text-xs font-mono text-right tabular-nums" style={{ color: '#1e293b' }}>—</p>
               </div>
             </>
           )}
@@ -603,4 +582,4 @@ export const CallReportPolicytek: React.FC = () => {
   );
 };
 
-export default CallReportPolicytek;
+export default CallReportCallx;

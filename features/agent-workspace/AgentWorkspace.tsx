@@ -32,6 +32,7 @@ import { AgentTickets } from './components/AgentTickets';
 import { AgentleaderboardRealtime } from './components/AgentleaderboardRealtime';
 import { CallReportPolicytek } from './components/CallReportPolicytek';
 import { CallReportWavv } from './components/CallReportWavv';
+import { CallReportCallx } from './components/CallReportCallx';
 import { AgentStats } from './components/AgentStats';
 import { AgencyDetailPage } from './components/AgencyDetailPage';
 import { MyProfilePage } from './components/MyProfilePage';
@@ -396,7 +397,7 @@ const AgentLayout: React.FC = () => {
             >
               <SidebarSubItem to="/call-report/policytek" label="PolicyTek" active={isActive('/call-report/policytek')} dark={isDarkRoute} />
               <SidebarSubItem to="/call-report/wavv" label="Wavv" active={isActive('/call-report/wavv')} dark={isDarkRoute} />
-              <SidebarSubItem to="/call-report/callx" label="CallX" active={isActive('/call-report/callx')} locked dark={isDarkRoute} />
+              <SidebarSubItem to="/call-report/callx" label="CallX" active={isActive('/call-report/callx')} dark={isDarkRoute} />
             </SidebarGroup>
         </nav>
 
@@ -463,6 +464,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/leaderboard/realtime" element={<AgentleaderboardRealtime />} />
                   <Route path="/call-report/policytek" element={<CallReportPolicytek />} />
                   <Route path="/call-report/wavv" element={<CallReportWavv />} />
+                  <Route path="/call-report/callx" element={<CallReportCallx />} />
                   <Route path="/agency/:teamId" element={<AgencyDetailPage />} />
                   <Route path="/stats" element={<AgentStats />} />
                   <Route path="/my-profile" element={<MyProfilePage />} />
