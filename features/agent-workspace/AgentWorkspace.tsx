@@ -23,6 +23,7 @@ import { useAgentContext } from './context/AgentContext';
 import { useAuth } from '../../context/AuthContext';
 import { AgentOverview } from './components/AgentOverview';
 import { AgentPolicies } from './components/AgentPolicies';
+import { AgentPoliciesV2 } from './components/AgentPoliciesV2';
 import { AgentPolicyDetails } from './components/AgentPolicyDetails';
 import { AgentCommissions } from './components/AgentCommissions';
 import { AgentSplits } from './components/AgentSplits';
@@ -228,6 +229,7 @@ const AgentLayout: React.FC = () => {
 
   const isActive = (path: string) => location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
   const isDarkRoute = location.pathname.startsWith('/call-report');
+  const isPoliciesV2 = location.pathname === '/policies/v2';
   
   // Feature Key Determination
   const featureKey = (() => {
@@ -262,7 +264,10 @@ const AgentLayout: React.FC = () => {
     : 'HQ';
 
   return (
-    <div className={`h-screen flex font-sans overflow-hidden p-4 gap-4 selection:bg-brand-500/30 selection:text-brand-900 transition-colors duration-500 ${isDarkRoute ? 'bg-[#08080f]' : 'bg-[#D4DBE5]'}`}>
+    <div
+      className={`h-screen flex font-sans overflow-hidden p-4 gap-4 selection:bg-brand-500/30 selection:text-brand-900 transition-colors duration-500 ${isDarkRoute ? 'bg-[#08080f]' : ''}`}
+      style={!isDarkRoute ? { background: isPoliciesV2 ? 'linear-gradient(135deg, #ddd6fe 0%, #c7d2fe 30%, #e0f2fe 100%)' : '#D4DBE5' } : undefined}
+    >
       {/* Floating Sidebar */}
       <aside 
         className={`
@@ -382,7 +387,17 @@ const AgentLayout: React.FC = () => {
         {/* Nav Items */}
         <nav className="space-y-1 flex flex-col items-center w-full flex-1 overflow-y-auto overflow-x-hidden min-h-0 scrollbar-hide">
             <SidebarItem to="/" icon={<Trophy size={20} />} label="Leaderboard" active={location.pathname === '/' || location.pathname === ''} locked={isLocked('overview')} collapsed={isCollapsed} dark={isDarkRoute} />
-            <SidebarItem to="/policies" icon={<FileCheck size={20} />} label="Policies" active={isActive('/policies')} locked={isLocked('policies')} collapsed={isCollapsed} dark={isDarkRoute} />
+            <SidebarGroup
+              icon={<FileCheck size={20} />}
+              label="Policies"
+              active={isActive('/policies')}
+              locked={isLocked('policies')}
+              collapsed={isCollapsed}
+              dark={isDarkRoute}
+            >
+              <SidebarSubItem to="/policies" label="Policies" active={location.pathname === '/policies'} locked={isLocked('policies')} dark={isDarkRoute} />
+              <SidebarSubItem to="/policies/v2" label="Policies V2" active={location.pathname === '/policies/v2'} locked={isLocked('policies')} dark={isDarkRoute} />
+            </SidebarGroup>
             <SidebarItem to="/downlines" icon={<Users size={20} />} label="Downlines" active={isActive('/downlines')} locked={isLocked('downlines')} collapsed={isCollapsed} dark={isDarkRoute} />
             <SidebarItem to="/splits" icon={<Split size={20} />} label="Splits" active={isActive('/splits')} locked={isLocked('splits')} collapsed={isCollapsed} dark={isDarkRoute} />
             <SidebarItem to="/commissions" icon={<DollarSign size={20} />} label="Commissions" active={isActive('/commissions')} locked={isLocked('commissions')} collapsed={isCollapsed} dark={isDarkRoute} />
@@ -439,7 +454,13 @@ const AgentLayout: React.FC = () => {
                 </button>
             </div>
         ) : (
-            <div className="flex-1 overflow-y-auto scroll-smooth scrollbar-hide">
+            <div className="flex-1 overflow-y-auto scroll-smooth scrollbar-hide relative">
+              {isPoliciesV2 && (
+                <>
+                  <div className="pointer-events-none fixed top-0 right-0 w-[500px] h-[450px] rounded-full blur-3xl -z-10" style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.25) 0%, transparent 70%)' }} />
+                  <div className="pointer-events-none fixed bottom-0 right-1/3 w-72 h-72 rounded-full blur-3xl -z-10" style={{ background: 'radial-gradient(circle, rgba(110,231,183,0.15) 0%, transparent 70%)' }} />
+                </>
+              )}
             <header className={`h-24 sticky top-0 z-[100] px-6 flex items-center justify-between mb-2 rounded-2xl mt-2 mx-2 shadow-sm transition-colors duration-500 ${isDarkRoute ? 'bg-white/5 backdrop-blur-md border border-white/8' : 'bg-white/60 backdrop-blur-md border border-white/80'}`}>
                 <div className="flex items-center gap-4">
                     <h2 className={`text-3xl font-black tracking-tighter transition-colors duration-500 ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
@@ -469,6 +490,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/stats" element={<AgentStats />} />
                   <Route path="/my-profile" element={<MyProfilePage />} />
                   <Route path="/policies" element={<AgentPolicies />} />
+                  <Route path="/policies/v2" element={<AgentPoliciesV2 />} />
                   <Route path="/policies/details" element={<AgentPolicyDetails />} />
                   <Route path="/downlines" element={<AgentDownlines />} />
                   <Route path="/commissions" element={<AgentCommissions />} />
