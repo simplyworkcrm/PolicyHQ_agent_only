@@ -15,6 +15,7 @@ import {
   Contact,
   Search,
   Activity,
+  Download,
 } from 'lucide-react';
 import {
   callReportWavvApi,
@@ -22,6 +23,7 @@ import {
   getCurrentWeekStart,
   toDateStr,
 } from '../services/callReportWavvApi';
+import { downloadCsv } from './callReportCsv';
 
 // ── Date Range Picker ─────────────────────────────────────────────────────────
 
@@ -278,6 +280,42 @@ export const CallReportWavv: React.FC = () => {
   const avgCallLen = totalConversations > 0
     ? entries.reduce((s, e) => s + (e.avgCallLength ?? 0) * (e.conversations ?? 0), 0) / totalConversations
     : 0;
+  const visibleEntries = [...entries]
+    .filter(e => e.name?.toLowerCase().includes(agentSearch.toLowerCase()))
+    .sort((a, b) => {
+      let av: number, bv: number;
+      if (sortKey === 'name') { const v = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? v : -v; }
+      if (sortKey === 'connectRate') {
+        av = a.calls > 0 ? a.conversations / a.calls : 0;
+        bv = b.calls > 0 ? b.conversations / b.calls : 0;
+      } else {
+        av = (a[sortKey as keyof WavvCallEntry] as number) ?? 0;
+        bv = (b[sortKey as keyof WavvCallEntry] as number) ?? 0;
+      }
+      return sortDir === 'desc' ? bv - av : av - bv;
+    });
+
+  const handleExportCsv = () => {
+    const rows = visibleEntries.map((entry) => {
+      const rowConnectRate = entry.calls > 0 ? (entry.conversations / entry.calls) * 100 : 0;
+      return [
+        entry.name,
+        entry.calls ?? 0,
+        entry.conversations ?? 0,
+        entry.contactsCalled ?? 0,
+        rowConnectRate.toFixed(1),
+        formatDuration(entry.talktime),
+        formatDuration(entry.dialtime),
+        formatDuration(Math.round(entry.avgCallLength)),
+      ];
+    });
+
+    downloadCsv(`wavv_activity_${startDate}_to_${endDate}.csv`, [
+      ['Agent', 'Calls', 'Convos', 'Contacts', 'Connect %', 'Talk Time', 'Dial Time', 'Avg / Convo'],
+      ...rows,
+      ['TOTAL', totalCalls, totalConversations, totalContacts, totalCalls > 0 ? connectRate.toFixed(1) : '', formatDuration(totalTalktime), formatDuration(totalDialtime), totalConversations > 0 ? formatDuration(Math.round(avgCallLen)) : ''],
+    ]);
+  };
 
   return (
     <div className="animate-in fade-in duration-300 -mx-6 -mt-4 -mb-12">
@@ -297,6 +335,17 @@ export const CallReportWavv: React.FC = () => {
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: '#374151' }}>MST</span>
             <DateRangePicker startDate={startDate} endDate={endDate} onChange={handleDateChange} />
+            <button
+              onClick={handleExportCsv}
+              disabled={isLoading || visibleEntries.length === 0}
+              className="h-10 px-3 rounded-2xl flex items-center gap-2 text-xs font-bold transition-all disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#6b7280' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLButtonElement).style.color = '#6b7280'; }}
+            >
+              <Download className="w-4 h-4" />
+              <span>CSV</span>
+            </button>
             <button
               onClick={() => load(startDate, endDate)}
               disabled={isLoading}
@@ -504,20 +553,7 @@ export const CallReportWavv: React.FC = () => {
           {!isLoading && !error && entries.length > 0 && (
             <>
               <div>
-                {[...entries]
-                  .filter(e => e.name?.toLowerCase().includes(agentSearch.toLowerCase()))
-                  .sort((a, b) => {
-                    let av: number, bv: number;
-                    if (sortKey === 'name') { const v = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? v : -v; }
-                    if (sortKey === 'connectRate') {
-                      av = a.calls > 0 ? a.conversations / a.calls : 0;
-                      bv = b.calls > 0 ? b.conversations / b.calls : 0;
-                    } else {
-                      av = (a[sortKey as keyof WavvCallEntry] as number) ?? 0;
-                      bv = (b[sortKey as keyof WavvCallEntry] as number) ?? 0;
-                    }
-                    return sortDir === 'desc' ? bv - av : av - bv;
-                  })
+                {visibleEntries
                   .map((entry, idx) => {
                     const connectPct = entry.calls > 0 ? (entry.conversations / entry.calls) * 100 : 0;
                     const connectColor = connectPct >= 10 ? '#10b981' : connectPct >= 5 ? '#f59e0b' : '#374151';

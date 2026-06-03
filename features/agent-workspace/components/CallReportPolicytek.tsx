@@ -16,6 +16,7 @@ import {
   BarChart3,
   Search,
   TrendingUp,
+  Download,
 } from 'lucide-react';
 import {
   callReportPolicytekApi,
@@ -23,6 +24,7 @@ import {
   getCurrentWeekStart,
   toDateStr,
 } from '../services/callReportPolicytekApi';
+import { downloadCsv } from './callReportCsv';
 
 // ── Date Range Picker ─────────────────────────────────────────────────────────
 
@@ -284,6 +286,48 @@ export const CallReportPolicytek: React.FC = () => {
   const totalSubmitted = entries.reduce((s, e) => s + (e.submitted ?? 0), 0);
   const totalSpend = entries.reduce((s, e) => s + (e.totalSpend ?? 0), 0);
   const totalSubmittedPremium = entries.reduce((s, e) => s + (e.submitted_premium ?? 0), 0);
+  const visibleEntries = [...entries]
+    .filter(e => e.name?.toLowerCase().includes(agentSearch.toLowerCase()))
+    .sort((a, b) => {
+      let av: number, bv: number;
+      if (sortKey === 'name') { av = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? av : -av; }
+      if (sortKey === 'rate') { av = a.calls_received > 0 ? a.valid_calls / a.calls_received : 0; bv = b.calls_received > 0 ? b.valid_calls / b.calls_received : 0; }
+      else if (sortKey === 'spend') { av = a.totalSpend ?? 0; bv = b.totalSpend ?? 0; }
+      else if (sortKey === 'scpa') { av = (a.submitted ?? 0) > 0 ? (a.totalSpend ?? 0) / (a.submitted ?? 1) : 0; bv = (b.submitted ?? 0) > 0 ? (b.totalSpend ?? 0) / (b.submitted ?? 1) : 0; }
+      else if (sortKey === 'close') { av = a.valid_calls > 0 ? ((a.submitted ?? 0) / a.valid_calls) * 100 : 0; bv = b.valid_calls > 0 ? ((b.submitted ?? 0) / b.valid_calls) * 100 : 0; }
+      else if (sortKey === 'roas') { av = (a.totalSpend ?? 0) > 0 ? (a.submitted_premium ?? 0) / (a.totalSpend ?? 1) : 0; bv = (b.totalSpend ?? 0) > 0 ? (b.submitted_premium ?? 0) / (b.totalSpend ?? 1) : 0; }
+      else { av = (a[sortKey as keyof typeof a] as number) ?? 0; bv = (b[sortKey as keyof typeof b] as number) ?? 0; }
+      return sortDir === 'desc' ? bv - av : av - bv;
+    });
+
+  const handleExportCsv = () => {
+    const rows = visibleEntries.map((entry) => {
+      const billablePct = entry.calls_received > 0 ? (entry.valid_calls / entry.calls_received) * 100 : 0;
+      const scpa = (entry.submitted ?? 0) > 0 ? (entry.totalSpend ?? 0) / (entry.submitted ?? 1) : null;
+      const closePct = entry.valid_calls > 0 ? ((entry.submitted ?? 0) / entry.valid_calls) * 100 : null;
+      const roas = (entry.totalSpend ?? 0) > 0 ? (entry.submitted_premium ?? 0) / (entry.totalSpend ?? 1) : null;
+      return [
+        entry.name,
+        entry.calls_received ?? 0,
+        entry.valid_calls ?? 0,
+        billablePct.toFixed(1),
+        entry.submitted ?? 0,
+        entry.submitted_premium ?? 0,
+        closePct !== null ? closePct.toFixed(1) : '',
+        entry.totalSpend ?? 0,
+        scpa !== null ? scpa.toFixed(2) : '',
+        roas !== null ? roas.toFixed(2) : '',
+        formatDuration(entry.total_duration),
+        formatDuration(entry.averageMin_perCall),
+      ];
+    });
+
+    downloadCsv(`policytek_activity_${startDate}_to_${endDate}.csv`, [
+      ['Agent', 'Total', 'Valid', 'Billable %', 'Subs', 'Premium', 'Close %', 'Spend', 'SCPA', 'ROAS', 'Talk Time', 'Avg / Call'],
+      ...rows,
+      ['TOTAL', totalCalls, totalValid, totalCalls > 0 ? ((totalValid / totalCalls) * 100).toFixed(1) : '', totalSubmitted, totalSubmittedPremium, totalValid > 0 ? ((totalSubmitted / totalValid) * 100).toFixed(1) : '', totalSpend, totalSubmitted > 0 ? (totalSpend / totalSubmitted).toFixed(2) : '', totalSpend > 0 ? (totalSubmittedPremium / totalSpend).toFixed(2) : '', formatDuration(totalDuration), ''],
+    ]);
+  };
 
   return (
     <div className="animate-in fade-in duration-300 -mx-6 -mt-4 -mb-12">
@@ -301,6 +345,17 @@ export const CallReportPolicytek: React.FC = () => {
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: '#374151' }}>UTC</span>
             <DateRangePicker startDate={startDate} endDate={endDate} onChange={handleDateChange} />
+            <button
+              onClick={handleExportCsv}
+              disabled={isLoading || visibleEntries.length === 0}
+              className="h-10 px-3 rounded-2xl flex items-center gap-2 text-xs font-bold transition-all disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#6b7280' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLButtonElement).style.color = '#6b7280'; }}
+            >
+              <Download className="w-4 h-4" />
+              <span>CSV</span>
+            </button>
             <button
               onClick={() => load(startDate, endDate)}
               disabled={isLoading}
@@ -517,19 +572,7 @@ export const CallReportPolicytek: React.FC = () => {
           {!isLoading && !error && entries.length > 0 && (
             <>
               <div>
-                {[...entries]
-                  .filter(e => e.name?.toLowerCase().includes(agentSearch.toLowerCase()))
-                  .sort((a, b) => {
-                    let av: number, bv: number;
-                    if (sortKey === 'name') { av = a.name?.localeCompare(b.name ?? '') ?? 0; return sortDir === 'asc' ? av : -av; }
-                    if (sortKey === 'rate') { av = a.calls_received > 0 ? a.valid_calls / a.calls_received : 0; bv = b.calls_received > 0 ? b.valid_calls / b.calls_received : 0; }
-                    else if (sortKey === 'spend') { av = a.totalSpend ?? 0; bv = b.totalSpend ?? 0; }
-                    else if (sortKey === 'scpa') { av = (a.submitted ?? 0) > 0 ? (a.totalSpend ?? 0) / (a.submitted ?? 1) : 0; bv = (b.submitted ?? 0) > 0 ? (b.totalSpend ?? 0) / (b.submitted ?? 1) : 0; }
-                    else if (sortKey === 'close') { av = a.valid_calls > 0 ? ((a.submitted ?? 0) / a.valid_calls) * 100 : 0; bv = b.valid_calls > 0 ? ((b.submitted ?? 0) / b.valid_calls) * 100 : 0; }
-                    else if (sortKey === 'roas') { av = (a.totalSpend ?? 0) > 0 ? (a.submitted_premium ?? 0) / (a.totalSpend ?? 1) : 0; bv = (b.totalSpend ?? 0) > 0 ? (b.submitted_premium ?? 0) / (b.totalSpend ?? 1) : 0; }
-                    else { av = (a[sortKey as keyof typeof a] as number) ?? 0; bv = (b[sortKey as keyof typeof b] as number) ?? 0; }
-                    return sortDir === 'desc' ? bv - av : av - bv;
-                  })
+                {visibleEntries
                   .map((entry, idx) => {
                     const connectPct = entry.calls_received > 0 ? (entry.valid_calls / entry.calls_received) * 100 : 0;
                     const scpa = (entry.submitted ?? 0) > 0 ? (entry.totalSpend ?? 0) / (entry.submitted ?? 1) : null;
