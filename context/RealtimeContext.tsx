@@ -41,6 +41,36 @@ const RealtimeContext = createContext<RealtimeContextType | undefined>(undefined
 // --- AUDIO SYSTEM ---
 
 let sharedAudioCtx: AudioContext | null = null;
+let hasInstalledSafeWebSocketSend = false;
+
+const installSafeWebSocketSend = () => {
+  if (hasInstalledSafeWebSocketSend || typeof window === 'undefined' || !window.WebSocket) return;
+  hasInstalledSafeWebSocketSend = true;
+
+  const originalSend = window.WebSocket.prototype.send;
+  window.WebSocket.prototype.send = function safeSend(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+    if (this.readyState === window.WebSocket.OPEN) {
+      return originalSend.call(this, data);
+    }
+
+    if (this.readyState === window.WebSocket.CONNECTING) {
+      const pendingSocket = this;
+      const sendWhenOpen = () => {
+        try {
+          if (pendingSocket.readyState === window.WebSocket.OPEN) {
+            originalSend.call(pendingSocket, data);
+          }
+        } catch (error) {
+          console.warn('Deferred WebSocket send failed:', error);
+        }
+      };
+      pendingSocket.addEventListener('open', sendWhenOpen, { once: true });
+      return;
+    }
+
+    console.warn('Skipped WebSocket send because socket is not open.');
+  };
+};
 
 const getAudioContext = () => {
   if (!sharedAudioCtx) {
@@ -131,8 +161,11 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hasNew, setHasNew] = useState(false);
   const [latestSale, setLatestSale] = useState<SaleEvent | null>(null);
+  const [realtimeSetupAttempt, setRealtimeSetupAttempt] = useState(0);
 
   useEffect(() => {
+    installSafeWebSocketSend();
+
     const unlockAudio = () => {
         const ctx = getAudioContext();
         if (ctx && ctx.state === 'suspended') {
@@ -187,15 +220,23 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let userChannel: any = null;
     let broadcastChannel: any = null;
     let leaderBoardChannel: any = null;
+    let retryTimer: number | undefined;
+    let isCancelled = false;
 
     try {
       xanoClient.setRealtimeAuthToken(token);
       userChannel = xanoClient.channel(`notification_channel/${user.id}`);
       broadcastChannel = xanoClient.channel(`notification_channel/*`);
       leaderBoardChannel = xanoClient.channel(`vipaleaderboard`);
+      setIsConnected(true);
     } catch (e) {
-      console.warn('Realtime channel setup failed (WebSocket not ready):', e);
-      return;
+      setIsConnected(false);
+      console.warn('Realtime channel setup delayed while WebSocket connects.');
+      if (realtimeSetupAttempt < 8) {
+        retryTimer = window.setTimeout(() => {
+          if (!isCancelled) setRealtimeSetupAttempt(attempt => attempt + 1);
+        }, 500);
+      }
     }
 
     const notificationListener = (message: any, type: 'direct' | 'broadcast') => {
@@ -250,6 +291,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (leaderBoardChannel && typeof leaderBoardChannel.on === 'function') leaderBoardChannel.on(saleListener);
 
     return () => {
+      isCancelled = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
       const safeUnsubscribe = (channel: any) => {
           if (!channel) return;
           try {
@@ -263,7 +306,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       safeUnsubscribe(broadcastChannel);
       safeUnsubscribe(leaderBoardChannel);
     };
-  }, [xanoClient, token, user]);
+  }, [xanoClient, token, user, realtimeSetupAttempt]);
 
   return (
     <RealtimeContext.Provider value={{ 
