@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../shared/components/Button';
 import { Shield, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
@@ -82,6 +83,12 @@ export const Login: React.FC = () => {
         </form>
 
         <div className="mt-8 text-center">
+          <p className="text-sm font-medium text-slate-500 mb-3">
+            Need an account?{' '}
+            <Link to="/register" className="font-bold text-brand-600 hover:text-brand-700">
+              Register
+            </Link>
+          </p>
           <p className="text-xs font-medium text-slate-400">
             Protected by Elite One Financial Security Systems
           </p>

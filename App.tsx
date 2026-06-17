@@ -9,6 +9,7 @@ import { SaleAlert } from './shared/components/SaleAlert';
 // Feature Modules
 import { AgentWorkspace } from './features/agent-workspace/AgentWorkspace';
 import { Login } from './features/auth/Login';
+import { Register } from './features/auth/Register';
 
 // Loading Screen
 const LoadingScreen = () => (
@@ -49,6 +50,11 @@ const AppRoutes: React.FC = () => {
             <Route path="/login" element={
               <PublicRoute>
                 <Login />
+              </PublicRoute>
+            } />
+            <Route path="/register" element={
+              <PublicRoute>
+                <Register />
               </PublicRoute>
             } />
 

@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { agentleaderboardRealtimeApi, ArenaEntry, SaleRecord, AgentDetailsResponse } from '../services/agentleaderboardRealtimeApi';
 import { useRealtime } from '../../../context/RealtimeContext';
-import { LeaderboardControls } from './LeaderboardControls';
+import { LeaderboardControls, LeaderboardMode } from './LeaderboardControls';
 import { AgentComparisonView } from './AgentComparisonView';
 
 const formatShort = (val: number) => {
@@ -56,6 +56,48 @@ const getInitials = (name: string) => {
     .join('')
     .substring(0, 2)
     .toUpperCase();
+};
+
+type LeaderboardTimeframe = 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+
+const getLeaderboardTimestampRange = (
+  timeframe: LeaderboardTimeframe,
+  dateRange: { startDate: string; endDate: string }
+) => {
+  const now = new Date();
+  let start: Date;
+  let end: Date;
+
+  if (timeframe === 'custom' && dateRange.startDate && dateRange.endDate) {
+    start = new Date(`${dateRange.startDate}T00:00:00`);
+    end = new Date(`${dateRange.endDate}T23:59:59.999`);
+    return { startDate: start.getTime(), endDate: end.getTime() };
+  }
+
+  if (timeframe === 'weekly') {
+    start = new Date(now);
+    start.setDate(now.getDate() - now.getDay());
+    start.setHours(0, 0, 0, 0);
+    end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { startDate: start.getTime(), endDate: end.getTime() };
+  }
+
+  if (timeframe === 'monthly') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { startDate: start.getTime(), endDate: end.getTime() };
+  }
+
+  if (timeframe === 'yearly') {
+    start = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+    end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    return { startDate: start.getTime(), endDate: end.getTime() };
+  }
+
+  start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  return { startDate: start.getTime(), endDate: end.getTime() };
 };
 
 const LeaderboardItem: React.FC<{
@@ -464,7 +506,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
 
   // Integrated Leaderboard States
   const [unifiedData, setUnifiedData] = useState<ArenaEntry[]>([]);
-  const [leaderboardMode, setLeaderboardMode] = useState<'agent' | 'team' | 'source'>('agent');
+  const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>('agent');
   const [timeframe, setTimeframe] = useState<'today' | 'weekly' | 'monthly' | 'yearly' | 'custom'>(initTimeframe);
   const [dateRange, setDateRange] = useState({ startDate: initStartDate, endDate: initEndDate });
   const [selectedTeamsFilter, setSelectedTeamsFilter] = useState<string[]>(teamId ? [teamId] : []);
@@ -581,10 +623,11 @@ export const AgentleaderboardRealtime: React.FC = () => {
       setArenaFeed(feedRes || []);
 
       let finalUnifiedData: ArenaEntry[] = [];
+      const timestampRange = getLeaderboardTimestampRange(timeframe, dateRange);
       const basePayload = {
         timeframe,
-        startDate: timeframe === 'custom' ? (dateRange.startDate || null) : null,
-        endDate: timeframe === 'custom' ? (dateRange.endDate || null) : null,
+        startDate: timestampRange.startDate,
+        endDate: timestampRange.endDate,
       };
 
       if (leaderboardMode === 'agent') {
@@ -622,6 +665,21 @@ export const AgentleaderboardRealtime: React.FC = () => {
           records: s.records,
           agency: 'Source'
         }));
+      } else if (leaderboardMode === 'trainer') {
+        const trainerRaw = await agentleaderboardRealtimeApi.getTrainerLeaderboard({
+          ...basePayload,
+          teamId: selectedTeamsFilter.length > 0 ? selectedTeamsFilter[0] : null,
+          sourceId: selectedSourceFilter || null,
+        });
+        const trainerData = Array.isArray(trainerRaw) ? trainerRaw : (trainerRaw as any)?.rundown ?? [];
+        finalUnifiedData = trainerData.map((trainer: any) => ({
+          agent_id: trainer.trainer_id || trainer.agent_id || trainer.id,
+          agent_name: trainer.trainer_name || trainer.agent_name || trainer.name || [trainer.first_name, trainer.last_name].filter(Boolean).join(' '),
+          total_annualPremium: trainer.total_annualPremium || trainer.total_annual_premium || trainer.premium || 0,
+          records: trainer.records || trainer.apps || trainer.total_records || 0,
+          agency: trainer.agency || trainer.agency_name || 'Trainer',
+          agent_profile: trainer.trainer_profile || trainer.agent_profile || trainer.profile || null
+        })).filter((trainer: ArenaEntry) => trainer.agent_id);
       }
       setUnifiedData(finalUnifiedData);
 
@@ -769,6 +827,8 @@ export const AgentleaderboardRealtime: React.FC = () => {
                         setSelectedSourceFilter(id);
                         setSelectedSourceName(sourceName);
                         setLeaderboardMode('agent');
+                     } else if (leaderboardMode === 'trainer') {
+                        return;
                      } else {
                         setSelectedAgentId(id);
                      }

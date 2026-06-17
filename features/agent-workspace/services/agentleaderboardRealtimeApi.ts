@@ -1,5 +1,6 @@
 import { BASE_URL, ApiError } from '../../../services/api';
 
+const TRAINER_API_BASE_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR';
 const getAuthToken = () => localStorage.getItem('authToken');
 
 const authHeader = () => ({
@@ -162,8 +163,8 @@ export const agentleaderboardRealtimeApi = {
    */
   getAgentLeaderboard: async (payload: {
     timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
-    startDate?: string | null;
-    endDate?: string | null;
+    startDate?: number | null;
+    endDate?: number | null;
     teamId?: string | null;
     sourceId?: string | null;
     agencyIds?: string[] | null;
@@ -183,8 +184,8 @@ export const agentleaderboardRealtimeApi = {
 
   getTeamLeaderboard: async (payload: {
     timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
-    startDate?: string;
-    endDate?: string;
+    startDate?: number;
+    endDate?: number;
     teamIds?: string[];
     sourceId?: string;
   }): Promise<any[]> => {
@@ -203,8 +204,8 @@ export const agentleaderboardRealtimeApi = {
 
   getSourceLeaderboard: async (payload: {
     timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
-    startDate?: string;
-    endDate?: string;
+    startDate?: number;
+    endDate?: number;
     sourceIds?: string[];
     sourceId?: string;
   }): Promise<any[]> => {
@@ -216,6 +217,27 @@ export const agentleaderboardRealtimeApi = {
     });
     if (!response.ok) {
       console.warn("Unified source endpoint failed. Using mock data.");
+      return [];
+    }
+    return response.json();
+  },
+
+  getTrainerLeaderboard: async (payload: {
+    timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+    startDate?: number | null;
+    endDate?: number | null;
+    trainerIds?: string[];
+    teamId?: string | null;
+    sourceId?: string | null;
+  }): Promise<any[]> => {
+    const url = `${TRAINER_API_BASE_URL}/arena/leaderboard/trainers`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      console.warn("Trainer leaderboard endpoint failed.");
       return [];
     }
     return response.json();

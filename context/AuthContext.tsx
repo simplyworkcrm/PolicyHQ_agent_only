@@ -8,6 +8,8 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   login: (email: string, pass: string) => Promise<void>;
+  signup: (firstName: string, lastName: string, email: string, phone: string, pass: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -100,19 +102,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const mapApiUserToAppUser = (data: any): User => {
-    // Map Agent Access
-    // Primary agent is the root agent_id
-    // Downline comes from agent_access list, which lists other agents the user can access
+    const agentAccessRows = Array.isArray(data.agent_access) ? data.agent_access : [];
+    const firstName = data.first_name || data.firstName || data.firstname || '';
+    const lastName = data.last_name || data.lastName || data.lastname || '';
+    const userAgentId = data.agent_id && data.agent_id !== 'null' ? data.agent_id : null;
+    const primaryAgentRow = userAgentId
+      ? agentAccessRows.find((a: any) => a.agent_id === data.agent_id)
+      : agentAccessRows[0];
+    const primaryAgentId = userAgentId || primaryAgentRow?.agent_id || '';
+    const primaryAgentFeatures = Array.isArray(primaryAgentRow?.feature)
+      ? primaryAgentRow.feature.map(normalizeFeature)
+      : ['overview', 'policies', 'commissions', 'debts', 'splits', 'downlines'];
+
     const primaryAgentAccess: AgentAccess = {
-      agentId: data.agent_id,
-      // Default features for root user if not provided in JSON (Assuming full access for now)
-      features: ['overview', 'policies', 'commissions', 'debts', 'splits', 'downlines'],
-      downline: data.agent_access ? data.agent_access.map((a: any) => ({
+      agentId: primaryAgentId,
+      agentName: primaryAgentRow?.agent_name,
+      npn: primaryAgentRow?.agent_npn,
+      agencyName: primaryAgentRow?.agency_name,
+      features: primaryAgentFeatures,
+      downline: agentAccessRows.filter((a: any) => a.agent_id !== primaryAgentId).map((a: any) => ({
         agentId: a.agent_id,
         name: a.agent_name,
         npn: a.agent_npn,
         features: Array.isArray(a.feature) ? a.feature.map(normalizeFeature) : []
-      })) : []
+      }))
     };
 
     // Map Agency Access
@@ -131,8 +144,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return {
       id: data.id,
-      name: data.name,
-      email: '', // API doesn't return email, leaving empty as it's not critical for display
+      name: data.name || [firstName, lastName].filter(Boolean).join(' '),
+      firstName,
+      lastName,
+      email: data.email || '',
+      phone: data.phone,
+      agentId: userAgentId,
       npn: data.agent_npn || data.npn,
       agencyName: data.agency_name || data.agency,
       agencyLogoUrl: data.agency_logo?.url,
@@ -152,6 +169,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signup = async (firstName: string, lastName: string, email: string, phone: string, pass: string) => {
+    try {
+      const authToken = await authApi.signup(firstName, lastName, email, phone, pass);
+      localStorage.setItem('authToken', authToken);
+      setToken(authToken);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const refreshUser = async () => {
+    const authToken = localStorage.getItem('authToken') || token;
+    if (!authToken) return;
+    const userData = await authApi.getMe(authToken);
+    const mappedUser = mapApiUserToAppUser(userData);
+    setUser(mappedUser);
+  };
+
   const logout = () => {
     localStorage.removeItem('authToken');
     setToken(null);
@@ -159,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, signup, refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

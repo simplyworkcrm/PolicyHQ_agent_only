@@ -9,6 +9,9 @@ export interface SubAgent {
 
 export interface AgentAccess {
   agentId: string;
+  agentName?: string;
+  npn?: string | number;
+  agencyName?: string;
   features: string[]; // e.g., ['policies', 'commissions']
   downline: SubAgent[]; // IDs and Names of agents this user can impersonate
 }
@@ -29,7 +32,11 @@ export interface HybridAccess {
 export interface User {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
+  phone?: string | null;
+  agentId?: string | null;
   npn?: string | number;
   agencyName?: string;
   agencyLogoUrl?: string;

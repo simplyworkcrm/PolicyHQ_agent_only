@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Users, UsersRound, Share2, Calendar, Search, Building2, X, Target, ChevronDown, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, UsersRound, Share2, Calendar, Search, Building2, X, Target, ChevronDown, Check, ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
+
+export type LeaderboardMode = 'agent' | 'team' | 'source' | 'trainer';
 
 const FilterDropdown = ({
   isNightMode,
@@ -350,8 +352,8 @@ const DateRangePopup = ({
 
 interface LeaderboardControlsProps {
   isNightMode: boolean;
-  mode: 'agent' | 'team' | 'source';
-  setMode: (mode: 'agent' | 'team' | 'source') => void;
+  mode: LeaderboardMode;
+  setMode: (mode: LeaderboardMode) => void;
   timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
   setTimeframe: (timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom') => void;
   dateRange: { startDate: string; endDate: string };
@@ -419,7 +421,8 @@ export const LeaderboardControls: React.FC<LeaderboardControlsProps> = ({
             {[
               { id: 'agent', label: 'Agents', icon: Users },
               { id: 'team', label: 'Teams', icon: UsersRound },
-              { id: 'source', label: 'Sources', icon: Share2 }
+              { id: 'source', label: 'Sources', icon: Share2 },
+              { id: 'trainer', label: 'Trainers', icon: GraduationCap }
             ].map(m => (
               <button
                 key={m.id}
