@@ -5,6 +5,15 @@ import { useRealtime } from '../../context/RealtimeContext';
 
 type ReadFilter = 'all' | 'unread';
 
+const isRealtimeStatusNotification = (content: string) => {
+  try {
+    const parsed = JSON.parse(content);
+    return parsed?.status === 'connected' || parsed?.status === 'disconnected';
+  } catch {
+    return false;
+  }
+};
+
 export const NotificationDirect: React.FC = () => {
   const { notifications, setNotifications, markAsRead, markAllAsRead } = useRealtime();
   const [isOpen, setIsOpen] = useState(false);
@@ -27,7 +36,7 @@ export const NotificationDirect: React.FC = () => {
   };
 
   const unreadCount = useMemo(() => 
-    notifications.filter(n => n.type === type && !n.isRead).length, 
+    notifications.filter(n => n.type === type && !n.isRead && !isRealtimeStatusNotification(n.content)).length, 
     [notifications]
   );
 
@@ -36,7 +45,7 @@ export const NotificationDirect: React.FC = () => {
         const matchesType = n.type === type;
         const matchesRead = readFilter === 'all' || !n.isRead;
         const matchesSearch = n.content.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesType && matchesRead && matchesSearch;
+        return matchesType && matchesRead && matchesSearch && !isRealtimeStatusNotification(n.content);
     });
   }, [notifications, readFilter, searchQuery]);
 

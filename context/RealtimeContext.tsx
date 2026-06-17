@@ -154,6 +154,21 @@ const playVictorySound = () => {
   }
 };
 
+const getRealtimeStatus = (content: any): 'connected' | 'disconnected' | null => {
+  if (!content) return null;
+  let parsed = content;
+  if (typeof content === 'string') {
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof parsed !== 'object') return null;
+  const status = parsed.status || parsed.payload?.status || parsed.data?.status;
+  return status === 'connected' || status === 'disconnected' ? status : null;
+};
+
 export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, user } = useAuth();
   const [xanoClient, setXanoClient] = useState<XanoClient | null>(null);
@@ -162,6 +177,15 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [hasNew, setHasNew] = useState(false);
   const [latestSale, setLatestSale] = useState<SaleEvent | null>(null);
   const [realtimeSetupAttempt, setRealtimeSetupAttempt] = useState(0);
+
+  useEffect(() => {
+    setNotifications(prev => {
+      const next = prev.filter(notification => !getRealtimeStatus(notification.content));
+      if (next.length === prev.length) return prev;
+      if (!next.some(notification => !notification.isRead)) setHasNew(false);
+      return next;
+    });
+  }, [notifications]);
 
   useEffect(() => {
     installSafeWebSocketSend();
@@ -241,6 +265,12 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const notificationListener = (message: any, type: 'direct' | 'broadcast') => {
       const content = message.payload || message.data || message;
+      const realtimeStatus = getRealtimeStatus(content);
+      if (realtimeStatus) {
+        setIsConnected(realtimeStatus === 'connected');
+        return;
+      }
+
       const newNotification: Notification = {
         id: Date.now(),
         content: typeof content === 'object' ? (content.message || JSON.stringify(content)) : content,
