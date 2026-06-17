@@ -90,6 +90,26 @@ export interface TrainerDetailsResponse {
     trainer_profile?: { url?: string } | null;
   };
   production?: AgentDetailsResponse['production'];
+  specialized_sources?: Array<string | {
+    id?: string;
+    name?: string;
+    source_name?: string;
+    apps?: number;
+    records?: number;
+    premium?: number;
+    total_annualPremium?: number;
+  }>;
+  specialized_types?: Array<string | {
+    id?: string;
+    name?: string;
+    type?: string;
+    product_type?: string;
+    product_name?: string;
+    apps?: number;
+    records?: number;
+    premium?: number;
+    total_annualPremium?: number;
+  }>;
   helped_agents?: Array<{
     agent_id?: string;
     id?: string;

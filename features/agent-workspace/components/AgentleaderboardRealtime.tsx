@@ -66,6 +66,9 @@ const getInitials = (name: string) => {
 
 type LeaderboardTimeframe = 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 
+const leaderboardModes: LeaderboardMode[] = ['agent', 'team', 'source', 'trainer'];
+const leaderboardTimeframes: LeaderboardTimeframe[] = ['today', 'weekly', 'monthly', 'yearly', 'custom'];
+
 const getLeaderboardTimestampRange = (
   timeframe: LeaderboardTimeframe,
   dateRange: { startDate: string; endDate: string }
@@ -296,12 +299,21 @@ type TrainerHelpedAgent = {
   premium: number;
 };
 
+type TrainerSpecialization = {
+  id: string;
+  name: string;
+  apps: number;
+  premium: number;
+};
+
 type TrainerSummaryStats = {
   trainer_id: string;
   trainer_name: string;
   trainer_profile_url?: string | null;
   agency: string;
   production: AgentDetailsResponse['production'];
+  specialized_sources: TrainerSpecialization[];
+  specialized_types: TrainerSpecialization[];
   helped_agents: TrainerHelpedAgent[];
 };
 
@@ -324,6 +336,22 @@ const getFullName = (value: any, fallback = 'Unknown') => {
   return value.trainer_name || value.agent_name || value.name || fullName || fallback;
 };
 
+const mapTrainerSpecializations = (items: any[], nameKeys: string[]): TrainerSpecialization[] => {
+  return items.map((item, index) => {
+    if (typeof item === 'string') {
+      return { id: item, name: item, apps: 0, premium: 0 };
+    }
+
+    const name = nameKeys.map(key => item?.[key]).find(Boolean) || item?.label || `Specialization ${index + 1}`;
+    return {
+      id: item?.id || item?.source_id || item?.type_id || name,
+      name,
+      apps: Number(item?.apps || item?.records || item?.total_records || 0),
+      premium: parseLeaderboardAmount(item?.premium ?? item?.total_annualPremium ?? item?.total_annual_premium),
+    };
+  }).filter((item) => item.name);
+};
+
 const mapTrainerDetails = (payload: TrainerDetailsResponse, fallback?: ArenaEntry): TrainerSummaryStats => {
   const root = (payload as any)?.data || (payload as any)?.item || payload || {};
   const trainer = root.trainer || root;
@@ -339,6 +367,8 @@ const mapTrainerDetails = (payload: TrainerDetailsResponse, fallback?: ArenaEntr
     trainer_profile_url: getProfileUrl(trainer.trainer_profile || trainer.profile || fallback?.agent_profile),
     agency: trainer.agency_name || trainer.agency || fallback?.agency || 'Trainer',
     production: root.production || emptyProduction,
+    specialized_sources: mapTrainerSpecializations(root.specialized_sources || root.specializedSources || [], ['source_name', 'name']),
+    specialized_types: mapTrainerSpecializations(root.specialized_types || root.specializedTypes || [], ['product_type', 'product_name', 'type', 'name']),
     helped_agents: helpedAgents.map((agent: any) => ({
       id: agent.agent_id || agent.id || '',
       name: getFullName(agent, 'Agent'),
@@ -512,6 +542,26 @@ const TrainerDetailContent: React.FC<{
     { label: 'MTD', accent: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20', data: stats.production.mtd },
     { label: 'This Year', accent: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', data: stats.production.this_year },
   ];
+  const hasSpecializations = stats.specialized_sources.length > 0 || stats.specialized_types.length > 0;
+  const renderSpecializationList = (items: TrainerSpecialization[], accentClass: string, emptyText: string) => (
+    items.length > 0 ? (
+      <div className="flex flex-wrap gap-2">
+        {items.map(item => (
+          <div key={item.id || item.name} className={`px-3 py-2 rounded-xl border ${isNightMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-100'}`}>
+            <p className={`text-[10px] font-black ${isNightMode ? 'text-white' : 'text-slate-800'}`}>{item.name}</p>
+            {(item.apps > 0 || item.premium > 0) && (
+              <div className="mt-1 flex items-center gap-2">
+                {item.apps > 0 && <span className={`text-[9px] font-bold ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.apps} apps</span>}
+                {item.premium > 0 && <span className={`text-[9px] font-black ${accentClass}`}>{fmtCompact(item.premium)}</span>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    ) : (
+      <p className={`text-xs font-bold ${isNightMode ? 'text-slate-600' : 'text-slate-400'}`}>{emptyText}</p>
+    )
+  );
 
   return (
     <div className="space-y-6">
@@ -551,6 +601,28 @@ const TrainerDetailContent: React.FC<{
           ))}
         </div>
       </section>
+
+      {hasSpecializations && (
+        <section className={`rounded-[2rem] border p-6 shadow-sm ${isNightMode ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-100'}`}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Share2 className="w-4 h-4 text-indigo-400" />
+                <h2 className={`text-xs font-black uppercase tracking-widest ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>Specialized Sources</h2>
+              </div>
+              {renderSpecializationList(stats.specialized_sources, isNightMode ? 'text-indigo-300' : 'text-indigo-600', 'No specialized sources yet')}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <Target className="w-4 h-4 text-emerald-400" />
+                <h2 className={`text-xs font-black uppercase tracking-widest ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>Specialized Types</h2>
+              </div>
+              {renderSpecializationList(stats.specialized_types, isNightMode ? 'text-emerald-300' : 'text-emerald-600', 'No specialized types yet')}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className={`rounded-[2rem] border p-6 shadow-sm ${isNightMode ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-100'}`}>
         <div className="flex items-center justify-between gap-4 mb-5">
@@ -596,10 +668,13 @@ const TrainerDetailContent: React.FC<{
 export const TrainerDetailPage: React.FC = () => {
   const { trainerId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [stats, setStats] = useState<TrainerSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isNightMode = localStorage.getItem('arena_theme') === 'night';
+  const arenaQuery = searchParams.toString();
+  const arenaBackUrl = arenaQuery ? `/leaderboard/realtime?${arenaQuery}` : '/leaderboard/realtime';
 
   useEffect(() => {
     if (!trainerId) {
@@ -623,7 +698,7 @@ export const TrainerDetailPage: React.FC = () => {
     <div className={`relative min-h-screen pb-12 ${isNightMode ? 'bg-black text-white' : 'text-slate-900'}`}>
       <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
         <button
-          onClick={() => navigate('/leaderboard/realtime')}
+          onClick={() => navigate(arenaBackUrl)}
           className={`inline-flex items-center gap-2 px-5 py-3 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all active:scale-95 ${
             isNightMode ? 'bg-slate-900 border-white/10 text-slate-300 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm'
           }`}
@@ -655,9 +730,10 @@ export const AgentleaderboardRealtime: React.FC = () => {
   const sourceId = searchParams.get('sourceId') || undefined;
   const sourceNameParam = searchParams.get('sourceName') || undefined;
   const teamId = searchParams.get('teamId') || undefined;
-  const _validTf = ['today', 'weekly', 'monthly', 'yearly', 'custom'] as const;
   const _tfParam = searchParams.get('timeframe') || '';
-  const initTimeframe = (_validTf as readonly string[]).includes(_tfParam) ? _tfParam as typeof _validTf[number] : 'today';
+  const _modeParam = searchParams.get('mode') || '';
+  const initTimeframe = leaderboardTimeframes.includes(_tfParam as LeaderboardTimeframe) ? _tfParam as LeaderboardTimeframe : 'today';
+  const initMode = leaderboardModes.includes(_modeParam as LeaderboardMode) ? _modeParam as LeaderboardMode : 'agent';
   const initStartDate = searchParams.get('startDate') || '';
   const initEndDate = searchParams.get('endDate') || '';
   const { latestSale } = useRealtime();
@@ -723,8 +799,8 @@ export const AgentleaderboardRealtime: React.FC = () => {
 
   // Integrated Leaderboard States
   const [unifiedData, setUnifiedData] = useState<ArenaEntry[]>([]);
-  const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>('agent');
-  const [timeframe, setTimeframe] = useState<'today' | 'weekly' | 'monthly' | 'yearly' | 'custom'>(initTimeframe);
+  const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>(initMode);
+  const [timeframe, setTimeframe] = useState<LeaderboardTimeframe>(initTimeframe);
   const [dateRange, setDateRange] = useState({ startDate: initStartDate, endDate: initEndDate });
   const [selectedTeamsFilter, setSelectedTeamsFilter] = useState<string[]>(teamId ? [teamId] : []);
   const [selectedAgentsFilter, setSelectedAgentsFilter] = useState<string[]>([]);
@@ -739,6 +815,18 @@ export const AgentleaderboardRealtime: React.FC = () => {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentDetailStats, setAgentDetailStats] = useState<AgentSummaryStats | null>(null);
   const [agentDetailLoading, setAgentDetailLoading] = useState(false);
+
+  const buildArenaQuery = useCallback((modeOverride?: LeaderboardMode) => {
+    const params = new URLSearchParams();
+    params.set('mode', modeOverride || leaderboardMode);
+    params.set('timeframe', timeframe);
+    if (dateRange.startDate) params.set('startDate', dateRange.startDate);
+    if (dateRange.endDate) params.set('endDate', dateRange.endDate);
+    if (selectedTeamsFilter[0]) params.set('teamId', selectedTeamsFilter[0]);
+    if (selectedSourceFilter) params.set('sourceId', selectedSourceFilter);
+    if (selectedSourceName) params.set('sourceName', selectedSourceName);
+    return params.toString();
+  }, [dateRange.endDate, dateRange.startDate, leaderboardMode, selectedSourceFilter, selectedSourceName, selectedTeamsFilter, timeframe]);
 
   useEffect(() => {
     if (!selectedAgentId) { setAgentDetailStats(null); return; }
@@ -1046,7 +1134,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
                         setSelectedSourceName(sourceName);
                         setLeaderboardMode('agent');
                      } else if (leaderboardMode === 'trainer') {
-                        navigate(`/leaderboard/trainer/${id}`);
+                        navigate(`/leaderboard/trainer/${id}?${buildArenaQuery('trainer')}`);
                      } else {
                         setSelectedAgentId(id);
                      }
