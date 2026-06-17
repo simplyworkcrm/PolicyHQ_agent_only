@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertCircle, Briefcase, Check, ChevronDown, ImagePlus, Mail, Phone, Search, Settings, User } from 'lucide-react';
+import { AlertCircle, Briefcase, Check, ChevronDown, ImagePlus, Mail, Phone, Search, Settings, ShieldCheck, User } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
-type SettingsTab = 'user' | 'agent';
+type SettingsTab = 'user' | 'agent' | 'carrier';
 type AgencyOption = {
   id: string;
   name: string;
@@ -226,7 +226,8 @@ const AppDropdown = ({
 export const SettingsPage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const location = useLocation();
-  const initialTab: SettingsTab = new URLSearchParams(location.search).get('tab') === 'agent' ? 'agent' : 'user';
+  const tabParam = new URLSearchParams(location.search).get('tab');
+  const initialTab: SettingsTab = tabParam === 'agent' || tabParam === 'carrier' ? tabParam : 'user';
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [savedAgentProfileId, setSavedAgentProfileId] = useState('');
   const currentAgentProfileId = savedAgentProfileId || user?.agentId || '';
@@ -258,7 +259,8 @@ export const SettingsPage: React.FC = () => {
   const [uplinesError, setUplinesError] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveTab(new URLSearchParams(location.search).get('tab') === 'agent' ? 'agent' : 'user');
+    const nextTab = new URLSearchParams(location.search).get('tab');
+    setActiveTab(nextTab === 'agent' || nextTab === 'carrier' ? nextTab : 'user');
   }, [location.search]);
 
   useEffect(() => {
@@ -366,7 +368,7 @@ export const SettingsPage: React.FC = () => {
     if (!agentFirstName.trim()) return 'First name is required.';
     if (!agentLastName.trim()) return 'Last name is required.';
     if (!selectedAgencyId) return 'Agency is required.';
-    if (!selectedUplineId) return 'Upline is required.';
+    if (!selectedUplineId) return 'Direct upline is required.';
     if (!agentNpn.trim()) return 'NPN is required.';
     if (!agentPhone.trim()) return 'Work phone is required.';
     if (!agentEmail.trim()) return 'Work email is required.';
@@ -491,6 +493,15 @@ export const SettingsPage: React.FC = () => {
           <Briefcase className="w-4 h-4" />
           Agent Settings
         </button>
+        <button
+          type="button"
+          disabled
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black text-slate-400 cursor-not-allowed opacity-70"
+        >
+          <ShieldCheck className="w-4 h-4" />
+          Carrier Settings
+          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">Soon</span>
+        </button>
       </div>
 
       {activeTab === 'user' ? (
@@ -511,6 +522,18 @@ export const SettingsPage: React.FC = () => {
             <FieldRow label="Display Name" value={user?.name} />
             <FieldRow label="Email" value={user?.email} />
             <FieldRow label="Phone" value={user?.phone} />
+          </div>
+        </section>
+      ) : activeTab === 'carrier' ? (
+        <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-slate-900">Carrier Settings</h2>
+              <p className="text-xs font-semibold text-slate-400">Coming soon.</p>
+            </div>
           </div>
         </section>
       ) : (
@@ -620,7 +643,7 @@ export const SettingsPage: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <AppDropdown
-                  label="Upline"
+                  label="Direct Upline"
                   placeholder={selectedAgencyId ? 'Select upline' : 'Select agency first'}
                   options={uplineDropdownOptions}
                   value={selectedUplineId}
