@@ -77,6 +77,35 @@ export interface AgentDetailsResponse {
   carrier: { name: string; apps: number; premium: number }[];
 }
 
+export interface TrainerDetailsResponse {
+  trainer?: {
+    id?: string;
+    trainer_id?: string;
+    first_name?: string;
+    last_name?: string;
+    name?: string;
+    trainer_name?: string;
+    agency_name?: string;
+    profile?: { url?: string } | null;
+    trainer_profile?: { url?: string } | null;
+  };
+  production?: AgentDetailsResponse['production'];
+  helped_agents?: Array<{
+    agent_id?: string;
+    id?: string;
+    agent_name?: string;
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+    agent_profile?: { url?: string } | null;
+    profile?: { url?: string } | null;
+    apps?: number;
+    records?: number;
+    premium?: number;
+    total_annualPremium?: number;
+  }>;
+}
+
 export const agentleaderboardRealtimeApi = {
   /**
    * Fetches detailed production breakdown for a single agent
@@ -240,6 +269,15 @@ export const agentleaderboardRealtimeApi = {
       console.warn("Trainer leaderboard endpoint failed.");
       return [];
     }
+    return response.json();
+  },
+
+  getTrainerDetails: async (trainerId: string): Promise<TrainerDetailsResponse> => {
+    const response = await fetch(`${TRAINER_API_BASE_URL}/leaderboard/trainer_details/${encodeURIComponent(trainerId)}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new ApiError('Failed to fetch trainer details', response.status);
     return response.json();
   },
 

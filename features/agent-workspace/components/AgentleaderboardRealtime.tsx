@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { 
   ChevronLeft, 
   Zap, 
@@ -26,7 +26,7 @@ import {
   Sun,
   Share2
 } from 'lucide-react';
-import { agentleaderboardRealtimeApi, ArenaEntry, SaleRecord, AgentDetailsResponse } from '../services/agentleaderboardRealtimeApi';
+import { agentleaderboardRealtimeApi, ArenaEntry, SaleRecord, AgentDetailsResponse, TrainerDetailsResponse } from '../services/agentleaderboardRealtimeApi';
 import { useRealtime } from '../../../context/RealtimeContext';
 import { LeaderboardControls, LeaderboardMode } from './LeaderboardControls';
 import { AgentComparisonView } from './AgentComparisonView';
@@ -45,6 +45,12 @@ const formatCurrency = (val: number) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(val || 0);
+};
+
+const parseLeaderboardAmount = (value: unknown) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return Number(value.replace(/[^0-9.-]/g, '')) || 0;
+  return 0;
 };
 
 const getInitials = (name: string) => {
@@ -282,6 +288,67 @@ export interface AgentSummaryStats {
   carrier: AgentDetailsResponse['carrier'];
 }
 
+type TrainerHelpedAgent = {
+  id: string;
+  name: string;
+  profileUrl?: string | null;
+  apps: number;
+  premium: number;
+};
+
+type TrainerSummaryStats = {
+  trainer_id: string;
+  trainer_name: string;
+  trainer_profile_url?: string | null;
+  agency: string;
+  production: AgentDetailsResponse['production'];
+  helped_agents: TrainerHelpedAgent[];
+};
+
+const emptyProduction: AgentDetailsResponse['production'] = {
+  today: { premium: 0, apps: 0 },
+  this_week: { premium: 0, apps: 0 },
+  mtd: { premium: 0, apps: 0 },
+  this_year: { premium: 0, apps: 0 },
+};
+
+const getProfileUrl = (value: any): string | null => {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  return value.url || null;
+};
+
+const getFullName = (value: any, fallback = 'Unknown') => {
+  if (!value) return fallback;
+  const fullName = [value.first_name || value.firstName, value.last_name || value.lastName].filter(Boolean).join(' ');
+  return value.trainer_name || value.agent_name || value.name || fullName || fallback;
+};
+
+const mapTrainerDetails = (payload: TrainerDetailsResponse, fallback?: ArenaEntry): TrainerSummaryStats => {
+  const root = (payload as any)?.data || (payload as any)?.item || payload || {};
+  const trainer = root.trainer || root;
+  const helpedAgents = Array.isArray(root.helped_agents)
+    ? root.helped_agents
+    : Array.isArray(root.helpedAgents)
+      ? root.helpedAgents
+      : [];
+
+  return {
+    trainer_id: trainer.trainer_id || trainer.id || fallback?.agent_id || '',
+    trainer_name: getFullName(trainer, fallback?.agent_name || 'Trainer'),
+    trainer_profile_url: getProfileUrl(trainer.trainer_profile || trainer.profile || fallback?.agent_profile),
+    agency: trainer.agency_name || trainer.agency || fallback?.agency || 'Trainer',
+    production: root.production || emptyProduction,
+    helped_agents: helpedAgents.map((agent: any) => ({
+      id: agent.agent_id || agent.id || '',
+      name: getFullName(agent, 'Agent'),
+      profileUrl: getProfileUrl(agent.agent_profile || agent.profile),
+      apps: Number(agent.apps || agent.records || agent.total_records || 0),
+      premium: Number(agent.premium || agent.total_annualPremium || agent.total_annual_premium || 0),
+    })).filter((agent: TrainerHelpedAgent) => agent.id || agent.name),
+  };
+};
+
 export const AgentSummaryPopup: React.FC<{
   stats: AgentSummaryStats;
   isNightMode: boolean;
@@ -427,6 +494,156 @@ export const AgentSummaryPopup: React.FC<{
             Dismiss
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const TrainerDetailContent: React.FC<{
+  stats: TrainerSummaryStats;
+  isNightMode: boolean;
+}> = ({ stats, isNightMode }) => {
+  const fmtCompact = (v: number) =>
+    new Intl.NumberFormat('en-US', { notation: 'compact', style: 'currency', currency: 'USD', maximumFractionDigits: 1 }).format(v || 0);
+  const maxAgentPremium = stats.helped_agents.length > 0 ? Math.max(...stats.helped_agents.map(agent => agent.premium)) : 1;
+  const bands = [
+    { label: 'Today', accent: 'text-brand-400', bg: 'bg-brand-500/10 border-brand-500/20', data: stats.production.today },
+    { label: 'This Week', accent: 'text-sky-400', bg: 'bg-sky-500/10 border-sky-500/20', data: stats.production.this_week },
+    { label: 'MTD', accent: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20', data: stats.production.mtd },
+    { label: 'This Year', accent: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', data: stats.production.this_year },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <section className={`rounded-[2rem] overflow-hidden border shadow-sm ${isNightMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-100'}`}>
+        <div className="p-8 bg-slate-950 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/10 rounded-full blur-[110px] -translate-y-1/2 translate-x-1/2" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-6">
+            <div className="w-24 h-24 rounded-[2rem] bg-white border-4 border-slate-800 shadow-2xl overflow-hidden flex items-center justify-center ring-4 ring-brand-500/20 shrink-0">
+              {stats.trainer_profile_url
+                ? <img src={stats.trainer_profile_url} className="w-full h-full object-cover" alt="Trainer profile" />
+                : <span className="text-4xl font-black text-slate-900">{getInitials(stats.trainer_name)}</span>}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black text-brand-400 uppercase tracking-[0.25em] mb-2">Trainer Detail</p>
+              <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-3">{stats.trainer_name}</h1>
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-slate-400" />
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em] truncate">{stats.agency}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={`rounded-[2rem] border p-6 shadow-sm ${isNightMode ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-center gap-2 mb-5">
+          <Zap className="w-4 h-4 text-brand-500 fill-brand-500" />
+          <h2 className={`text-xs font-black uppercase tracking-widest ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>Trainer Production</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {bands.map(({ label, accent, bg, data }) => (
+            <div key={label} className={`p-5 rounded-2xl border ${bg} flex flex-col gap-2`}>
+              <p className={`text-[9px] font-black uppercase tracking-widest ${accent}`}>{label}</p>
+              <p className={`text-2xl font-black tracking-tighter ${isNightMode ? 'text-white' : 'text-slate-900'}`}>{fmtCompact(data?.premium || 0)}</p>
+              <p className={`text-[10px] font-bold ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>{data?.apps || 0} app{data?.apps !== 1 ? 's' : ''}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={`rounded-[2rem] border p-6 shadow-sm ${isNightMode ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-center justify-between gap-4 mb-5">
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4 text-indigo-400" />
+            <h2 className={`text-xs font-black uppercase tracking-widest ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>Helped Agents</h2>
+          </div>
+          <span className={`text-[10px] font-black uppercase tracking-widest ${isNightMode ? 'text-slate-600' : 'text-slate-300'}`}>{stats.helped_agents.length} total</span>
+        </div>
+
+        {stats.helped_agents.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {stats.helped_agents.map(agent => (
+              <div key={agent.id || agent.name} className={`p-4 rounded-2xl border flex items-center gap-4 ${isNightMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
+                <div className={`w-11 h-11 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center ${isNightMode ? 'bg-slate-800 text-slate-500' : 'bg-white text-slate-400'}`}>
+                  {agent.profileUrl ? <img src={agent.profileUrl} className="w-full h-full object-cover" alt={agent.name} /> : <span className="text-[10px] font-black">{getInitials(agent.name)}</span>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className={`text-sm font-black truncate ${isNightMode ? 'text-white' : 'text-slate-800'}`}>{agent.name}</p>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`text-[10px] font-bold ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>{agent.apps} apps</span>
+                      <span className={`text-xs font-black ${isNightMode ? 'text-indigo-300' : 'text-indigo-600'}`}>{fmtCompact(agent.premium)}</span>
+                    </div>
+                  </div>
+                  <div className={`w-full h-1.5 rounded-full ${isNightMode ? 'bg-white/10' : 'bg-slate-200'} overflow-hidden`}>
+                    <div className="h-full rounded-full bg-indigo-500 transition-all duration-700" style={{ width: `${Math.min((agent.premium / maxAgentPremium) * 100, 100)}%` }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={`rounded-2xl border p-10 text-center ${isNightMode ? 'bg-white/5 border-white/5 text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+            <p className="text-xs font-black uppercase tracking-widest">No helped agents yet</p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+};
+
+export const TrainerDetailPage: React.FC = () => {
+  const { trainerId } = useParams();
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<TrainerSummaryStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const isNightMode = localStorage.getItem('arena_theme') === 'night';
+
+  useEffect(() => {
+    if (!trainerId) {
+      setError('Trainer id is missing.');
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    agentleaderboardRealtimeApi.getTrainerDetails(trainerId)
+      .then(res => setStats(mapTrainerDetails(res)))
+      .catch((err) => {
+        console.error('Trainer detail fetch failed:', err);
+        setError('Unable to load trainer details.');
+      })
+      .finally(() => setLoading(false));
+  }, [trainerId]);
+
+  return (
+    <div className={`relative min-h-screen pb-12 ${isNightMode ? 'bg-black text-white' : 'text-slate-900'}`}>
+      <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
+        <button
+          onClick={() => navigate('/leaderboard/realtime')}
+          className={`inline-flex items-center gap-2 px-5 py-3 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all active:scale-95 ${
+            isNightMode ? 'bg-slate-900 border-white/10 text-slate-300 hover:text-white' : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900 shadow-sm'
+          }`}
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Back to Arena
+        </button>
+
+        {loading ? (
+          <div className={`rounded-[2rem] border p-16 flex flex-col items-center justify-center ${isNightMode ? 'bg-slate-900/60 border-white/10' : 'bg-white border-slate-100'}`}>
+            <Loader2 className="w-8 h-8 animate-spin text-brand-500 mb-4" />
+            <p className={`text-xs font-black uppercase tracking-widest ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Loading trainer details...</p>
+          </div>
+        ) : error ? (
+          <div className={`rounded-[2rem] border p-10 ${isNightMode ? 'bg-slate-900/60 border-white/10 text-slate-300' : 'bg-white border-slate-100 text-slate-600'}`}>
+            <p className="text-sm font-black">{error}</p>
+          </div>
+        ) : stats ? (
+          <TrainerDetailContent stats={stats} isNightMode={isNightMode} />
+        ) : null}
       </div>
     </div>
   );
@@ -675,11 +892,13 @@ export const AgentleaderboardRealtime: React.FC = () => {
         finalUnifiedData = trainerData.map((trainer: any) => ({
           agent_id: trainer.trainer_id || trainer.agent_id || trainer.id,
           agent_name: trainer.trainer_name || trainer.agent_name || trainer.name || [trainer.first_name, trainer.last_name].filter(Boolean).join(' '),
-          total_annualPremium: trainer.total_annualPremium || trainer.total_annual_premium || trainer.premium || 0,
+          total_annualPremium: parseLeaderboardAmount(trainer.total_annualPremium ?? trainer.total_annual_premium ?? trainer.premium),
           records: trainer.records || trainer.apps || trainer.total_records || 0,
           agency: trainer.agency || trainer.agency_name || 'Trainer',
           agent_profile: trainer.trainer_profile || trainer.agent_profile || trainer.profile || null
-        })).filter((trainer: ArenaEntry) => trainer.agent_id);
+        }))
+          .filter((trainer: ArenaEntry) => trainer.agent_id)
+          .sort((a: ArenaEntry, b: ArenaEntry) => b.total_annualPremium - a.total_annualPremium);
       }
       setUnifiedData(finalUnifiedData);
 
@@ -719,7 +938,6 @@ export const AgentleaderboardRealtime: React.FC = () => {
         {selectedAgentId && agentDetailStats && !agentDetailLoading && (
           <AgentSummaryPopup stats={agentDetailStats} isNightMode={isNightMode} onClose={() => { setSelectedAgentId(null); setAgentDetailStats(null); }} />
         )}
-
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-1">
           <div className="flex items-center gap-6">
             <div>
@@ -828,7 +1046,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
                         setSelectedSourceName(sourceName);
                         setLeaderboardMode('agent');
                      } else if (leaderboardMode === 'trainer') {
-                        return;
+                        navigate(`/leaderboard/trainer/${id}`);
                      } else {
                         setSelectedAgentId(id);
                      }

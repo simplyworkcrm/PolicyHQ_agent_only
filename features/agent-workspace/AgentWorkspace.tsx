@@ -30,7 +30,7 @@ import { AgentSplits } from './components/AgentSplits';
 import { AgentDebtRecovery } from './components/AgentDebtRecovery';
 import { AgentDownlines } from './components/AgentDownlines';
 import { AgentTickets } from './components/AgentTickets';
-import { AgentleaderboardRealtime } from './components/AgentleaderboardRealtime';
+import { AgentleaderboardRealtime, TrainerDetailPage } from './components/AgentleaderboardRealtime';
 import { CallReportPolicytek } from './components/CallReportPolicytek';
 import { CallReportWavv } from './components/CallReportWavv';
 import { CallReportCallx } from './components/CallReportCallx';
@@ -495,6 +495,7 @@ const AgentLayout: React.FC = () => {
                 <Routes>
                   <Route path="/" element={<AgentOverview />} />
                   <Route path="/leaderboard/realtime" element={<AgentleaderboardRealtime />} />
+                  <Route path="/leaderboard/trainer/:trainerId" element={<TrainerDetailPage />} />
                   <Route path="/call-report/policytek" element={<CallReportPolicytek />} />
                   <Route path="/call-report/wavv" element={<CallReportWavv />} />
                   <Route path="/call-report/callx" element={<CallReportCallx />} />
