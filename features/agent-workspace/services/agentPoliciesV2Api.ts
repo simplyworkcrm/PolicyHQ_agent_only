@@ -23,6 +23,7 @@ export interface PolicyV2 {
   carrier: string;
   status: string;
   paid_status: string | null;
+  paid_status_id?: string | null;
   agent_id: string;
   agent_name: string;
   source_name: string;
@@ -58,6 +59,12 @@ interface RawPolicyV2 {
   ref_carrier_name: string | null;
   ref_policyStatus_name: string | null;
   meta_policy_paidstatus_name: string | null;
+  meta_policy_paidstatus_id?: string | null;
+  meta_policy_paidStatus_id?: string | null;
+  meta_policy_paidStatus_name?: string | null;
+  meta_policy_paidstatus?: string | null;
+  meta_policy_paidStatus?: string | null;
+  policy_paid_status?: string | null;
 }
 
 interface RawPoliciesV2Response extends Omit<PoliciesV2Response, 'items'> {
@@ -102,6 +109,8 @@ export interface PoliciesV2Stats {
   issued_placed_premium: number;
   active_inForce: number;
   active_inForce_premium: number;
+  failed_inforce: number;
+  failed_inforce_premium: number;
   need_attention: number;
   need_attention_premium: number;
 }
@@ -151,6 +160,32 @@ const normalizeMetaOptions = (data: unknown, fallbackLabel: string): PolicyFilte
     .filter((item: PolicyFilterOption) => item.id)
 );
 
+const pickFirstString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === 'string') return value;
+  }
+  return null;
+};
+
+const getPaidStatusLabel = (policy: RawPolicyV2): string | null => pickFirstString(
+  policy.meta_policy_paidstatus_name,
+  policy.meta_policy_paidStatus_name,
+  (policy.meta_policy_paidstatus as unknown as { name?: string | null })?.name,
+  (policy.meta_policy_paidStatus as unknown as { name?: string | null })?.name,
+  policy.meta_policy_paidstatus,
+  policy.meta_policy_paidStatus,
+  policy.policy_paidStatus,
+  policy.policy_paid_status,
+);
+
+const getPaidStatusId = (policy: RawPolicyV2): string | null => (
+  policy.meta_policy_paidstatus_id
+  || policy.meta_policy_paidStatus_id
+  || ((policy.meta_policy_paidstatus as unknown as { id?: string | null })?.id ?? null)
+  || ((policy.meta_policy_paidStatus as unknown as { id?: string | null })?.id ?? null)
+  || null
+);
+
 export const agentPoliciesV2Api = {
   async getPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {
     const response = await fetch(POLICIES_API_URL, {
@@ -188,7 +223,8 @@ export const agentPoliciesV2Api = {
         isLocked: policy.isLocked,
         carrier: policy.ref_carrier_name || '—',
         status: policy.ref_policyStatus_name || policy.policy_status || '—',
-        paid_status: policy.meta_policy_paidstatus_name || policy.policy_paidStatus || null,
+        paid_status: getPaidStatusLabel(policy),
+        paid_status_id: getPaidStatusId(policy),
         agent_id: policy.ref_agent_owner,
         agent_name: policy.ref_agent_owner_name,
         source_name: policy.ref_metacontactsource_name,

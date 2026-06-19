@@ -6,33 +6,21 @@ import {
   Filter, 
   ChevronRight, 
   Loader2, 
-  Award, 
-  TrendingUp,
   FileText,
   Calendar,
   CheckCircle,
   ChevronDown,
   ChevronLeft,
-  Lock
+  Lock,
+  Building2,
+  Phone,
+  Hash
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
-import { agentDownlineApi } from '../services/agentDownlineApi';
+import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
 import { agentPoliciesApi } from '../services/agentPoliciesApi';
 import { Policy } from '../../../shared/types/index';
-
-interface HierarchyItem {
-  agent_id: string;
-  first_name: string;
-  last_name: string;
-  directDownline_count: number;
-}
-
-interface HierarchyResponse {
-  id: string;
-  first_name: string;
-  last_name: string;
-  direct_downlines: HierarchyItem[];
-}
 
 interface DateRange {
     start: number;
@@ -96,6 +84,10 @@ const getStatusStyles = (status: string) => {
 };
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const getInitials = (firstName?: string, lastName?: string) => {
+    return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || 'AG';
+};
 
 // --- COMPONENTS ---
 
@@ -247,126 +239,13 @@ const DateRangeSelector: React.FC<{
     );
 };
 
-// Recursive Component for Tree
-const AgentHierarchyNode: React.FC<{ 
-  agent: HierarchyItem, 
-  onSelect: (agent: HierarchyItem) => void,
-  selectedId: string,
-  depth?: number 
-}> = ({ agent, onSelect, selectedId, depth = 0 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [children, setChildren] = useState<HierarchyItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const hasChildren = agent.directDownline_count > 0;
-  const isSelected = agent.agent_id === selectedId;
-
-  const handleToggle = async (e: React.MouseEvent) => {
-    e.stopPropagation(); 
-    if (isExpanded) {
-      setIsExpanded(false);
-      return;
-    }
-    setIsExpanded(true);
-    if (children.length === 0 && hasChildren) {
-      setIsLoading(true);
-      try {
-        const data = await agentDownlineApi.getHierarchy(agent.agent_id);
-        if (data && data.direct_downlines) {
-          setChildren(data.direct_downlines);
-        }
-      } catch (error) {
-        console.error("Failed to fetch sub-hierarchy", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  return (
-    <div className="select-none">
-      <div 
-        onClick={() => onSelect(agent)}
-        className={`
-          flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all group relative my-1
-          ${isSelected 
-            ? 'bg-slate-900 shadow-lg shadow-slate-900/10' 
-            : 'hover:bg-slate-50'
-          }
-        `}
-        style={{ marginLeft: `${depth * 16}px` }}
-      >
-        {depth > 0 && (
-           <div className="absolute left-0 top-0 bottom-0 border-l-2 border-slate-100 ml-[-8px]" style={{ height: '100%' }}></div>
-        )}
-
-        <div 
-          onClick={handleToggle}
-          className={`
-            w-6 h-6 flex items-center justify-center rounded-lg transition-colors 
-            ${hasChildren ? 'hover:bg-white/20 cursor-pointer' : 'opacity-20 pointer-events-none'}
-            ${isSelected ? 'text-white' : 'text-slate-400'}
-          `}
-        >
-          {isLoading ? (
-            <Loader2 className={`w-3.5 h-3.5 animate-spin ${isSelected ? 'text-brand-400' : 'text-brand-500'}`} />
-          ) : (
-            <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
-          )}
-        </div>
-
-        <div className={`
-            w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold shadow-sm shrink-0 transition-colors
-            ${isSelected ? 'bg-gradient-to-br from-brand-400 to-brand-600 text-white' : 'bg-white border border-slate-100 text-slate-500'}
-        `}>
-            {agent.first_name[0]}{agent.last_name[0]}
-        </div>
-
-        <div className="flex-1 min-w-0">
-            <p className={`text-sm font-bold truncate transition-colors ${isSelected ? 'text-white' : 'text-slate-800'}`}>
-                {agent.first_name} {agent.last_name}
-            </p>
-            {agent.directDownline_count > 0 && (
-              <p className={`text-[10px] font-bold uppercase tracking-wide ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>
-                  {agent.directDownline_count} Agents
-              </p>
-            )}
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="animate-in slide-in-from-top-2 fade-in duration-200 overflow-hidden">
-          {children.length > 0 ? (
-            children.map(child => (
-              <AgentHierarchyNode 
-                key={child.agent_id} 
-                agent={child} 
-                onSelect={onSelect}
-                selectedId={selectedId}
-                depth={depth + 1}
-              />
-            ))
-          ) : (
-             !isLoading && hasChildren && (
-               <div className="py-2 pl-12 text-[10px] text-slate-400 italic" style={{ marginLeft: `${depth * 16}px` }}>No active agents found</div>
-             )
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
 export const AgentDownlines: React.FC = () => {
-  const { currentAgentId, hasAgentProfile } = useAgentContext();
-  
-  // Sidebar State (Root Tree)
-  const [rootHierarchy, setRootHierarchy] = useState<HierarchyResponse | null>(null);
-  const [loadingRoot, setLoadingRoot] = useState(false);
-  const [sidebarSearch, setSidebarSearch] = useState('');
+  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName, hasAgentProfile } = useAgentContext();
+  const navigate = useNavigate();
 
   // Main View State
   const [selectedAgentId, setSelectedAgentId] = useState<string>(currentAgentId);
-  const [selectedHierarchyData, setSelectedHierarchyData] = useState<HierarchyResponse | null>(null);
+  const [selectedHierarchyData, setSelectedHierarchyData] = useState<DownlineHierarchy | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   
   // Tabs & Views
@@ -380,19 +259,15 @@ export const AgentDownlines: React.FC = () => {
   // Table Filtering
   const [tableSearch, setTableSearch] = useState('');
 
-  // 1. Initial Load (Root & Selection)
+  // 1. Keep the direct-downline request scoped to one selected agent.
   useEffect(() => {
-    if (currentAgentId) {
-      setLoadingRoot(true);
-      agentDownlineApi.getHierarchy(currentAgentId)
-        .then(data => {
-            setRootHierarchy(data);
-            setSelectedAgentId(data.id); // Default to root
-        })
-        .catch(err => console.error(err))
-        .finally(() => setLoadingRoot(false));
+    const scopeIds = selectedAgentIds.filter(Boolean);
+    const nextSelectedId = scopeIds.includes(selectedAgentId) ? selectedAgentId : (scopeIds[0] || currentAgentId);
+    if (nextSelectedId && nextSelectedId !== selectedAgentId) {
+      setSelectedAgentId(nextSelectedId);
+      setTableSearch('');
     }
-  }, [currentAgentId]);
+  }, [currentAgentId, selectedAgentId, selectedAgentIds]);
 
   // 2. Fetch Selected Agent Hierarchy Data
   useEffect(() => {
@@ -416,18 +291,6 @@ export const AgentDownlines: React.FC = () => {
     }
   }, [selectedAgentId, dateRange, viewMode]);
 
-  const handleAgentSelect = (agent: HierarchyItem) => {
-      setSelectedAgentId(agent.agent_id);
-      setTableSearch(''); 
-  };
-
-  const handleRootSelect = () => {
-      if (rootHierarchy) {
-          setSelectedAgentId(rootHierarchy.id);
-          setTableSearch('');
-      }
-  };
-
   if (!hasAgentProfile) {
     return (
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-8 flex flex-col items-center justify-center min-h-[400px] text-center">
@@ -442,165 +305,48 @@ export const AgentDownlines: React.FC = () => {
     );
   }
 
-  // Filter Sidebar Root Agents
-  const filteredRootAgents = rootHierarchy?.direct_downlines?.filter(agent => {
-      const search = sidebarSearch.toLowerCase();
-      return agent.first_name.toLowerCase().includes(search) || agent.last_name.toLowerCase().includes(search);
+  // Filter Table Agents (from selectedHierarchyData)
+  const tableAgents = selectedHierarchyData?.direct_downlines?.filter(a => {
+    const search = tableSearch.toLowerCase();
+    return [
+      a.first_name,
+      a.last_name,
+      a.ref_ffl_agency_name,
+      a.phone,
+      a.npn,
+    ].some(value => String(value || '').toLowerCase().includes(search));
   }) || [];
 
-  // Filter Table Agents (from selectedHierarchyData)
-  const tableAgents = selectedHierarchyData?.direct_downlines?.filter(a => 
-    a.first_name.toLowerCase().includes(tableSearch.toLowerCase()) || 
-    a.last_name.toLowerCase().includes(tableSearch.toLowerCase())
-  ) || [];
+  const agentSwitchOptions = (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
+    .filter(Boolean)
+    .filter((agentId, index, all) => all.indexOf(agentId) === index)
+    .map(agentId => {
+      const subAgent = subAgents.find(agent => agent.agentId === agentId);
+      const isCurrentSingleView = agentId === currentAgentId && selectedAgentIds.length <= 1;
+      return {
+        id: agentId,
+        label: subAgent?.name || (isCurrentSingleView ? viewingAgentName : agentId),
+      };
+    });
+
+  const selectedAgentLabel = agentSwitchOptions.find(agent => agent.id === selectedAgentId)?.label
+    || `${selectedHierarchyData?.first_name || ''} ${selectedHierarchyData?.last_name || ''}`.trim()
+    || 'Selected Agent';
 
   return (
-    <div className="flex flex-col xl:flex-row gap-8 items-start font-sans">
-       
-       {/* LEFT: Organization Sidebar (Wider: 1/3) */}
-       <div className="w-full xl:w-96 flex-shrink-0 xl:sticky xl:top-24 space-y-6">
-          <div className="bg-white rounded-[2.5rem] p-6 shadow-[0_4px_30px_-4px_rgba(0,0,0,0.02)] border border-slate-100 min-h-[600px] flex flex-col">
-             <div className="flex items-center justify-between mb-6 px-2">
-                <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-widest">Team Structure</h3>
-                {rootHierarchy && (
-                    <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-lg text-[10px] font-bold">
-                        {rootHierarchy.direct_downlines.length} Agents
-                    </span>
-                )}
-             </div>
-
-             <div className="relative mb-6">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="Search tree..." 
-                    value={sidebarSearch}
-                    onChange={(e) => setSidebarSearch(e.target.value)}
-                    className="w-full pl-11 pr-4 py-4 bg-slate-50 border-none rounded-[1.25rem] text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all placeholder:text-slate-400 text-slate-800"
-                  />
-              </div>
-
-              {loadingRoot ? (
-                <div className="flex items-center justify-center py-10 text-slate-400">
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto -mx-2 px-2 scrollbar-hide">
-                    {/* Active Item (Unit Leader / Current View) */}
-                    {rootHierarchy && (
-                         <div 
-                           onClick={handleRootSelect}
-                           className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transform transition-all mb-3
-                             ${selectedAgentId === rootHierarchy.id 
-                               ? 'bg-slate-900 shadow-xl shadow-slate-900/20 scale-[1.02]' 
-                               : 'bg-white border border-slate-100 shadow-sm hover:border-slate-200'
-                             }
-                           `}
-                         >
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold shadow-inner shrink-0
-                                ${selectedAgentId === rootHierarchy.id ? 'bg-gradient-to-br from-brand-400 to-brand-600 text-white' : 'bg-slate-50 text-slate-500'}
-                            `}>
-                                {rootHierarchy.first_name[0]}{rootHierarchy.last_name[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-bold truncate ${selectedAgentId === rootHierarchy.id ? 'text-white' : 'text-slate-900'}`}>
-                                    {rootHierarchy.first_name} {rootHierarchy.last_name}
-                                </p>
-                                <p className={`text-[10px] font-bold uppercase tracking-wide ${selectedAgentId === rootHierarchy.id ? 'text-slate-400' : 'text-slate-400'}`}>
-                                    Unit Leader
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Recursive Tree List */}
-                    {filteredRootAgents.length > 0 ? (
-                        filteredRootAgents.map((agent) => (
-                          <AgentHierarchyNode 
-                            key={agent.agent_id}
-                            agent={agent}
-                            onSelect={handleAgentSelect}
-                            selectedId={selectedAgentId}
-                          />
-                        ))
-                    ) : (
-                        <div className="text-center py-8 text-xs text-slate-400 font-medium">
-                            {sidebarSearch ? 'No agents found' : 'No direct reports'}
-                        </div>
-                    )}
-                </div>
-              )}
-          </div>
-
-          <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-slate-900/20 relative overflow-hidden group">
-             {/* Gradient Orb */}
-             <div className="absolute top-0 right-0 w-48 h-48 bg-brand-500/20 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/2 pointer-events-none group-hover:bg-brand-500/30 transition-colors duration-500"></div>
-             
-             <div className="relative z-10">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-md border border-white/10">
-                       <TrendingUp className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                        <h4 className="font-bold text-lg leading-tight">Monthly Goal</h4>
-                        <p className="text-slate-400 text-xs font-medium">October Target</p>
-                    </div>
-                </div>
-                
-                <div className="flex items-end gap-2 mb-2">
-                    <span className="text-3xl font-black">82%</span>
-                    <span className="text-sm text-brand-400 font-bold mb-1">On Track</span>
-                </div>
-                
-                <div className="w-full bg-slate-800 rounded-full h-2 mb-2 overflow-hidden">
-                   <div className="bg-gradient-to-r from-brand-400 to-brand-600 h-full rounded-full w-[82%] shadow-[0_0_10px_rgba(245,158,11,0.5)]"></div>
-                </div>
-             </div>
-          </div>
-       </div>
-
-       {/* RIGHT: Main Content */}
-       <div className="flex-1 w-full space-y-8">
-          {/* Header Stats for Selected Agent */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5 hover:shadow-lg transition-all group">
-                <div className="w-14 h-14 bg-brand-50 text-brand-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Users className="w-7 h-7" strokeWidth={2.5} />
-                </div>
-                <div>
-                    <h3 className="text-3xl font-black text-slate-900">{selectedHierarchyData?.direct_downlines?.length || 0}</h3>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mt-1">Total Team</p>
-                </div>
-              </div>
-              
-              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5 hover:shadow-lg transition-all group">
-                <div className="w-14 h-14 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Award className="w-7 h-7" strokeWidth={2.5} />
-                </div>
-                <div>
-                    <h3 className="text-3xl font-black text-slate-900">{selectedHierarchyData?.direct_downlines?.length || 0}</h3>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mt-1">Direct Agents</p>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-5 hover:shadow-lg transition-all group">
-                <div className="w-14 h-14 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <TrendingUp className="w-7 h-7" strokeWidth={2.5} />
-                </div>
-                <div>
-                    <h3 className="text-3xl font-black text-slate-900">--</h3>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mt-1">Active Writers</p>
-                </div>
-              </div>
-          </div>
-
+    <div className="font-sans w-full">
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-8 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                       {selectedHierarchyData?.first_name} {selectedHierarchyData?.last_name}
-                    </h2>
-                    <div className="flex gap-1 p-1 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="p-6 border-b border-slate-50 flex flex-col gap-5">
+                <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Downline Scope</p>
+                        <h2 className="text-2xl font-black text-slate-900 tracking-tight truncate">{selectedAgentLabel}</h2>
+                        <p className="text-xs font-semibold text-slate-400 mt-1">
+                          Direct downlines are loaded one agent at a time.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-1 p-1 bg-slate-50 rounded-xl border border-slate-100 shrink-0">
                          <button 
                             onClick={() => setViewMode('team')}
                             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'team' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
@@ -615,6 +361,52 @@ export const AgentDownlines: React.FC = () => {
                          </button>
                     </div>
                 </div>
+
+                {agentSwitchOptions.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {agentSwitchOptions.map(agent => {
+                      const active = agent.id === selectedAgentId;
+                      return (
+                        <button
+                          key={agent.id}
+                          onClick={() => {
+                            setSelectedAgentId(agent.id);
+                            setTableSearch('');
+                            setPolicies([]);
+                          }}
+                          className={`shrink-0 px-4 py-2.5 rounded-2xl text-xs font-black border transition-all ${
+                            active
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-900/10'
+                              : 'bg-white text-slate-500 border-slate-200 hover:text-slate-900 hover:border-slate-300'
+                          }`}
+                        >
+                          {agent.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {!agentSwitchOptions.some(agent => agent.id === selectedAgentId) && (
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <div>
+                      <p className="text-xs font-black text-amber-900">Viewing direct downline profile</p>
+                      <p className="text-[11px] font-semibold text-amber-700">Use a workspace tab to return to your selected agents.</p>
+                    </div>
+                    {agentSwitchOptions[0] && (
+                      <button
+                        onClick={() => {
+                          setSelectedAgentId(agentSwitchOptions[0].id);
+                          setTableSearch('');
+                          setPolicies([]);
+                        }}
+                        className="shrink-0 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition-colors"
+                      >
+                        Back to {agentSwitchOptions[0].label}
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {viewMode === 'team' ? (
                      <div className="flex items-center gap-3">
@@ -644,8 +436,10 @@ export const AgentDownlines: React.FC = () => {
                     <thead>
                       <tr className="text-slate-400 border-b border-slate-100/50">
                         <th className="py-5 pl-8 text-[10px] font-bold uppercase tracking-widest text-slate-400">Agent Name</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Agent ID</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Recruits</th>
+                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Agency</th>
+                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Phone</th>
+                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">NPN</th>
+                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Direct Downlines</th>
                         <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
                         <th className="py-5 px-4 w-10"></th>
                       </tr>
@@ -653,7 +447,7 @@ export const AgentDownlines: React.FC = () => {
                     <tbody className="divide-y divide-slate-50">
                       {loadingSelected ? (
                         <tr>
-                          <td colSpan={5} className="py-12 text-center">
+                          <td colSpan={7} className="py-12 text-center">
                               <div className="flex items-center justify-center gap-2 text-slate-400">
                                 <Loader2 className="w-5 h-5 animate-spin" />
                                 <span className="text-sm font-bold">Loading details...</span>
@@ -661,23 +455,46 @@ export const AgentDownlines: React.FC = () => {
                           </td>
                         </tr>
                       ) : tableAgents.length > 0 ? (
-                        tableAgents.map((agent) => (
-                          <tr key={agent.agent_id} className="hover:bg-slate-50/50 transition-colors group">
+                        tableAgents.map((agent: DownlineAgent) => (
+                          <tr
+                            key={agent.agent_id}
+                            onClick={() => {
+                              navigate(`/downlines/${agent.agent_id}`, { state: { agent } });
+                            }}
+                            className="hover:bg-slate-50/70 transition-colors group cursor-pointer"
+                          >
                             <td className="py-5 pl-8">
                               <div className="flex items-center gap-4">
-                                  <div className="w-10 h-10 rounded-[10px] bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-200">
-                                    {agent.first_name[0]}{agent.last_name[0]}
+                                  <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500 font-black text-xs border border-slate-200 overflow-hidden shrink-0">
+                                    {agent.profile_url ? (
+                                      <img src={agent.profile_url} alt={`${agent.first_name} ${agent.last_name}`} className="h-full w-full object-cover" />
+                                    ) : (
+                                      getInitials(agent.first_name, agent.last_name)
+                                    )}
                                   </div>
                                   <div>
                                     <p className="font-bold text-slate-900 text-sm">{agent.first_name} {agent.last_name}</p>
-                                    <p className="text-xs text-slate-400 font-medium">Licensed Agent</p>
+                                    <p className="text-xs text-slate-400 font-medium">View profile and direct downlines</p>
                                   </div>
                               </div>
                             </td>
                             <td className="py-5 px-4">
-                              <span className="font-mono text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
-                                {agent.agent_id}
-                              </span>
+                              <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                                <Building2 className="w-4 h-4 text-slate-300" />
+                                <span>{agent.ref_ffl_agency_name || 'Not set'}</span>
+                              </div>
+                            </td>
+                            <td className="py-5 px-4">
+                              <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                                <Phone className="w-4 h-4 text-slate-300" />
+                                <span>{agent.phone || 'Not set'}</span>
+                              </div>
+                            </td>
+                            <td className="py-5 px-4">
+                              <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                                <Hash className="w-4 h-4 text-slate-300" />
+                                <span>{agent.npn || 'Not set'}</span>
+                              </div>
                             </td>
                             <td className="py-5 px-4">
                               <div className="flex items-center gap-2">
@@ -687,11 +504,15 @@ export const AgentDownlines: React.FC = () => {
                             </td>
                             <td className="py-5 px-4">
                               <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                                  Active
+                                  {agent.status || 'Active'}
                               </span>
                             </td>
                             <td className="py-5 px-4 text-right pr-8">
-                              <button className="p-2 rounded-full hover:bg-slate-100 text-slate-300 hover:text-slate-600 transition-colors">
+                              <button
+                                type="button"
+                                aria-label={`Open ${agent.first_name} ${agent.last_name} profile`}
+                                className="p-2 rounded-full hover:bg-slate-100 text-slate-300 hover:text-slate-600 transition-colors"
+                              >
                                   <ChevronRight className="w-4 h-4" />
                               </button>
                             </td>
@@ -699,7 +520,7 @@ export const AgentDownlines: React.FC = () => {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="py-12 text-center text-slate-400 text-sm font-medium">
+                          <td colSpan={7} className="py-12 text-center text-slate-400 text-sm font-medium">
                             No downline agents found for this selection.
                           </td>
                         </tr>
@@ -789,7 +610,6 @@ export const AgentDownlines: React.FC = () => {
               )}
             </div>
           </div>
-       </div>
     </div>
   );
 };

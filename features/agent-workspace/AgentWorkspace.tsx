@@ -29,6 +29,7 @@ import { AgentCommissions } from './components/AgentCommissions';
 import { AgentSplits } from './components/AgentSplits';
 import { AgentDebtRecovery } from './components/AgentDebtRecovery';
 import { AgentDownlines } from './components/AgentDownlines';
+import { DownlineAgentDetails } from './components/DownlineAgentDetails';
 import { AgentTickets } from './components/AgentTickets';
 import { AgentleaderboardRealtime, TrainerDetailPage } from './components/AgentleaderboardRealtime';
 import { CallReportPolicytek } from './components/CallReportPolicytek';
@@ -501,6 +502,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/policies/v2" element={<Navigate to="/policies" replace />} />
                   <Route path="/policies/details" element={<AgentPolicyDetails />} />
                   <Route path="/downlines" element={<AgentDownlines />} />
+                  <Route path="/downlines/:agentId" element={<DownlineAgentDetails />} />
                   <Route path="/commissions" element={<AgentCommissions />} />
                   <Route path="/splits" element={<AgentSplits />} />
                   <Route path="/debts" element={<AgentDebtRecovery />} />

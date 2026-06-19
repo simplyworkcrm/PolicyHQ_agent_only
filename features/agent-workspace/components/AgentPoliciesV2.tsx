@@ -27,6 +27,7 @@ import {
   Zap,
   Activity,
   AlertTriangle,
+  Info,
 } from 'lucide-react';
 import {
   agentPoliciesV2Api,
@@ -916,7 +917,21 @@ const SortableTableHeader: React.FC<{
   );
 };
 
-export const AgentPoliciesV2: React.FC = () => {
+interface AgentPoliciesV2Props {
+  agentIdsOverride?: string[];
+  headingTitle?: string;
+  headingSubtitle?: string;
+  variant?: 'default' | 'downline';
+  readOnlyRows?: boolean;
+}
+
+export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
+  agentIdsOverride,
+  headingTitle = 'Policy Records',
+  headingSubtitle = 'Review policies across your selected workspace access.',
+  variant = 'default',
+  readOnlyRows = false,
+}) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
 
@@ -943,9 +958,13 @@ export const AgentPoliciesV2: React.FC = () => {
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyV2 | null>(null);
+  const effectiveAgentIds = useMemo(
+    () => (agentIdsOverride && agentIdsOverride.length > 0 ? agentIdsOverride : selectedAgentIds).filter(Boolean),
+    [agentIdsOverride, selectedAgentIds],
+  );
 
   const agentOptions = useMemo<PolicyFilterOption[]>(() => {
-    const options = selectedAgentIds.filter(Boolean).map(agentId => {
+    const options = effectiveAgentIds.map(agentId => {
       const subAgent = subAgents.find(agent => agent.agentId === agentId);
       return {
         id: agentId,
@@ -953,7 +972,7 @@ export const AgentPoliciesV2: React.FC = () => {
       };
     });
     return options.filter((option, index, all) => all.findIndex(item => item.id === option.id) === index);
-  }, [selectedAgentIds, subAgents, currentAgentId, viewingAgentName]);
+  }, [effectiveAgentIds, subAgents, currentAgentId, viewingAgentName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -992,7 +1011,7 @@ export const AgentPoliciesV2: React.FC = () => {
 
   // ── Fetch ──
   const load = useCallback(async () => {
-    const agentIds = selectedAgentIds.filter(Boolean);
+    const agentIds = effectiveAgentIds;
     if (agentIds.length === 0) return;
     if (timeframe === 'custom' && (startDate === undefined || endDate === undefined)) {
       setData(null);
@@ -1018,7 +1037,7 @@ export const AgentPoliciesV2: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedAgentIds, page, perPage, searchTerm, sortConfig, filterGroups, timeframe, startDate, endDate]);
+  }, [effectiveAgentIds, page, perPage, searchTerm, sortConfig, filterGroups, timeframe, startDate, endDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1057,6 +1076,10 @@ export const AgentPoliciesV2: React.FC = () => {
   const stats = data?.policy_stats ?? null;
   const statsLoading = false;
   const isPageSelected = items.length > 0 && items.every(policy => selectedIds.has(policy.selectionKey));
+  const isDownlineVariant = variant === 'downline';
+  const tableGridClass = readOnlyRows
+    ? 'grid-cols-[2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr]'
+    : 'grid-cols-[36px_2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr]';
 
   const getRemoteOptions = (fieldKey: PolicyFilterFieldKey | '') => {
     if (fieldKey === 'ref_agent_owner') return agentOptions;
@@ -1108,17 +1131,20 @@ export const AgentPoliciesV2: React.FC = () => {
   };
 
   return (
-    <div className="animate-in fade-in duration-300">
+    <div className={`animate-in fade-in duration-300 ${isDownlineVariant ? 'rounded-[2rem] border border-amber-100/80 bg-[#fffaf0] p-5 shadow-inner shadow-amber-900/5' : ''}`}>
 
       {/* ── Dev notice ───────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-6">
+      <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-6 ${isDownlineVariant ? 'rounded-[1.5rem] border border-white bg-white/80 px-5 py-4 shadow-sm' : ''}`}>
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-xl shadow-slate-900/10">
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl ${isDownlineVariant ? 'bg-[#d49b17] text-slate-950 shadow-amber-900/10' : 'bg-slate-900 text-white shadow-slate-900/10'}`}>
             <FileText className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">Policy Records</h2>
-            <p className="text-sm font-bold text-slate-500">Review policies across your selected workspace access.</p>
+            {isDownlineVariant && (
+              <p className="mb-1 text-[9px] font-black uppercase tracking-[0.28em] text-amber-700">Scoped Agent Production</p>
+            )}
+            <h2 className={`${isDownlineVariant ? 'text-2xl' : 'text-3xl'} font-black tracking-tight text-slate-900`}>{headingTitle}</h2>
+            <p className="text-sm font-bold text-slate-500">{headingSubtitle}</p>
           </div>
         </div>
         <div className="hidden">
@@ -1139,19 +1165,23 @@ export const AgentPoliciesV2: React.FC = () => {
       <div className="flex items-center justify-between mb-4">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Overview</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+      <div className={`grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 ${isDownlineVariant ? 'px-1' : ''}`}>
         {(() => {
           const placementRatio = stats && stats.submittedPolicies > 0
             ? (stats.issued_placed / stats.submittedPolicies) * 100
             : 0;
-          const persistency = stats && stats.issued_placed > 0
-            ? (stats.active_inForce / stats.issued_placed) * 100
+          const persistencyBase = stats
+            ? (stats.active_inForce ?? 0) + (stats.failed_inforce ?? 0)
+            : 0;
+          const persistency = stats && persistencyBase > 0
+            ? (stats.active_inForce / persistencyBase) * 100
             : 0;
           return ([
             {
               label: 'Submitted',
               value: stats?.submittedPolicies ?? 0,
               sub: fmtCurrency(stats?.submittedPolicies_premium ?? 0),
+              description: 'Total number of applications submitted in the selected time frame. This includes all policies that have been started and sent in.',
               icon: <Send className="w-5 h-5" />,
               tone: 'dark',
             },
@@ -1159,6 +1189,7 @@ export const AgentPoliciesV2: React.FC = () => {
               label: 'Issued / Placed',
               value: stats?.issued_placed ?? 0,
               sub: fmtCurrency(stats?.issued_placed_premium ?? 0),
+              description: 'Policies that have been approved by the carrier and officially issued. This is the point where the application has passed underwriting.',
               icon: <CheckCheck className="w-5 h-5" />,
               tone: 'gold',
             },
@@ -1167,6 +1198,7 @@ export const AgentPoliciesV2: React.FC = () => {
               value: `${placementRatio.toFixed(1)}%`,
               sub: `${stats?.issued_placed ?? 0} of ${stats?.submittedPolicies ?? 0}`,
               isPercent: true,
+              description: 'The percentage of submitted applications that were successfully issued and placed. It measures how many submissions moved forward to approval.',
               icon: <TrendingUp className="w-5 h-5" />,
               tone: 'white',
             },
@@ -1174,14 +1206,16 @@ export const AgentPoliciesV2: React.FC = () => {
               label: 'Active In Force',
               value: stats?.active_inForce ?? 0,
               sub: fmtCurrency(stats?.active_inForce_premium ?? 0),
+              description: 'Number of policies that are currently active and being paid. These are in-force policies with ongoing premium payments.',
               icon: <Zap className="w-5 h-5" />,
               tone: 'white',
             },
             {
               label: 'Persistency',
               value: `${persistency.toFixed(1)}%`,
-              sub: `${stats?.active_inForce ?? 0} of ${stats?.issued_placed ?? 0} issued`,
+              sub: `${stats?.active_inForce ?? 0} of ${persistencyBase} paid`,
               isPercent: true,
+              description: 'The percentage of paid policies that remain active over time. It shows how many policies stayed in force after their initial payment.',
               icon: <Activity className="w-5 h-5" />,
               tone: 'gold-soft',
             },
@@ -1189,11 +1223,12 @@ export const AgentPoliciesV2: React.FC = () => {
               label: 'Need Attention',
               value: stats?.need_attention ?? 0,
               sub: fmtCurrency(stats?.need_attention_premium ?? 0),
+              description: 'Policies that require follow-up. This could be due to missed payments, pending tasks, or policies at risk of lapsing.',
               alert: true,
               icon: <AlertTriangle className="w-5 h-5" />,
               tone: 'alert',
             },
-          ] as { label: string; value: number | string; sub: string; alert?: boolean; icon: React.ReactNode; tone: 'dark' | 'gold' | 'gold-soft' | 'white' | 'alert' }[]).map(({ label, value, sub, alert, icon, tone }) => {
+          ] as { label: string; value: number | string; sub: string; description: string; alert?: boolean; icon: React.ReactNode; tone: 'dark' | 'gold' | 'gold-soft' | 'white' | 'alert' }[]).map(({ label, value, sub, description, alert, icon, tone }) => {
             const isAlertActive = alert && (stats?.need_attention ?? 0) > 0;
             const isDark = tone === 'dark';
             const isGold = tone === 'gold' || tone === 'gold-soft' || (tone === 'alert' && isAlertActive);
@@ -1212,11 +1247,25 @@ export const AgentPoliciesV2: React.FC = () => {
               ? 'bg-slate-950 text-white'
               : 'bg-slate-950 text-[#d49b17]';
             return (
-              <div key={label} className={`relative overflow-hidden rounded-2xl border px-4 py-4 ${cardClass}`}>
+              <div key={label} className={`group relative overflow-visible rounded-2xl border px-4 py-4 ${cardClass}`}>
                 <div className={`absolute left-0 top-0 h-full w-1.5 ${isDark ? 'bg-[#d49b17]' : isGold ? 'bg-slate-950' : 'bg-[#d49b17]'}`} />
                 <div className="relative flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${labelClass}`}>{label}</p>
+                    <div className="mb-2 flex items-center gap-1.5">
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${labelClass}`}>{label}</p>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          aria-label={`About ${label}`}
+                          className={`rounded-full transition-colors ${isDark ? 'text-white/35 hover:text-white/60' : isGold ? 'text-slate-950/45 hover:text-slate-950/70' : 'text-slate-300 hover:text-slate-500'}`}
+                        >
+                          <Info className="w-3.5 h-3.5" />
+                        </button>
+                        <div className={`pointer-events-none absolute left-0 top-full z-30 mt-2 w-64 rounded-2xl border px-3 py-2 text-[11px] font-semibold normal-case tracking-normal shadow-xl opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 ${isDark ? 'border-slate-200 bg-white text-slate-700' : 'border-slate-900 bg-slate-950 text-white'}`}>
+                          {description}
+                        </div>
+                      </div>
+                    </div>
                     <p className={`text-2xl font-black leading-none tracking-tight ${isAlertActive ? 'text-[#9a5c00]' : isDark ? 'text-white' : 'text-slate-950'}`}>
                       {statsLoading ? 'â€”' : value}
                     </p>
@@ -1244,7 +1293,7 @@ export const AgentPoliciesV2: React.FC = () => {
       <div className={`flex gap-4 items-start transition-all duration-300`}>
 
       {/* Table card */}
-      <div className="flex-1 min-w-0 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden relative min-h-[600px] flex flex-col">
+      <div className={`flex-1 min-w-0 bg-white border shadow-sm overflow-hidden relative min-h-[600px] flex flex-col ${isDownlineVariant ? 'rounded-[1.75rem] border-amber-100' : 'rounded-[2.5rem] border-slate-100'}`}>
 
         <div className="p-5 border-b border-slate-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-4">
@@ -1316,21 +1365,23 @@ export const AgentPoliciesV2: React.FC = () => {
         {/* No inline filter bar — replaced by side dock below */}
 
         {/* Table header */}
-        <div className="px-6 py-3 grid grid-cols-[36px_2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr] gap-3 bg-slate-50/70 border-b border-slate-100 items-center">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedIds(current => {
-                const next = new Set(current);
-                if (isPageSelected) items.forEach(policy => next.delete(policy.selectionKey));
-                else items.forEach(policy => next.add(policy.selectionKey));
-                return next;
-              });
-            }}
-            className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${isPageSelected ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-300 bg-white hover:border-brand-300'}`}
-          >
-            {isPageSelected && <Check className="w-3.5 h-3.5" />}
-          </button>
+        <div className={`px-6 py-3 grid ${tableGridClass} gap-3 bg-slate-50/70 border-b border-slate-100 items-center`}>
+          {!readOnlyRows && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedIds(current => {
+                  const next = new Set(current);
+                  if (isPageSelected) items.forEach(policy => next.delete(policy.selectionKey));
+                  else items.forEach(policy => next.add(policy.selectionKey));
+                  return next;
+                });
+              }}
+              className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${isPageSelected ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-300 bg-white hover:border-brand-300'}`}
+            >
+              {isPageSelected && <Check className="w-3.5 h-3.5" />}
+            </button>
+          )}
           <SortableTableHeader label="Client & Created" options={[{ key: 'client', label: 'Client' }, { key: 'created_at', label: 'Created' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
           <SortableTableHeader label="Policy Number" options={[{ key: 'policy_number', label: 'Policy #' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
           <SortableTableHeader label="Carrier / Product" options={[{ key: 'carrier_product', label: 'Product' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
@@ -1385,28 +1436,34 @@ export const AgentPoliciesV2: React.FC = () => {
               return (
               <div
                 key={policy.policy_id}
-                onClick={() => setSelectedPolicy(isSelected ? null : policy)}
-                className={`px-6 py-4 grid grid-cols-[36px_2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr] gap-3 items-center border-b border-slate-50 transition-colors cursor-pointer ${
-                  isSelected
+                onClick={() => {
+                  if (!readOnlyRows) setSelectedPolicy(isSelected ? null : policy);
+                }}
+                className={`px-6 py-4 grid ${tableGridClass} gap-3 items-center border-b border-slate-50 transition-colors ${
+                  readOnlyRows
+                    ? (idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20')
+                    : isSelected
                     ? 'bg-slate-900 text-white'
                     : idx % 2 === 0 ? 'hover:bg-slate-50/60' : 'bg-slate-50/20 hover:bg-slate-50/60'
-                }`}
+                } ${readOnlyRows ? 'cursor-default' : 'cursor-pointer'}`}
               >
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelectedIds(current => {
-                      const next = new Set(current);
-                      if (next.has(policy.selectionKey)) next.delete(policy.selectionKey);
-                      else next.add(policy.selectionKey);
-                      return next;
-                    });
-                  }}
-                  className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${isChecked ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-300 bg-white hover:border-brand-300'}`}
-                >
-                  {isChecked && <Check className="w-3.5 h-3.5" />}
-                </button>
+                {!readOnlyRows && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedIds(current => {
+                        const next = new Set(current);
+                        if (next.has(policy.selectionKey)) next.delete(policy.selectionKey);
+                        else next.add(policy.selectionKey);
+                        return next;
+                      });
+                    }}
+                    className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${isChecked ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-300 bg-white hover:border-brand-300'}`}
+                  >
+                    {isChecked && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                )}
 
                 {/* Client */}
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -1475,6 +1532,7 @@ export const AgentPoliciesV2: React.FC = () => {
       </div>{/* end table card */}
 
         {/* ── Policy Detail Panel ──────────────────────────────────────── */}
+        {!readOnlyRows && (
         <div className={`shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
           selectedPolicy ? 'w-1/3 min-w-96 max-w-[32rem] opacity-100' : 'w-0 opacity-0 pointer-events-none'
         }`}>
@@ -1565,6 +1623,7 @@ export const AgentPoliciesV2: React.FC = () => {
             </div>
           )}
         </div>
+        )}
 
       </div>{/* end flex row */}
 
