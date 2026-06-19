@@ -267,7 +267,7 @@ const AgentLayout: React.FC = () => {
   return (
     <div
       className={`h-screen flex font-sans overflow-hidden p-4 gap-4 selection:bg-brand-500/30 selection:text-brand-900 transition-colors duration-500 ${isDarkRoute ? 'bg-[#08080f]' : ''}`}
-      style={!isDarkRoute ? { background: isPoliciesPage ? 'linear-gradient(135deg, #ddd6fe 0%, #c7d2fe 30%, #e0f2fe 100%)' : '#D4DBE5' } : undefined}
+      style={!isDarkRoute ? { background: isPoliciesPage ? '#F3F4F6' : '#D4DBE5' } : undefined}
     >
       {/* Floating Sidebar */}
       <aside 
@@ -447,12 +447,6 @@ const AgentLayout: React.FC = () => {
             </div>
         ) : (
             <div className="flex-1 overflow-y-auto scroll-smooth scrollbar-hide relative">
-              {isPoliciesPage && (
-                <>
-                  <div className="pointer-events-none fixed top-0 right-0 w-[500px] h-[450px] rounded-full blur-3xl -z-10" style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.25) 0%, transparent 70%)' }} />
-                  <div className="pointer-events-none fixed bottom-0 right-1/3 w-72 h-72 rounded-full blur-3xl -z-10" style={{ background: 'radial-gradient(circle, rgba(110,231,183,0.15) 0%, transparent 70%)' }} />
-                </>
-              )}
             <header className={`h-24 sticky top-0 z-[100] px-6 flex items-center justify-between mb-2 rounded-2xl mt-2 mx-2 shadow-sm transition-colors duration-500 ${isDarkRoute ? 'bg-white/5 backdrop-blur-md border border-white/8' : 'bg-white/60 backdrop-blur-md border border-white/80'}`}>
                 <div className="flex items-center gap-4">
                     <h2 className={`text-3xl font-black tracking-tighter transition-colors duration-500 ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>

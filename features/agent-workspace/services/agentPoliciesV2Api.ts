@@ -1,4 +1,5 @@
-import { BASE_URL } from '../../../services/api';
+const POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/policies';
+const UTILITY_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/utility';
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -11,6 +12,7 @@ const authHeader = () => ({
 
 export interface PolicyV2 {
   policy_id: string;
+  selectionKey: string;
   created_at: number;
   client: string;
   policy_number: string | null;
@@ -32,13 +34,40 @@ export interface PoliciesV2Response {
   nextPage: number | null;
   prevPage: number | null;
   offset: number;
+  perPage?: number;
   itemsTotal?: number;
   pageTotal?: number;
   items: PolicyV2[];
+  policy_stats?: PoliciesV2Stats;
+}
+
+interface RawPolicyV2 {
+  id: string;
+  created_at: number;
+  ref_agent_owner: string;
+  client: string;
+  policy_number: string | null;
+  carrier_product: string;
+  initial_draft_date: string;
+  annual_premium: number;
+  isLocked: boolean;
+  policy_status: string | null;
+  policy_paidStatus: string | null;
+  ref_agent_owner_name: string;
+  ref_metacontactsource_name: string;
+  ref_carrier_name: string | null;
+  ref_policyStatus_name: string | null;
+  meta_policy_paidstatus_name: string | null;
+}
+
+interface RawPoliciesV2Response extends Omit<PoliciesV2Response, 'items'> {
+  items: RawPolicyV2[];
 }
 
 export type PolicySortField =
   | 'client'
+  | 'policy_number'
+  | 'carrier_product'
   | 'carrier'
   | 'status'
   | 'annual_premium'
@@ -49,17 +78,21 @@ export type PolicySortField =
 
 export type SortDirection = 'asc' | 'desc';
 
+export interface PolicyFilterOption {
+  id: string;
+  label: string;
+}
+
 export interface PoliciesV2Query {
-  agentId: string;
+  agentIds: string[];
   page: number;
   perPage: number;
-  search?: string;
-  sort?: { field: PolicySortField; dir: SortDirection };
-  statusFilter?: string;
-  paidFilter?: string;
-  lockedFilter?: boolean;
-  startDate?: number;
-  endDate?: number;
+  search: string;
+  sort: Record<string, SortDirection>;
+  filter: Record<string, unknown>;
+  startDate: string | null;
+  endDate: string | null;
+  timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom' | null;
 }
 
 export interface PoliciesV2Stats {
@@ -75,85 +108,118 @@ export interface PoliciesV2Stats {
 
 // ── API ──────────────────────────────────────────────────────────────────────
 
+const getMetaOptionItems = (data: any): any[] => {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== 'object') return [];
+  return data.items
+    || data.data
+    || data.records
+    || data.results
+    || data.carriers
+    || data.policy_statuses
+    || data.policyStatuses
+    || data.statuses
+    || data.policy_paid_statuses
+    || data.policyPaidStatuses
+    || data.paid_statuses
+    || data.paidStatuses
+    || [];
+};
+
+const normalizeMetaOptions = (data: unknown, fallbackLabel: string): PolicyFilterOption[] => (
+  getMetaOptionItems(data)
+    .map((item: any) => ({
+      id: String(item.id ?? item.value ?? ''),
+      label: String(
+        item.label
+        ?? item.name
+        ?? item.carrier
+        ?? item.carrier_name
+        ?? item.status
+        ?? item.policy_status
+        ?? item.policy_status_name
+        ?? item.paid_status
+        ?? item.paid_status_name
+        ?? item.policyPaidStatus
+        ?? item.policyStatus
+        ?? item.title
+        ?? item.value
+        ?? item.id
+        ?? fallbackLabel
+      ),
+    }))
+    .filter((item: PolicyFilterOption) => item.id)
+);
+
 export const agentPoliciesV2Api = {
-  async getStats(agentId: string, startDate?: number, endDate?: number): Promise<PoliciesV2Stats> {
-    const params = new URLSearchParams({ agent_id: agentId });
-    params.set('dateRange', JSON.stringify({
-      start: startDate ?? null,
-      end:   endDate   ?? null,
-    }));
-    const response = await fetch(`${BASE_URL}/policies/optimized/stats?${params.toString()}`, {
-      method: 'GET',
-      headers: authHeader(),
-    });
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    return response.json();
-  },
-
   async getPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {
-    const params = new URLSearchParams({
-      agent_id: query.agentId,
-      page: String(query.page),
-      per_page: String(query.perPage),
-    });
-
-    if (query.search) params.set('search', query.search);
-
-    if (query.sort) {
-      params.set('sort', JSON.stringify({ [query.sort.field]: query.sort.dir }));
-    }
-
-    // Build Xano filter expression from status/paid filters
-    const filterExpressions: Array<{ statement: { left: { tag: string; operand: string }; op: string; right: { operand: string } } }> = [];
-
-    if (query.statusFilter) {
-      filterExpressions.push({
-        statement: {
-          left: { tag: 'col', operand: 'status' },
-          op: '==',
-          right: { operand: query.statusFilter },
-        },
-      });
-    }
-
-    if (query.paidFilter) {
-      filterExpressions.push({
-        statement: {
-          left: { tag: 'col', operand: 'paid_status' },
-          op: '==',
-          right: { operand: query.paidFilter },
-        },
-      });
-    }
-
-    if (query.lockedFilter !== undefined) {
-      filterExpressions.push({
-        statement: {
-          left: { tag: 'col', operand: 'isLocked' },
-          op: '==',
-          right: { operand: query.lockedFilter as unknown as string },
-        },
-      });
-    }
-
-    if (filterExpressions.length > 0) {
-      params.set('filter', JSON.stringify({ expression: filterExpressions }));
-    }
-
-    params.set('dateRange', JSON.stringify({
-      start: query.startDate ?? null,
-      end:   query.endDate   ?? null,
-    }));
-
-    const response = await fetch(`${BASE_URL}/policies/optimized?${params.toString()}`, {
-      method: 'GET',
+    const response = await fetch(POLICIES_API_URL, {
+      method: 'POST',
       headers: authHeader(),
+      body: JSON.stringify({
+        agent_id: query.agentIds,
+        page: query.page,
+        per_page: query.perPage,
+        search: query.search || null,
+        sort: query.sort ?? {},
+        filter: query.filter ?? { expression: [] },
+        start_date: query.startDate,
+        end_date: query.endDate,
+        timeframe: query.timeframe,
+      }),
     });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
     }
 
-    return response.json();
+    const payload = await response.json() as RawPoliciesV2Response;
+    return {
+      ...payload,
+      items: (payload.items || []).map((policy, index) => ({
+        policy_id: policy.id,
+        selectionKey: `${String(policy.id || policy.policy_number || `${policy.client || 'client'}-${policy.ref_agent_owner || 'agent'}-${policy.created_at || Date.now()}`)}-${index}`,
+        created_at: policy.created_at,
+        client: policy.client,
+        policy_number: policy.policy_number,
+        carrier_product: policy.carrier_product,
+        initial_draft_date: policy.initial_draft_date,
+        annual_premium: policy.annual_premium,
+        isLocked: policy.isLocked,
+        carrier: policy.ref_carrier_name || '—',
+        status: policy.ref_policyStatus_name || policy.policy_status || '—',
+        paid_status: policy.meta_policy_paidstatus_name || policy.policy_paidStatus || null,
+        agent_id: policy.ref_agent_owner,
+        agent_name: policy.ref_agent_owner_name,
+        source_name: policy.ref_metacontactsource_name,
+      })),
+    };
+  },
+
+  async getCarrierOptions(): Promise<PolicyFilterOption[]> {
+    const response = await fetch(`${UTILITY_API_URL}/carriers`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return normalizeMetaOptions(await response.json(), 'Unknown Carrier');
+  },
+
+  async getPolicyStatusOptions(): Promise<PolicyFilterOption[]> {
+    const response = await fetch(`${UTILITY_API_URL}/policy_statuses`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return normalizeMetaOptions(await response.json(), 'Unknown Policy Status');
+  },
+
+  async getPolicyPaidStatusOptions(): Promise<PolicyFilterOption[]> {
+    const response = await fetch(`${UTILITY_API_URL}/policy_paid_statuses`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return normalizeMetaOptions(await response.json(), 'Unknown Paid Status');
   },
 };

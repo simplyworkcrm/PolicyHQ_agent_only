@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -22,6 +22,7 @@ import {
   ArrowRight,
   Send,
   CheckCheck,
+  Check,
   TrendingUp,
   Zap,
   Activity,
@@ -31,7 +32,7 @@ import {
   agentPoliciesV2Api,
   PolicyV2,
   PoliciesV2Response,
-  PoliciesV2Stats,
+  PolicyFilterOption,
   PolicySortField,
   SortDirection,
 } from '../services/agentPoliciesV2Api';
@@ -137,7 +138,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ startDate, endDate, o
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-2 z-[200] bg-white rounded-2xl border border-slate-200 shadow-xl p-4 w-72">
+        <div className="absolute top-full left-0 mt-2 z-[200] bg-white rounded-2xl border border-slate-200 shadow-xl p-4 w-72 max-w-[calc(100vw-3rem)]">
           {/* Month nav */}
           <div className="flex items-center justify-between mb-3">
             <button onClick={prevMonth} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 transition">
@@ -303,7 +304,8 @@ const Pagination: React.FC<{
   perPage: number;
   offset: number;
   onPage: (p: number) => void;
-}> = ({ cur, next, prev, total, pageTotal, received, perPage, offset, onPage }) => {
+  onPerPage: (n: number) => void;
+}> = ({ cur, next, prev, total, pageTotal, received, perPage, offset, onPage, onPerPage }) => {
   const showing = received > 0 ? `${offset + 1}–${offset + received}` : '0';
   const ofTotal = total ? ` of ${total.toLocaleString()}` : '';
   const pages = pageTotal ?? (next ? cur + 1 : cur);
@@ -322,9 +324,20 @@ const Pagination: React.FC<{
 
   return (
     <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100">
-      <p className="text-xs text-slate-400 font-medium">
-        Showing <span className="text-slate-700 font-semibold">{showing}</span>{ofTotal}
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-xs text-slate-400 font-medium">
+          Showing <span className="text-slate-700 font-semibold">{showing}</span>{ofTotal}
+        </p>
+        <select
+          value={perPage}
+          onChange={e => onPerPage(Number(e.target.value))}
+          className="text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-brand-400 cursor-pointer"
+        >
+          {PER_PAGE_OPTIONS.map(n => (
+            <option key={n} value={n}>{n} / page</option>
+          ))}
+        </select>
+      </div>
       <div className="flex items-center gap-1">
         <button
           onClick={() => prev && onPage(prev)}
@@ -367,9 +380,544 @@ const Pagination: React.FC<{
 const STATUS_OPTIONS = ['Approved', 'Underwriting', 'Cancelled Before Draft', 'Declined', 'Not Taken'];
 const PAID_OPTIONS = ['Paid', 'Unpaid', 'N/A'];
 const PER_PAGE_OPTIONS = [10, 25, 50, 100];
+type PoliciesTimeframe = 'all' | 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+const TIMEFRAME_OPTIONS: { label: string; value: PoliciesTimeframe }[] = [
+  { label: 'All Time', value: 'all' },
+  { label: 'Today', value: 'today' },
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
+  { label: 'Yearly', value: 'yearly' },
+  { label: 'Custom', value: 'custom' },
+];
+
+const toRequestDate = (ts: number | undefined) => {
+  if (ts === undefined) return null;
+  const date = new Date(ts);
+  return `${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}-${date.getUTCFullYear()}`;
+};
+
+const SORT_FIELD_TO_API: Partial<Record<PolicySortField, string>> = {
+  client: 'client',
+  policy_number: 'policy_number',
+  carrier_product: 'carrier_product',
+  carrier: 'ref_carrier_name',
+  status: 'ref_policyStatus_name',
+  annual_premium: 'annual_premium',
+  created_at: 'created_at',
+  initial_draft_date: 'initial_draft_date',
+  source_name: 'ref_metacontactsource_name',
+  paid_status: 'meta_policy_paidstatus_name',
+};
+
+type PolicySortConfig = { key: PolicySortField; direction: SortDirection };
+
+const ALLOWED_POLICY_SORT_KEYS: PolicySortField[] = [
+  'client',
+  'created_at',
+  'policy_number',
+  'carrier_product',
+  'initial_draft_date',
+  'annual_premium',
+];
+
+const normalizePolicySortConfig = (sortConfig: any): PolicySortConfig | null => {
+  if (
+    !sortConfig ||
+    !ALLOWED_POLICY_SORT_KEYS.includes(sortConfig.key) ||
+    (sortConfig.direction !== 'asc' && sortConfig.direction !== 'desc')
+  ) {
+    return null;
+  }
+
+  return { key: sortConfig.key, direction: sortConfig.direction };
+};
+
+type PolicyFilterOp = '==' | '!=' | 'ilike' | 'not ilike' | 'between' | '>=' | '<=' | 'is null' | 'is not null';
+type PolicyFilterFieldKey = 'client' | 'policy_number' | 'ref_agent_owner' | 'ref_carrier_id' | 'carrier_product' | 'ref_policyStatus_id' | 'meta_policy_paidstatus_id' | 'initial_draft_date' | 'isLocked';
+type PolicyFilterFieldType = 'text' | 'remote-select' | 'boolean-select' | 'date-range' | 'null-check';
+
+interface DateRange {
+  start: number | null;
+  end: number | null;
+  label: string;
+}
+
+interface PolicyFilterField {
+  key: PolicyFilterFieldKey;
+  label: string;
+  type: PolicyFilterFieldType;
+}
+
+interface PolicyFilterRow {
+  id: string;
+  field: PolicyFilterFieldKey | '';
+  op: PolicyFilterOp;
+  value: string;
+  displayValue?: string;
+  dateRange?: DateRange | null;
+}
+
+interface PolicyFilterGroup {
+  id: string;
+  rows: PolicyFilterRow[];
+}
+
+const POLICY_FILTER_FIELDS: PolicyFilterField[] = [
+  { key: 'client', label: 'Client', type: 'text' },
+  { key: 'policy_number', label: 'Policy Number', type: 'null-check' },
+  { key: 'ref_agent_owner', label: 'Agent', type: 'remote-select' },
+  { key: 'ref_carrier_id', label: 'Carrier', type: 'remote-select' },
+  { key: 'carrier_product', label: 'Product', type: 'text' },
+  { key: 'ref_policyStatus_id', label: 'Policy Status', type: 'remote-select' },
+  { key: 'meta_policy_paidstatus_id', label: 'Paid Status', type: 'remote-select' },
+  { key: 'isLocked', label: 'Lock Status', type: 'boolean-select' },
+  { key: 'initial_draft_date', label: 'Effective Date', type: 'date-range' },
+];
+
+const TEXT_FILTER_OPS: Array<{ op: PolicyFilterOp; label: string }> = [
+  { op: 'ilike', label: 'contains' },
+  { op: 'not ilike', label: 'does not contain' },
+  { op: '==', label: 'equals' },
+  { op: '!=', label: 'does not equal' },
+];
+
+const EXACT_FILTER_OPS: Array<{ op: PolicyFilterOp; label: string }> = [
+  { op: '==', label: 'equals' },
+  { op: '!=', label: 'does not equal' },
+];
+
+const DATE_FILTER_OPS: Array<{ op: PolicyFilterOp; label: string }> = [
+  { op: 'between', label: 'is between' },
+];
+
+const NULL_FILTER_OPS: Array<{ op: PolicyFilterOp; label: string }> = [
+  { op: 'is null', label: 'is empty' },
+  { op: 'is not null', label: 'is not empty' },
+];
+
+const LOCK_STATUS_OPTIONS: PolicyFilterOption[] = [
+  { id: 'true', label: 'Locked' },
+  { id: 'false', label: 'Unlocked' },
+];
+
+
+const makePolicyFilterRow = (): PolicyFilterRow => ({
+  id: crypto.randomUUID(),
+  field: '',
+  op: 'ilike',
+  value: '',
+});
+
+const makePolicyFilterGroup = (): PolicyFilterGroup => ({
+  id: crypto.randomUUID(),
+  rows: [makePolicyFilterRow()],
+});
+
+const getPolicyFilterField = (key: PolicyFilterFieldKey | '') => POLICY_FILTER_FIELDS.find(field => field.key === key);
+
+const getPolicyFilterOps = (fieldKey: PolicyFilterFieldKey | '') => {
+  const field = getPolicyFilterField(fieldKey);
+  if (field?.type === 'date-range') return DATE_FILTER_OPS;
+  if (field?.type === 'null-check') return NULL_FILTER_OPS;
+  return field?.type === 'remote-select' || field?.type === 'boolean-select' ? EXACT_FILTER_OPS : TEXT_FILTER_OPS;
+};
+
+const isFilterRowComplete = (row: PolicyFilterRow) => {
+  const field = getPolicyFilterField(row.field);
+  if (!row.field) return false;
+  if (field?.type === 'null-check') return row.op === 'is null' || row.op === 'is not null';
+  if (field?.type === 'date-range') return row.dateRange?.start != null && row.dateRange?.end != null;
+  return Boolean(row.value.trim());
+};
+
+const getPolicyFilterOperand = (row: PolicyFilterRow) => {
+  const value = row.value.trim();
+  return row.op === 'ilike' || row.op === 'not ilike' ? `%${value}%` : value;
+};
+
+const getCompleteFilterGroups = (groups: PolicyFilterGroup[]) => groups
+  .map(group => ({
+    ...group,
+    rows: group.rows.filter(isFilterRowComplete),
+  }))
+  .filter(group => group.rows.length > 0);
+
+const buildPolicyFilterStatements = (row: PolicyFilterRow) => {
+  const field = getPolicyFilterField(row.field);
+
+  if (field?.type === 'date-range' && row.dateRange?.start != null && row.dateRange?.end != null) {
+    return [
+      {
+        or: false,
+        type: 'statement',
+        statement: {
+          left: { tag: 'col', operand: 'initial_draft_date' },
+          op: '>=',
+          right: { operand: row.dateRange.start },
+        },
+      },
+      {
+        or: false,
+        type: 'statement',
+        statement: {
+          left: { tag: 'col', operand: 'initial_draft_date' },
+          op: '<=',
+          right: { operand: row.dateRange.end },
+        },
+      },
+    ];
+  }
+
+  if (field?.type === 'null-check') {
+    return [{
+      or: false,
+      type: 'statement',
+      statement: {
+        left: { tag: 'col', operand: row.field },
+        op: row.op === 'is null' ? '==' : '!=',
+        right: { operand: null },
+      },
+    }];
+  }
+
+  if (field?.type === 'boolean-select') {
+    return [{
+      or: false,
+      type: 'statement',
+      statement: {
+        left: { tag: 'col', operand: row.field },
+        op: row.op,
+        right: { operand: row.value === 'true' },
+      },
+    }];
+  }
+
+  return [{
+    or: false,
+    type: 'statement',
+    statement: {
+      left: { tag: 'col', operand: row.field },
+      op: row.op,
+      right: { operand: getPolicyFilterOperand(row) },
+    },
+  }];
+};
+
+const buildPolicyFilterExpression = (groups: PolicyFilterGroup[]): Record<string, unknown> => {
+  const completeGroups = getCompleteFilterGroups(groups);
+  if (completeGroups.length === 0) return { expression: [] };
+
+  return {
+    expression: completeGroups.map((group, groupIndex) => ({
+      or: groupIndex > 0,
+      type: 'group',
+      group: {
+        expression: group.rows.flatMap(buildPolicyFilterStatements),
+      },
+    })),
+  };
+};
+
+const buildFilterExpression = (
+  statusFilter: string,
+  paidFilter: string,
+  lockedFilter: boolean | undefined
+): Record<string, unknown> | null => {
+  const expression: unknown[] = [];
+
+  if (statusFilter) {
+    expression.push({
+      or: false,
+      type: 'statement',
+      statement: {
+        left: { tag: 'col', operand: 'ref_policyStatus_name' },
+        op: '==',
+        right: { operand: statusFilter },
+      },
+    });
+  }
+
+  if (paidFilter) {
+    expression.push({
+      or: false,
+      type: 'statement',
+      statement: {
+        left: { tag: 'col', operand: 'meta_policy_paidstatus_name' },
+        op: '==',
+        right: { operand: paidFilter },
+      },
+    });
+  }
+
+  if (lockedFilter !== undefined) {
+    expression.push({
+      or: false,
+      type: 'statement',
+      statement: {
+        left: { tag: 'col', operand: 'isLocked' },
+        op: '==',
+        right: { operand: lockedFilter },
+      },
+    });
+  }
+
+  return expression.length > 0 ? { expression } : null;
+};
+
+const PolicyDateRangeFilter: React.FC<{
+  timeframe: PoliciesTimeframe;
+  startDate: number | undefined;
+  endDate: number | undefined;
+  onTimeframeChange: (timeframe: PoliciesTimeframe) => void;
+  onDateChange: (start: number | undefined, end: number | undefined) => void;
+}> = ({ timeframe, startDate, endDate, onTimeframeChange, onDateChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = TIMEFRAME_OPTIONS.find(option => option.value === timeframe) || TIMEFRAME_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const handle = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  const selectTimeframe = (next: PoliciesTimeframe) => {
+    onTimeframeChange(next);
+    if (next !== 'custom') setOpen(false);
+  };
+
+  return (
+    <div className="relative flex items-center gap-4" ref={ref}>
+      <div className="text-right">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Policy Date Range</p>
+        <p className="text-[11px] font-semibold text-slate-500">Controls records loaded from the API</p>
+      </div>
+      <button
+        onClick={() => setOpen(value => !value)}
+        className="h-11 min-w-32 px-4 rounded-full bg-white border border-slate-100 shadow-sm flex items-center justify-between gap-3 text-sm font-black text-slate-800 hover:border-slate-200 transition-all"
+      >
+        <Calendar className="w-4 h-4 text-brand-500" />
+        <span className="flex-1 text-left">{selected.label}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-3 z-[220] w-72 rounded-[1.35rem] bg-white border border-slate-100 shadow-2xl shadow-slate-300/50 overflow-hidden p-2">
+          {TIMEFRAME_OPTIONS.filter(option => option.value !== 'custom').map(option => {
+            const active = timeframe === option.value;
+            return (
+              <button
+                key={option.value}
+                onClick={() => selectTimeframe(option.value)}
+                className={`w-full flex items-center justify-between px-5 py-3 rounded-xl text-sm font-black transition-all ${
+                  active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                }`}
+              >
+                <span>{option.label}</span>
+                {active && <CheckCheck className="w-4 h-4 text-brand-500" />}
+              </button>
+            );
+          })}
+          <div className="h-px bg-slate-100 my-2" />
+          <button
+            onClick={() => selectTimeframe('custom')}
+            className={`w-full flex items-center justify-between px-5 py-3 rounded-xl text-sm font-black transition-all ${
+              timeframe === 'custom' ? 'bg-slate-900 text-white' : 'text-orange-600 hover:bg-orange-50'
+            }`}
+          >
+            <span>Custom Range</span>
+            <Calendar className="w-4 h-4 text-orange-500" />
+          </button>
+          {timeframe === 'custom' && (
+            <div className="mt-2 px-2 pb-1 flex justify-end">
+              <DateRangePicker startDate={startDate} endDate={endDate} onChange={onDateChange} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StyledSelect: React.FC<{
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}> = ({ value, options, onChange, placeholder = 'Select' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = options.find(option => option.value === value);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handle = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [isOpen]);
+
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setIsOpen(current => !current)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500"
+      >
+        <span className={`truncate ${selected ? 'text-slate-800' : 'text-slate-400'}`}>{selected?.label || placeholder}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="absolute z-[230] top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-[1.25rem] shadow-2xl shadow-slate-200/70 overflow-hidden p-1">
+          {options.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => { onChange(option.value); setIsOpen(false); }}
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-bold transition-all ${option.value === value ? 'bg-brand-50 text-brand-800' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+            >
+              <span className="truncate">{option.label}</span>
+              {option.value === value && <Check className="w-3.5 h-3.5 text-brand-500" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const QuickSearchFilterSelect: React.FC<{
+  value: string;
+  displayValue?: string;
+  options: PolicyFilterOption[];
+  placeholder: string;
+  loading?: boolean;
+  onChange: (option: PolicyFilterOption) => void;
+}> = ({ value, displayValue, options, placeholder, loading, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find(option => option.id === value);
+  const selectedLabel = displayValue || selectedOption?.label || '';
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handle = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [isOpen]);
+
+  const filteredOptions = options.filter(option => option.label.toLowerCase().includes(search.toLowerCase())).slice(0, 50);
+
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        type="button"
+        disabled={loading}
+        onClick={() => setIsOpen(current => !current)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        <span className={`truncate ${selectedLabel ? 'text-slate-800' : 'text-slate-400'}`}>{loading ? 'Loading options...' : selectedLabel || placeholder}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="absolute z-[240] top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-[1.25rem] shadow-2xl shadow-slate-200/70 overflow-hidden">
+          <div className="p-2 border-b border-slate-50">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Quick search..."
+                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/10 focus:border-brand-500"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-1">
+            {filteredOptions.length > 0 ? filteredOptions.map(option => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => { onChange(option); setSearch(''); setIsOpen(false); }}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-bold transition-all ${option.id === value ? 'bg-brand-50 text-brand-800' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+              >
+                <span className="truncate">{option.label}</span>
+                {option.id === value && <Check className="w-3.5 h-3.5 text-brand-500" />}
+              </button>
+            )) : (
+              <div className="py-5 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">No options found</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SortableTableHeader: React.FC<{
+  label: string;
+  options: Array<{ key: PolicySortField; label: string }>;
+  sortConfig: PolicySortConfig | null;
+  onSort: (key: PolicySortField) => void;
+  onSelectSort: (key: PolicySortField) => void;
+  onSetSort: (key: PolicySortField, direction: SortDirection) => void;
+  className?: string;
+}> = ({ label, options, sortConfig, onSort, onSelectSort, onSetSort, className = '' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const activeOption = options.find(option => option.key === sortConfig?.key) || options[0];
+  const isActive = Boolean(sortConfig && options.some(option => option.key === sortConfig.key));
+  const activeDirection = isActive ? sortConfig?.direction || 'asc' : 'asc';
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handle = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [isOpen]);
+
+  return (
+    <div ref={ref} className={`relative inline-flex min-w-0 ${className}`}>
+      <button
+        type="button"
+        onClick={() => { if (options.length > 1) setIsOpen(current => !current); else onSort(activeOption.key); }}
+        className={`min-w-0 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider hover:text-slate-900 transition-colors ${isActive ? 'text-slate-900' : 'text-slate-400'}`}
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown className={`w-3.5 h-3.5 ${isActive ? 'text-brand-500' : 'text-slate-300'}`} />
+        {isActive && <span className="text-[9px] text-brand-600">{sortConfig?.direction === 'asc' ? 'ASC' : 'DESC'}</span>}
+      </button>
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-2 w-52 rounded-2xl border border-slate-100 bg-white p-2 shadow-2xl shadow-slate-200/70 z-[80]">
+          <div className="px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-300">Sort by</div>
+          <div className="space-y-2">
+            <StyledSelect
+              value={activeOption.key}
+              options={options.map(option => ({ value: option.key, label: option.label }))}
+              onChange={value => { onSelectSort(value as PolicySortField); onSetSort(value as PolicySortField, activeDirection); }}
+            />
+            <StyledSelect
+              value={activeDirection}
+              options={[{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]}
+              onChange={value => onSetSort(activeOption.key, value as SortDirection)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const AgentPoliciesV2: React.FC = () => {
-  const { currentAgentId } = useAgentContext();
+  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
 
   // ── State ──
@@ -383,29 +931,55 @@ export const AgentPoliciesV2: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [sortField, setSortField] = useState<PolicySortField>('created_at');
-  const [sortDir, setSortDir] = useState<SortDirection>('desc');
-
-  const [statusFilter, setStatusFilter] = useState('');
-  const [paidFilter, setPaidFilter] = useState('');
-  const [lockedFilter, setLockedFilter] = useState<boolean | undefined>(undefined);
+  const [sortConfig, setSortConfig] = useState<PolicySortConfig | null>(normalizePolicySortConfig({ key: 'created_at', direction: 'desc' }));
+  const [filterGroups, setFilterGroups] = useState<PolicyFilterGroup[]>([makePolicyFilterGroup()]);
+  const [carrierOptions, setCarrierOptions] = useState<PolicyFilterOption[]>([]);
+  const [policyStatusOptions, setPolicyStatusOptions] = useState<PolicyFilterOption[]>([]);
+  const [paidStatusOptions, setPaidStatusOptions] = useState<PolicyFilterOption[]>([]);
+  const [filterOptionsLoading, setFilterOptionsLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('all');
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyV2 | null>(null);
 
-  // ── Stats (refetch only on dateRange / agent change) ──
-  const [stats, setStats] = useState<PoliciesV2Stats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
+  const agentOptions = useMemo<PolicyFilterOption[]>(() => {
+    const options = selectedAgentIds.filter(Boolean).map(agentId => {
+      const subAgent = subAgents.find(agent => agent.agentId === agentId);
+      return {
+        id: agentId,
+        label: subAgent?.name || (agentId === currentAgentId ? viewingAgentName : agentId),
+      };
+    });
+    return options.filter((option, index, all) => all.findIndex(item => item.id === option.id) === index);
+  }, [selectedAgentIds, subAgents, currentAgentId, viewingAgentName]);
 
   useEffect(() => {
-    if (!currentAgentId) return;
-    setStatsLoading(true);
-    agentPoliciesV2Api.getStats(currentAgentId, startDate, endDate)
-      .then(setStats)
-      .catch(() => setStats(null))
-      .finally(() => setStatsLoading(false));
-  }, [currentAgentId, startDate, endDate]);
+    let cancelled = false;
+    setFilterOptionsLoading(true);
+    Promise.all([
+      agentPoliciesV2Api.getCarrierOptions(),
+      agentPoliciesV2Api.getPolicyStatusOptions(),
+      agentPoliciesV2Api.getPolicyPaidStatusOptions(),
+    ])
+      .then(([carriers, statuses, paidStatuses]) => {
+        if (cancelled) return;
+        setCarrierOptions(carriers);
+        setPolicyStatusOptions(statuses);
+        setPaidStatusOptions(paidStatuses);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCarrierOptions([]);
+        setPolicyStatusOptions([]);
+        setPaidStatusOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setFilterOptionsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Debounce search ──
   useEffect(() => {
@@ -418,21 +992,25 @@ export const AgentPoliciesV2: React.FC = () => {
 
   // ── Fetch ──
   const load = useCallback(async () => {
-    if (!currentAgentId) return;
+    const agentIds = selectedAgentIds.filter(Boolean);
+    if (agentIds.length === 0) return;
+    if (timeframe === 'custom' && (startDate === undefined || endDate === undefined)) {
+      setData(null);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
       const result = await agentPoliciesV2Api.getPolicies({
-        agentId: currentAgentId,
+        agentIds,
         page,
         perPage,
-        search: searchTerm || undefined,
-        sort: { field: sortField, dir: sortDir },
-        statusFilter: statusFilter || undefined,
-        paidFilter: paidFilter || undefined,
-        lockedFilter,
-        startDate,
-        endDate,
+        search: searchTerm,
+        sort: sortConfig ? { [SORT_FIELD_TO_API[sortConfig.key] || sortConfig.key]: sortConfig.direction } : {},
+        filter: buildPolicyFilterExpression(filterGroups),
+        timeframe: timeframe === 'all' ? null : timeframe,
+        startDate: timeframe === 'custom' ? toRequestDate(startDate) : null,
+        endDate: timeframe === 'custom' ? toRequestDate(endDate) : null,
       });
       setData(result);
     } catch (e) {
@@ -440,57 +1018,128 @@ export const AgentPoliciesV2: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentAgentId, page, perPage, searchTerm, sortField, sortDir, statusFilter, paidFilter, lockedFilter, startDate, endDate]);
+  }, [selectedAgentIds, page, perPage, searchTerm, sortConfig, filterGroups, timeframe, startDate, endDate]);
 
   useEffect(() => { load(); }, [load]);
 
+  const handleTimeframeChange = (next: PoliciesTimeframe) => {
+    setTimeframe(next);
+    setPage(1);
+  };
+
   // ── Sort handler ──
   const handleSort = (field: PolicySortField) => {
-    if (field === sortField) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDir(field === 'created_at' ? 'desc' : 'asc');
-    }
+    setSortConfig(current => ({
+      key: field,
+      direction: current?.key === field && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+    setPage(1);
+  };
+
+  const handleSelectSortField = (field: PolicySortField) => {
+    setSortConfig(current => ({
+      key: field,
+      direction: current?.key === field ? current.direction : 'asc',
+    }));
+    setPage(1);
+  };
+
+  const handleSetSort = (field: PolicySortField, direction: SortDirection) => {
+    setSortConfig({ key: field, direction });
     setPage(1);
   };
 
   // ── Filter change helpers ──
-  const handleStatusFilter = (v: string) => { setStatusFilter(v); setPage(1); };
-  const handlePaidFilter = (v: string) => { setPaidFilter(v); setPage(1); };
-  const clearFilters = () => { setStatusFilter(''); setPaidFilter(''); setLockedFilter(undefined); setStartDate(undefined); setEndDate(undefined); setPage(1); };
-  const activeFilters = [statusFilter, paidFilter].filter(Boolean).length + (lockedFilter !== undefined ? 1 : 0) + (startDate !== undefined ? 1 : 0);
+  const clearFilters = () => { setFilterGroups([makePolicyFilterGroup()]); setPage(1); };
+  const activeFilters = getCompleteFilterGroups(filterGroups).reduce((total, group) => total + group.rows.length, 0);
 
   const items = data?.items ?? [];
+  const stats = data?.policy_stats ?? null;
+  const statsLoading = false;
+  const isPageSelected = items.length > 0 && items.every(policy => selectedIds.has(policy.selectionKey));
+
+  const getRemoteOptions = (fieldKey: PolicyFilterFieldKey | '') => {
+    if (fieldKey === 'ref_agent_owner') return agentOptions;
+    if (fieldKey === 'ref_carrier_id') return carrierOptions;
+    if (fieldKey === 'ref_policyStatus_id') return policyStatusOptions;
+    if (fieldKey === 'meta_policy_paidstatus_id') return paidStatusOptions;
+    if (fieldKey === 'isLocked') return LOCK_STATUS_OPTIONS;
+    return [];
+  };
+
+  const updateFilterRow = (groupId: string, rowId: string, updates: Partial<PolicyFilterRow>) => {
+    setFilterGroups(current => current.map(group => group.id !== groupId ? group : {
+      ...group,
+      rows: group.rows.map(row => row.id !== rowId ? row : { ...row, ...updates }),
+    }));
+  };
+
+  const addFilterRow = (groupId: string) => {
+    setFilterGroups(current => current.map(group => group.id !== groupId ? group : {
+      ...group,
+      rows: [...group.rows, makePolicyFilterRow()],
+    }));
+  };
+
+  const removeFilterRow = (groupId: string, rowId: string) => {
+    setFilterGroups(current => current.map(group => group.id !== groupId ? group : {
+      ...group,
+      rows: group.rows.length > 1 ? group.rows.filter(row => row.id !== rowId) : [makePolicyFilterRow()],
+    }));
+  };
+
+  const duplicateFilterGroup = (group: PolicyFilterGroup) => {
+    setFilterGroups(current => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        rows: group.rows.map(row => ({ ...row, id: crypto.randomUUID() })),
+      },
+    ]);
+  };
+
+  const removeFilterGroup = (groupId: string) => {
+    setFilterGroups(current => current.length > 1 ? current.filter(group => group.id !== groupId) : [makePolicyFilterGroup()]);
+  };
+
+  const applyFilters = () => {
+    setPage(1);
+    setShowFilters(false);
+  };
 
   return (
     <div className="animate-in fade-in duration-300">
 
       {/* ── Dev notice ───────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-5 px-4 py-3 rounded-2xl border border-violet-200/60 bg-white/50 backdrop-blur-sm">
-        <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>
-          <Zap className="w-3.5 h-3.5 text-white" />
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-xl shadow-slate-900/10">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">Policy Records</h2>
+            <p className="text-sm font-bold text-slate-500">Review policies across your selected workspace access.</p>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="hidden">
           <p className="text-xs font-black text-violet-700">Policies V2 — Under Active Development</p>
           <p className="text-[11px] text-slate-400 font-medium">More features coming soon — advanced filters, bulk actions, export, and more.</p>
         </div>
-        <span className="shrink-0 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg text-violet-600" style={{ background: 'rgba(124,58,237,0.08)' }}>Beta</span>
+        <span className="hidden">Beta</span>
+        <PolicyDateRangeFilter
+          timeframe={timeframe}
+          startDate={startDate}
+          endDate={endDate}
+          onTimeframeChange={handleTimeframeChange}
+          onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
+        />
       </div>
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Overview</p>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-400">by created date</span>
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
-          />
-        </div>
       </div>
-      <div className="grid grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         {(() => {
           const placementRatio = stats && stats.submittedPolicies > 0
             ? (stats.issued_placed / stats.submittedPolicies) * 100
@@ -503,67 +1152,84 @@ export const AgentPoliciesV2: React.FC = () => {
               label: 'Submitted',
               value: stats?.submittedPolicies ?? 0,
               sub: fmtCurrency(stats?.submittedPolicies_premium ?? 0),
-              icon: <Send className="w-20 h-20" />,
-              iconColor: 'text-sky-400/20',
+              icon: <Send className="w-5 h-5" />,
+              tone: 'dark',
             },
             {
               label: 'Issued / Placed',
               value: stats?.issued_placed ?? 0,
               sub: fmtCurrency(stats?.issued_placed_premium ?? 0),
-              icon: <CheckCheck className="w-20 h-20" />,
-              iconColor: 'text-emerald-400/20',
+              icon: <CheckCheck className="w-5 h-5" />,
+              tone: 'gold',
             },
             {
               label: 'Placement Ratio',
               value: `${placementRatio.toFixed(1)}%`,
               sub: `${stats?.issued_placed ?? 0} of ${stats?.submittedPolicies ?? 0}`,
               isPercent: true,
-              icon: <TrendingUp className="w-20 h-20" />,
-              iconColor: 'text-violet-400/25',
+              icon: <TrendingUp className="w-5 h-5" />,
+              tone: 'white',
             },
             {
               label: 'Active In Force',
               value: stats?.active_inForce ?? 0,
               sub: fmtCurrency(stats?.active_inForce_premium ?? 0),
-              icon: <Zap className="w-20 h-20" />,
-              iconColor: 'text-indigo-400/20',
+              icon: <Zap className="w-5 h-5" />,
+              tone: 'white',
             },
             {
               label: 'Persistency',
               value: `${persistency.toFixed(1)}%`,
               sub: `${stats?.active_inForce ?? 0} of ${stats?.issued_placed ?? 0} issued`,
               isPercent: true,
-              icon: <Activity className="w-20 h-20" />,
-              iconColor: 'text-violet-400/25',
+              icon: <Activity className="w-5 h-5" />,
+              tone: 'gold-soft',
             },
             {
               label: 'Need Attention',
               value: stats?.need_attention ?? 0,
               sub: fmtCurrency(stats?.need_attention_premium ?? 0),
               alert: true,
-              icon: <AlertTriangle className="w-20 h-20" />,
-              iconColor: 'text-amber-400/30',
+              icon: <AlertTriangle className="w-5 h-5" />,
+              tone: 'alert',
             },
-          ] as { label: string; value: number | string; sub: string; isPercent?: boolean; alert?: boolean; icon: React.ReactNode; iconColor: string }[]).map(({ label, value, sub, isPercent, alert, icon, iconColor }) => {
+          ] as { label: string; value: number | string; sub: string; alert?: boolean; icon: React.ReactNode; tone: 'dark' | 'gold' | 'gold-soft' | 'white' | 'alert' }[]).map(({ label, value, sub, alert, icon, tone }) => {
             const isAlertActive = alert && (stats?.need_attention ?? 0) > 0;
+            const isDark = tone === 'dark';
+            const isGold = tone === 'gold' || tone === 'gold-soft' || (tone === 'alert' && isAlertActive);
+            const cardClass = isDark
+              ? 'bg-slate-950 border-slate-950 text-white shadow-xl shadow-slate-900/15'
+              : tone === 'gold'
+              ? 'bg-[#d49b17] border-[#d49b17] text-slate-950 shadow-xl shadow-amber-900/10'
+              : isAlertActive
+              ? 'bg-amber-50 border-[#d49b17] text-slate-950 shadow-xl shadow-amber-900/10'
+              : 'bg-white border-white/80 text-slate-950 shadow-sm';
+            const labelClass = isDark ? 'text-white/45' : isGold ? 'text-slate-950/55' : 'text-slate-400';
+            const subClass = isDark ? 'text-white/55' : isGold ? 'text-slate-950/65' : 'text-slate-500';
+            const iconClass = isDark
+              ? 'bg-[#d49b17] text-slate-950'
+              : isGold
+              ? 'bg-slate-950 text-white'
+              : 'bg-slate-950 text-[#d49b17]';
             return (
-              <div key={label} className={`
-                relative overflow-hidden rounded-2xl px-5 py-4 border shadow-sm backdrop-blur-sm
-                ${isAlertActive
-                  ? 'bg-gradient-to-br from-amber-50/90 to-orange-50/70 border-amber-200/60'
-                  : isPercent
-                  ? 'bg-gradient-to-br from-white/80 to-violet-50/60 border-violet-100/60'
-                  : 'bg-white/70 border-white/60'}
-              `}>
-                {/* Background icon */}
-                <div className={`absolute -bottom-3 -right-3 ${iconColor} rotate-[-15deg] pointer-events-none select-none`}>
-                  {icon}
+              <div key={label} className={`relative overflow-hidden rounded-2xl border px-4 py-4 ${cardClass}`}>
+                <div className={`absolute left-0 top-0 h-full w-1.5 ${isDark ? 'bg-[#d49b17]' : isGold ? 'bg-slate-950' : 'bg-[#d49b17]'}`} />
+                <div className="relative flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${labelClass}`}>{label}</p>
+                    <p className={`text-2xl font-black leading-none tracking-tight ${isAlertActive ? 'text-[#9a5c00]' : isDark ? 'text-white' : 'text-slate-950'}`}>
+                      {statsLoading ? 'â€”' : value}
+                    </p>
+                    <p className={`text-[11px] font-bold mt-2 truncate ${subClass}`}>{statsLoading ? 'â€”' : sub}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${iconClass}`}>
+                    {icon}
+                  </div>
                 </div>
-                {/* subtle inner glow */}
-                <div className={`absolute inset-0 rounded-2xl opacity-40 ${isAlertActive ? 'bg-gradient-to-br from-amber-200/30 to-transparent' : isPercent ? 'bg-gradient-to-br from-violet-200/20 to-transparent' : 'bg-gradient-to-br from-white/60 to-transparent'}`} />
-                <div className="relative">
+                <div className={`absolute bottom-0 right-0 h-10 w-16 border-t border-l rounded-tl-[2rem] ${isDark ? 'border-white/10' : 'border-slate-950/5'}`} />
+                <div className="hidden">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{label}</p>
-                  <p className={`text-2xl font-black leading-none ${isAlertActive ? 'text-amber-600' : isPercent ? 'text-violet-700' : 'text-slate-900'}`}>
+                  <p className={`text-2xl font-black leading-none ${isAlertActive ? 'text-amber-600' : 'text-slate-900'}`}>
                     {statsLoading ? '—' : value}
                   </p>
                   <p className="text-[11px] text-slate-400 font-medium mt-1">{statsLoading ? '—' : sub}</p>
@@ -578,19 +1244,29 @@ export const AgentPoliciesV2: React.FC = () => {
       <div className={`flex gap-4 items-start transition-all duration-300`}>
 
       {/* Table card */}
-      <div className="flex-1 min-w-0 bg-white/80 backdrop-blur-sm rounded-3xl border border-white/60 shadow-lg shadow-slate-200/50 overflow-hidden">
+      <div className="flex-1 min-w-0 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden relative min-h-[600px] flex flex-col">
 
-        {/* Toolbar */}
-        <div className="px-6 py-4 flex items-center justify-between gap-3 border-b border-slate-100/80 bg-gradient-to-r from-slate-50/60 to-white/40">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <div className="p-5 border-b border-slate-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-brand-50 rounded-2xl text-brand-600 border border-brand-100 shadow-sm">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Policy Records</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                {(data?.itemsTotal ?? items.length).toLocaleString()} records matching current view
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3 flex-1 min-w-0 xl:max-w-4xl">
+            <div className="relative flex-1 min-w-60 group">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within:text-brand-500 transition-colors" />
               <input
                 type="text"
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
-                placeholder="Search client, policy #, carrier…"
-                className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl bg-slate-50 border border-slate-200 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-400/20 transition-all"
+                placeholder="Search client, policy #, carrier..."
+                className="w-full pl-11 pr-3 py-4 text-sm rounded-2xl bg-slate-50 border border-slate-100 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all font-bold"
               />
               {searchInput && (
                 <button onClick={() => setSearchInput('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
@@ -602,59 +1278,31 @@ export const AgentPoliciesV2: React.FC = () => {
             {/* Filter toggle — disabled, coming soon */}
             <div className="relative group">
               <button
-                disabled
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold border bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed opacity-60 select-none"
+                onClick={() => setShowFilters(true)}
+                className={`flex items-center gap-3 px-5 py-4 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all ${
+                  activeFilters > 0
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xl shadow-slate-900/10'
+                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+                }`}
               >
-                <Filter className="w-3.5 h-3.5" />
-                Filters
+                <Filter className="w-4 h-4" />
+                Advanced Filter
+                {activeFilters > 0 && (
+                  <span className="min-w-6 h-6 px-2 rounded-full bg-brand-500 text-slate-900 flex items-center justify-center text-[10px] font-black">
+                    {activeFilters}
+                  </span>
+                )}
               </button>
-              {/* Tooltip */}
-              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                <div className="bg-slate-900 text-white text-[11px] font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
-                  Feature coming soon
-                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 rotate-45 rounded-sm" />
-                </div>
-              </div>
             </div>
 
-            {/* Locked segmented control */}
-            <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-0.5">
-              {([
-                { label: 'All',      value: undefined },
-                { label: 'Unlocked', value: false },
-                { label: 'Locked',   value: true },
-              ] as { label: string; value: boolean | undefined }[]).map(({ label, value }) => {
-                const active = lockedFilter === value;
-                return (
-                  <button
-                    key={label}
-                    onClick={() => { setLockedFilter(value); setPage(1); }}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      active
-                        ? 'bg-white text-slate-800 shadow-sm'
-                        : 'text-slate-400 hover:text-slate-600'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Per page */}
-            <select
-              value={perPage}
-              onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-              className="text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-400 cursor-pointer"
-            >
-              {PER_PAGE_OPTIONS.map(n => (
-                <option key={n} value={n}>{n} / page</option>
-              ))}
-            </select>
-
-            {/* Refresh */}
+            {(searchTerm || activeFilters > 0) && (
+              <button
+                onClick={() => { setSearchInput(''); setSearchTerm(''); clearFilters(); }}
+                className="px-5 py-4 rounded-2xl bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Reset View
+              </button>
+            )}
             <button
               onClick={load}
               disabled={isLoading}
@@ -668,15 +1316,29 @@ export const AgentPoliciesV2: React.FC = () => {
         {/* No inline filter bar — replaced by side dock below */}
 
         {/* Table header */}
-        <div className="px-6 py-3 grid grid-cols-[2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr] gap-3 bg-slate-50/70 border-b border-slate-100">
-          <SortBtn field="client" current={sortField} dir={sortDir} onSort={handleSort}>Client</SortBtn>
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy #</span>
-          <SortBtn field="carrier" current={sortField} dir={sortDir} onSort={handleSort}>Carrier / Product</SortBtn>
-          <SortBtn field="initial_draft_date" current={sortField} dir={sortDir} onSort={handleSort}>Draft Date</SortBtn>
-          <SortBtn field="annual_premium" current={sortField} dir={sortDir} onSort={handleSort} className="justify-end">Premium</SortBtn>
-          <SortBtn field="status" current={sortField} dir={sortDir} onSort={handleSort}>Status</SortBtn>
-          <SortBtn field="paid_status" current={sortField} dir={sortDir} onSort={handleSort}>Paid</SortBtn>
-          <SortBtn field="source_name" current={sortField} dir={sortDir} onSort={handleSort}>Source</SortBtn>
+        <div className="px-6 py-3 grid grid-cols-[36px_2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr] gap-3 bg-slate-50/70 border-b border-slate-100 items-center">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedIds(current => {
+                const next = new Set(current);
+                if (isPageSelected) items.forEach(policy => next.delete(policy.selectionKey));
+                else items.forEach(policy => next.add(policy.selectionKey));
+                return next;
+              });
+            }}
+            className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${isPageSelected ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-300 bg-white hover:border-brand-300'}`}
+          >
+            {isPageSelected && <Check className="w-3.5 h-3.5" />}
+          </button>
+          <SortableTableHeader label="Client & Created" options={[{ key: 'client', label: 'Client' }, { key: 'created_at', label: 'Created' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
+          <SortableTableHeader label="Policy Number" options={[{ key: 'policy_number', label: 'Policy #' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
+          <SortableTableHeader label="Carrier / Product" options={[{ key: 'carrier_product', label: 'Product' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
+          <SortableTableHeader label="Effective Date" options={[{ key: 'initial_draft_date', label: 'Eff. Date' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
+          <SortableTableHeader label="Premium" options={[{ key: 'annual_premium', label: 'Premium' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} className="justify-end" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Status</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Paid</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Source</span>
         </div>
 
         {/* Loading */}
@@ -719,16 +1381,33 @@ export const AgentPoliciesV2: React.FC = () => {
           <div>
             {items.map((policy, idx) => {
               const isSelected = selectedPolicy?.policy_id === policy.policy_id;
+              const isChecked = selectedIds.has(policy.selectionKey);
               return (
               <div
                 key={policy.policy_id}
                 onClick={() => setSelectedPolicy(isSelected ? null : policy)}
-                className={`px-6 py-4 grid grid-cols-[2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr] gap-3 items-center border-b border-slate-50 transition-colors cursor-pointer ${
+                className={`px-6 py-4 grid grid-cols-[36px_2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr] gap-3 items-center border-b border-slate-50 transition-colors cursor-pointer ${
                   isSelected
                     ? 'bg-slate-900 text-white'
                     : idx % 2 === 0 ? 'hover:bg-slate-50/60' : 'bg-slate-50/20 hover:bg-slate-50/60'
                 }`}
               >
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedIds(current => {
+                      const next = new Set(current);
+                      if (next.has(policy.selectionKey)) next.delete(policy.selectionKey);
+                      else next.add(policy.selectionKey);
+                      return next;
+                    });
+                  }}
+                  className={`w-5 h-5 rounded border transition-all flex items-center justify-center ${isChecked ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-300 bg-white hover:border-brand-300'}`}
+                >
+                  {isChecked && <Check className="w-3.5 h-3.5" />}
+                </button>
+
                 {/* Client */}
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="shrink-0">
@@ -779,7 +1458,7 @@ export const AgentPoliciesV2: React.FC = () => {
         )}
 
         {/* Pagination */}
-        {!isLoading && !error && data && (data.nextPage || data.prevPage || data.curPage > 1) && (
+        {!isLoading && !error && data && (
           <Pagination
             cur={data.curPage}
             next={data.nextPage}
@@ -790,16 +1469,17 @@ export const AgentPoliciesV2: React.FC = () => {
             perPage={perPage}
             offset={data.offset}
             onPage={p => setPage(p)}
+            onPerPage={n => { setPerPage(n); setPage(1); }}
           />
         )}
       </div>{/* end table card */}
 
         {/* ── Policy Detail Panel ──────────────────────────────────────── */}
         <div className={`shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
-          selectedPolicy ? 'w-72 opacity-100' : 'w-0 opacity-0 pointer-events-none'
+          selectedPolicy ? 'w-1/3 min-w-96 max-w-[32rem] opacity-100' : 'w-0 opacity-0 pointer-events-none'
         }`}>
           {selectedPolicy && (
-            <div className="w-72 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="w-full bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
               {/* Panel header */}
               <div className="bg-slate-900 px-5 py-4">
                 <div className="flex items-start justify-between gap-2 mb-3">
@@ -899,7 +1579,7 @@ export const AgentPoliciesV2: React.FC = () => {
 
       {/* Panel */}
       <div
-        className={`fixed top-0 right-0 z-[120] h-full w-80 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${
+        className={`fixed top-0 right-0 z-[120] h-full w-96 max-w-[calc(100vw-2rem)] bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${
           showFilters ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -924,76 +1604,122 @@ export const AgentPoliciesV2: React.FC = () => {
           </button>
         </div>
 
-        {/* Filter sections */}
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-
-          {/* Status */}
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Policy Status</p>
-            <div className="space-y-1.5">
-              {(['', ...STATUS_OPTIONS] as string[]).map(opt => {
-                const style = opt ? STATUS_STYLES[opt] : null;
-                const isSelected = statusFilter === opt;
-                return (
-                  <button
-                    key={opt || '__all__'}
-                    onClick={() => handleStatusFilter(opt)}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all border ${
-                      isSelected
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${style?.dot ?? 'bg-slate-300'}`} />
-                    {opt || 'All Statuses'}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+          {filterGroups.map((group, groupIndex) => (
+            <div key={group.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {groupIndex === 0 ? 'Filter Group' : 'Or Group'}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => duplicateFilterGroup(group)} className="px-2 py-1 rounded-lg text-[10px] font-black text-slate-500 hover:bg-white border border-slate-200">Duplicate</button>
+                  <button onClick={() => removeFilterGroup(group.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-white border border-slate-200">
+                    <X className="w-3.5 h-3.5" />
                   </button>
+                </div>
+              </div>
+
+              {group.rows.map((row, rowIndex) => {
+                const field = getPolicyFilterField(row.field);
+                const ops = getPolicyFilterOps(row.field);
+                return (
+                  <div key={row.id} className="rounded-2xl bg-white border border-slate-100 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{rowIndex === 0 ? 'Where' : 'And'}</span>
+                      <button onClick={() => removeFilterRow(group.id, row.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <StyledSelect
+                      value={row.field}
+                      placeholder="Choose field"
+                      options={POLICY_FILTER_FIELDS.map(option => ({ value: option.key, label: option.label }))}
+                      onChange={value => {
+                        const nextField = value as PolicyFilterFieldKey;
+                        const nextOps = getPolicyFilterOps(nextField);
+                        updateFilterRow(group.id, row.id, {
+                          field: nextField,
+                          op: nextOps[0]?.op || '==',
+                          value: '',
+                          displayValue: '',
+                          dateRange: null,
+                        });
+                      }}
+                    />
+
+                    {row.field && (
+                      <StyledSelect
+                        value={row.op}
+                        options={ops.map(option => ({ value: option.op, label: option.label }))}
+                        onChange={value => updateFilterRow(group.id, row.id, { op: value as PolicyFilterOp })}
+                      />
+                    )}
+
+                    {field?.type === 'text' && (
+                      <input
+                        value={row.value}
+                        onChange={event => updateFilterRow(group.id, row.id, { value: event.target.value })}
+                        placeholder="Enter value..."
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500"
+                      />
+                    )}
+
+                    {(field?.type === 'remote-select' || field?.type === 'boolean-select') && (
+                      <QuickSearchFilterSelect
+                        value={row.value}
+                        displayValue={row.displayValue}
+                        options={getRemoteOptions(row.field)}
+                        loading={filterOptionsLoading}
+                        placeholder={`Select ${field.label.toLowerCase()}`}
+                        onChange={option => updateFilterRow(group.id, row.id, { value: option.id, displayValue: option.label })}
+                      />
+                    )}
+
+                    {field?.type === 'date-range' && (
+                      <DateRangePicker
+                        startDate={row.dateRange?.start ?? undefined}
+                        endDate={row.dateRange?.end ?? undefined}
+                        onChange={(start, end) => updateFilterRow(group.id, row.id, {
+                          value: start && end ? `${start}-${end}` : '',
+                          dateRange: {
+                            start: start ?? null,
+                            end: end ?? null,
+                            label: start && end ? `${fmtTs(start)} - ${fmtTs(end)}` : 'Custom Range',
+                          },
+                        })}
+                      />
+                    )}
+                  </div>
                 );
               })}
-            </div>
-          </div>
 
-          {/* Paid Status */}
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Paid Status</p>
-            <div className="space-y-1.5">
-              {(['', ...PAID_OPTIONS] as string[]).map(opt => {
-                const isSelected = paidFilter === opt;
-                return (
-                  <button
-                    key={opt || '__all__'}
-                    onClick={() => handlePaidFilter(opt)}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all border ${
-                      isSelected
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${
-                      opt === 'Paid' ? 'bg-green-500' :
-                      opt === 'Unpaid' ? 'bg-amber-500' :
-                      opt === 'N/A' ? 'bg-slate-300' :
-                      'bg-slate-300'
-                    }`} />
-                    {opt || 'All Paid Statuses'}
-                  </button>
-                );
-              })}
+              <button onClick={() => addFilterRow(group.id)} className="w-full py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-black text-slate-500 hover:text-slate-900 hover:border-slate-300 transition-all">
+                Add AND Condition
+              </button>
             </div>
-          </div>
+          ))}
+
+          <button onClick={() => setFilterGroups(current => [...current, makePolicyFilterGroup()])} className="w-full py-3 rounded-2xl border border-dashed border-slate-300 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 hover:border-slate-400 transition-all">
+            Add OR Group
+          </button>
         </div>
 
-        {/* Dock footer */}
-        {activeFilters > 0 && (
-          <div className="px-5 py-4 border-t border-slate-100">
-            <button
-              onClick={clearFilters}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 border border-red-100 hover:border-red-200 transition-all"
-            >
-              <X className="w-3.5 h-3.5" />
-              Clear all filters
-            </button>
-          </div>
-        )}
+        <div className="px-5 py-4 border-t border-slate-100 grid grid-cols-2 gap-3">
+          <button
+            onClick={clearFilters}
+            className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 border border-red-100 hover:border-red-200 transition-all"
+          >
+            <X className="w-3.5 h-3.5" />
+            Clear
+          </button>
+          <button
+            onClick={applyFilters}
+            className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-black text-white bg-slate-900 hover:bg-slate-800 transition-all"
+          >
+            Apply
+          </button>
+        </div>
       </div>
 
     </div>
