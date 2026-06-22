@@ -17,7 +17,7 @@ import { agentProfileApi, AgentProfile } from '../services/agentProfileApi';
 import { PolicyV2 } from '../services/agentPoliciesV2Api';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 
-type DetailTab = 'overview' | 'downlines' | 'policies';
+type DetailTab = 'overview' | 'downlines' | 'policies' | 'production';
 
 interface DownlineBreadcrumb {
   agent_id: string;
@@ -114,7 +114,7 @@ export const DownlineAgentDetails: React.FC = () => {
   const [downlinesLoading, setDownlinesLoading] = useState(false);
   const [downlineSearch, setDownlineSearch] = useState('');
   const activeTab = (searchParams.get('tab') as DetailTab) || 'overview';
-  const safeTab: DetailTab = ['overview', 'downlines', 'policies'].includes(activeTab) ? activeTab : 'overview';
+  const safeTab: DetailTab = ['overview', 'downlines', 'policies', 'production'].includes(activeTab) ? activeTab : 'overview';
 
   const fallbackAgent = routeState?.agent;
   const firstName = profile?.first_name || fallbackAgent?.first_name || '';
@@ -298,6 +298,7 @@ export const DownlineAgentDetails: React.FC = () => {
                 { key: 'overview', label: 'Overview' },
                 { key: 'downlines', label: 'Direct Downlines' },
                 { key: 'policies', label: 'Policies' },
+                { key: 'production', label: 'Team Production' },
               ].map(tab => (
                 <button
                   key={tab.key}
@@ -364,6 +365,10 @@ export const DownlineAgentDetails: React.FC = () => {
                     <p className="text-sm font-black text-slate-900">View Policies</p>
                     <p className="mt-1 text-xs font-semibold text-slate-400">Show policies owned by this agent.</p>
                   </button>
+                  <button onClick={() => changeTab('production')} className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4 text-left transition-all hover:border-amber-200 hover:bg-amber-50">
+                    <p className="text-sm font-black text-slate-900">View Team Production</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-400">Show this agent and their downline production.</p>
+                  </button>
                 </div>
               </div>
             </div>
@@ -405,6 +410,18 @@ export const DownlineAgentDetails: React.FC = () => {
               headingSubtitle={`Review policies owned by ${displayName}.`}
               variant="downline"
               readOnlyRows
+            />
+          </div>
+        )}
+
+        {safeTab === 'production' && (
+          <div className="bg-slate-50/70 p-6">
+            <AgentPoliciesV2
+              agentIdsOverride={[agentId]}
+              dataSource="team"
+              headingTitle="Team Production"
+              headingSubtitle={`Aggregated policies for ${displayName} and their downline tree.`}
+              variant="downline"
             />
           </div>
         )}

@@ -22,6 +22,7 @@ export interface AgentProfile {
   ref_ffl_agency_name?: string | null;
   ref_agent_upline?: string | null;
   ref_agent_upline_name?: string | null;
+  direct_upline_name?: string | null;
   profile_url?: string | null;
 }
 
@@ -37,7 +38,8 @@ const normalizeProfile = (data: any, agentId: string): AgentProfile => ({
   ref_ffl_agency: data?.ref_ffl_agency || data?.agency_id || null,
   ref_ffl_agency_name: data?.ref_ffl_agency_name || data?.agency_name || data?.agency?.name || null,
   ref_agent_upline: data?.ref_agent_upline || data?.upline_id || null,
-  ref_agent_upline_name: data?.ref_agent_upline_name || data?.upline_name || null,
+  ref_agent_upline_name: data?.direct_upline_name || data?.ref_agent_upline_name || data?.upline_name || null,
+  direct_upline_name: data?.direct_upline_name || null,
   profile_url: data?.profile?.url || data?.profile_url || data?.profileUrl || data?.image_url || null,
 });
 

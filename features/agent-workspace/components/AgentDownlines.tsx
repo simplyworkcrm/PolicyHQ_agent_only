@@ -19,13 +19,14 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
-import { agentPoliciesApi } from '../services/agentPoliciesApi';
+import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { Policy } from '../../../shared/types/index';
 
 interface DateRange {
     start: number;
     end: number;
     label: string;
+    timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 }
 
 // --- HELPERS & UTILITIES ---
@@ -38,7 +39,7 @@ const getDateRange = (type: 'today' | 'weekly' | 'monthly' | 'yearly'): DateRang
     start.setHours(0,0,0,0);
     end.setHours(23,59,59,999);
 
-    if (type === 'today') return { start: start.getTime(), end: end.getTime(), label: 'Today' };
+    if (type === 'today') return { start: start.getTime(), end: end.getTime(), label: 'Today', timeframe: 'today' };
     
     if (type === 'weekly') {
         const day = start.getDay(); // 0 is Sunday
@@ -46,30 +47,36 @@ const getDateRange = (type: 'today' | 'weekly' | 'monthly' | 'yearly'): DateRang
         start.setDate(diff);
         end.setDate(diff + 6);
         end.setHours(23,59,59,999);
-        return { start: start.getTime(), end: end.getTime(), label: 'Weekly' };
+        return { start: start.getTime(), end: end.getTime(), label: 'Weekly', timeframe: 'weekly' };
     }
 
     if (type === 'monthly') {
         start.setDate(1);
         const endMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         endMonth.setHours(23,59,59,999);
-        return { start: start.getTime(), end: endMonth.getTime(), label: 'Monthly' };
+        return { start: start.getTime(), end: endMonth.getTime(), label: 'Monthly', timeframe: 'monthly' };
     }
 
     if (type === 'yearly') {
         start.setMonth(0, 1);
         const endYear = new Date(now.getFullYear(), 11, 31);
         endYear.setHours(23,59,59,999);
-        return { start: start.getTime(), end: endYear.getTime(), label: 'Yearly' };
+        return { start: start.getTime(), end: endYear.getTime(), label: 'Yearly', timeframe: 'yearly' };
     }
     
-    return { start: start.getTime(), end: end.getTime(), label: 'Custom' };
+    return { start: start.getTime(), end: end.getTime(), label: 'Custom', timeframe: 'custom' };
 };
 
 const formatDate = (date: string | number | undefined) => {
     if (!date) return 'N/A';
     const d = new Date(date);
     return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+};
+
+const toRequestDate = (ts: number | undefined) => {
+    if (ts === undefined) return null;
+    const date = new Date(ts);
+    return `${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}-${date.getUTCFullYear()}`;
 };
 
 const getStatusStyles = (status: string) => {
@@ -136,7 +143,7 @@ const DateRangeSelector: React.FC<{
                 const e = selectionStart;
                 s.setHours(0,0,0,0);
                 e.setHours(23,59,59,999);
-                onChange({ start: s.getTime(), end: e.getTime(), label: 'Custom Range' });
+                onChange({ start: s.getTime(), end: e.getTime(), label: 'Custom Range', timeframe: 'custom' });
                 setIsOpen(false);
             } else {
                 setSelectionEnd(date);
@@ -144,7 +151,7 @@ const DateRangeSelector: React.FC<{
                 const e = date;
                 s.setHours(0,0,0,0);
                 e.setHours(23,59,59,999);
-                onChange({ start: s.getTime(), end: e.getTime(), label: 'Custom Range' });
+                onChange({ start: s.getTime(), end: e.getTime(), label: 'Custom Range', timeframe: 'custom' });
                 setIsOpen(false);
             }
         }
@@ -280,17 +287,6 @@ export const AgentDownlines: React.FC = () => {
     }
   }, [selectedAgentId]);
 
-  // 3. Fetch Policies when viewMode is policies or dates change
-  useEffect(() => {
-    if (selectedAgentId && viewMode === 'policies') {
-        setLoadingPolicies(true);
-        agentPoliciesApi.getPolicies(selectedAgentId, dateRange.start, dateRange.end)
-            .then(setPolicies)
-            .catch(err => console.error(err))
-            .finally(() => setLoadingPolicies(false));
-    }
-  }, [selectedAgentId, dateRange, viewMode]);
-
   if (!hasAgentProfile) {
     return (
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-8 flex flex-col items-center justify-center min-h-[400px] text-center">
@@ -334,100 +330,128 @@ export const AgentDownlines: React.FC = () => {
     || 'Selected Agent';
 
   return (
-    <div className="font-sans w-full">
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-50 flex flex-col gap-5">
-                <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4">
-                    <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Downline Scope</p>
-                        <h2 className="text-2xl font-black text-slate-900 tracking-tight truncate">{selectedAgentLabel}</h2>
-                        <p className="text-xs font-semibold text-slate-400 mt-1">
-                          Direct downlines are loaded one agent at a time.
-                        </p>
-                    </div>
+    <div className="font-sans w-full animate-in fade-in duration-300">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-900 text-white shadow-xl shadow-slate-900/10">
+            <Users className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">{viewMode === 'policies' ? 'Team Production' : 'Downlines'}</h2>
+            <p className="text-sm font-bold text-slate-500">
+              {viewMode === 'policies'
+                ? `Aggregated policies for ${selectedAgentLabel} and their downline tree.`
+                : 'Review direct team access and aggregated production.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-100 shadow-sm shrink-0">
+          <button
+            onClick={() => setViewMode('team')}
+            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'team' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Team List
+          </button>
+          <button
+            onClick={() => setViewMode('policies')}
+            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'policies' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Production
+          </button>
+        </div>
+      </div>
 
-                    <div className="flex gap-1 p-1 bg-slate-50 rounded-xl border border-slate-100 shrink-0">
-                         <button 
-                            onClick={() => setViewMode('team')}
-                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'team' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                         >
-                            Team List
-                         </button>
-                         <button 
-                            onClick={() => setViewMode('policies')}
-                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${viewMode === 'policies' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                         >
-                            Production
-                         </button>
-                    </div>
-                </div>
+      {agentSwitchOptions.length > 1 && (
+        <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1">
+          {agentSwitchOptions.map(agent => {
+            const active = agent.id === selectedAgentId;
+            return (
+              <button
+                key={agent.id}
+                onClick={() => {
+                  setSelectedAgentId(agent.id);
+                  setTableSearch('');
+                  setPolicies([]);
+                }}
+                className={`shrink-0 px-4 py-2.5 rounded-2xl text-xs font-black border transition-all ${
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-900/10'
+                    : 'bg-white text-slate-500 border-slate-200 hover:text-slate-900 hover:border-slate-300'
+                }`}
+              >
+                {agent.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-                {agentSwitchOptions.length > 1 && (
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                    {agentSwitchOptions.map(agent => {
-                      const active = agent.id === selectedAgentId;
-                      return (
-                        <button
-                          key={agent.id}
-                          onClick={() => {
-                            setSelectedAgentId(agent.id);
-                            setTableSearch('');
-                            setPolicies([]);
-                          }}
-                          className={`shrink-0 px-4 py-2.5 rounded-2xl text-xs font-black border transition-all ${
-                            active
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-900/10'
-                              : 'bg-white text-slate-500 border-slate-200 hover:text-slate-900 hover:border-slate-300'
-                          }`}
-                        >
-                          {agent.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+      {!agentSwitchOptions.some(agent => agent.id === selectedAgentId) && (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div>
+            <p className="text-xs font-black text-amber-900">Viewing direct downline profile</p>
+            <p className="text-[11px] font-semibold text-amber-700">Use a workspace tab to return to your selected agents.</p>
+          </div>
+          {agentSwitchOptions[0] && (
+            <button
+              onClick={() => {
+                setSelectedAgentId(agentSwitchOptions[0].id);
+                setTableSearch('');
+                setPolicies([]);
+              }}
+              className="shrink-0 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition-colors"
+            >
+              Back to {agentSwitchOptions[0].label}
+            </button>
+          )}
+        </div>
+      )}
 
-                {!agentSwitchOptions.some(agent => agent.id === selectedAgentId) && (
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                    <div>
-                      <p className="text-xs font-black text-amber-900">Viewing direct downline profile</p>
-                      <p className="text-[11px] font-semibold text-amber-700">Use a workspace tab to return to your selected agents.</p>
-                    </div>
-                    {agentSwitchOptions[0] && (
-                      <button
-                        onClick={() => {
-                          setSelectedAgentId(agentSwitchOptions[0].id);
-                          setTableSearch('');
-                          setPolicies([]);
-                        }}
-                        className="shrink-0 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition-colors"
-                      >
-                        Back to {agentSwitchOptions[0].label}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {viewMode === 'team' ? (
-                     <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <input 
-                                type="text" 
-                                placeholder="Filter list..." 
-                                value={tableSearch}
-                                onChange={(e) => setTableSearch(e.target.value)}
-                                className="pl-11 pr-4 py-2.5 bg-slate-50 border border-transparent rounded-xl text-sm font-bold focus:bg-white focus:border-brand-200 focus:ring-4 focus:ring-brand-500/10 transition-all w-64 text-slate-800 placeholder:font-medium"
-                            />
-                        </div>
-                        <button className="p-2.5 bg-slate-50 rounded-xl hover:bg-slate-100 text-slate-500 border border-slate-100 hover:border-slate-200 transition-all">
-                            <Filter className="w-4 h-4" />
-                        </button>
-                    </div>
-                ) : (
-                    <DateRangeSelector value={dateRange} onChange={setDateRange} />
-                )}
+      {viewMode === 'policies' ? (
+        <AgentPoliciesV2
+          agentIdsOverride={[selectedAgentId]}
+          dataSource="team"
+          headingTitle="Team Production"
+          headingSubtitle={`Aggregated policies for ${selectedAgentLabel} and their downline tree.`}
+          hideHeader
+        />
+      ) : (
+      <div className="flex-1 min-w-0 bg-white border border-slate-100 shadow-sm overflow-visible relative min-h-[600px] flex flex-col rounded-[2.5rem]">
+        <div className="p-5 border-b border-slate-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-brand-50 rounded-2xl text-brand-600 border border-brand-100 shadow-sm">
+              <FileText className="w-5 h-5" />
+      </div>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.28em] text-slate-400">Downline Scope</p>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">{selectedAgentLabel}</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                {viewMode === 'team'
+                  ? `${tableAgents.length.toLocaleString()} direct agents loaded`
+                  : `${policies.length.toLocaleString()} production records loaded`}
+              </p>
             </div>
+          </div>
+          {viewMode === 'team' ? (
+            <div className="flex items-center gap-3 flex-1 min-w-0 xl:max-w-xl">
+              <div className="relative flex-1 min-w-60 group">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within:text-brand-500 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Filter list..."
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  className="w-full pl-11 pr-3 py-4 text-sm rounded-2xl bg-slate-50 border border-slate-100 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all font-bold"
+                />
+              </div>
+              <button className="p-4 bg-slate-50 rounded-2xl hover:bg-slate-100 text-slate-500 border border-slate-100 hover:border-slate-200 transition-all">
+                <Filter className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <DateRangeSelector value={dateRange} onChange={setDateRange} />
+          )}
+        </div>
 
             <div className="overflow-x-auto">
               {viewMode === 'team' ? (
@@ -610,6 +634,7 @@ export const AgentDownlines: React.FC = () => {
               )}
             </div>
           </div>
+      )}
     </div>
   );
 };

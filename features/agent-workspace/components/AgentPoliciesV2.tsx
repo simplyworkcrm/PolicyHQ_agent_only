@@ -926,16 +926,20 @@ interface AgentPoliciesV2Props {
   agentIdsOverride?: string[];
   headingTitle?: string;
   headingSubtitle?: string;
+  dataSource?: 'policies' | 'team';
   variant?: 'default' | 'downline';
   readOnlyRows?: boolean;
+  hideHeader?: boolean;
 }
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   agentIdsOverride,
   headingTitle = 'Policy Records',
   headingSubtitle = 'Review policies across your selected workspace access.',
+  dataSource = 'policies',
   variant = 'default',
   readOnlyRows = false,
+  hideHeader = false,
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -1025,7 +1029,10 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const result = await agentPoliciesV2Api.getPolicies({
+      const fetchPolicies = dataSource === 'team'
+        ? agentPoliciesV2Api.getTeamPolicies
+        : agentPoliciesV2Api.getPolicies;
+      const result = await fetchPolicies({
         agentIds,
         page,
         perPage,
@@ -1042,7 +1049,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [effectiveAgentIds, page, perPage, searchTerm, sortConfig, filterGroups, timeframe, startDate, endDate]);
+  }, [dataSource, effectiveAgentIds, page, perPage, searchTerm, sortConfig, filterGroups, timeframe, startDate, endDate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1082,8 +1089,13 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const statsLoading = false;
   const isPageSelected = items.length > 0 && items.every(policy => selectedIds.has(policy.selectionKey));
   const isDownlineVariant = variant === 'downline';
+  const isTeamSource = dataSource === 'team';
   const tableGridClass = readOnlyRows
-    ? 'grid-cols-[2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr]'
+    ? isTeamSource
+      ? 'grid-cols-[1.7fr_1.2fr_1.1fr_1.5fr_1fr_1fr_1fr_1fr_1fr]'
+      : 'grid-cols-[2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr]'
+    : isTeamSource
+    ? 'grid-cols-[36px_1.7fr_1.2fr_1.1fr_1.5fr_1fr_1fr_1fr_1fr_1fr]'
     : 'grid-cols-[36px_2fr_1.2fr_1.5fr_1fr_1fr_1fr_1fr_1fr]';
 
   const getRemoteOptions = (fieldKey: PolicyFilterFieldKey | '') => {
@@ -1266,6 +1278,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     <div className={`animate-in fade-in duration-300 ${isDownlineVariant ? 'rounded-[2rem] border border-amber-100/80 bg-[#fffaf0] p-5 shadow-inner shadow-amber-900/5' : ''}`}>
 
       {/* ── Dev notice ───────────────────────────────────────────────────── */}
+      {!hideHeader && (
       <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-6 ${isDownlineVariant ? 'rounded-[1.5rem] border border-white bg-white/80 px-5 py-4 shadow-sm' : ''}`}>
         <div className="flex items-center gap-4">
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl ${isDownlineVariant ? 'bg-[#d49b17] text-slate-950 shadow-amber-900/10' : 'bg-slate-900 text-white shadow-slate-900/10'}`}>
@@ -1292,6 +1305,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
           onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
         />
       </div>
+      )}
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
@@ -1524,6 +1538,9 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             </button>
           )}
           <SortableTableHeader label="Client & Created" options={[{ key: 'client', label: 'Client' }, { key: 'created_at', label: 'Created' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
+          {isTeamSource && (
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Agent</span>
+          )}
           <SortableTableHeader label="Policy Number" options={[{ key: 'policy_number', label: 'Policy #' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
           <SortableTableHeader label="Carrier / Product" options={[{ key: 'carrier_product', label: 'Product' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
           <SortableTableHeader label="Effective Date" options={[{ key: 'initial_draft_date', label: 'Eff. Date' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
@@ -1616,9 +1633,15 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   </div>
                   <div className="min-w-0">
                     <p className={`text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{policy.client}</p>
-                    <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.agent_name}</p>
+                    {!isTeamSource && (
+                      <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.agent_name}</p>
+                    )}
                   </div>
                 </div>
+
+                {isTeamSource && (
+                  <p className={`text-xs font-semibold truncate ${isSelected ? 'text-white/70' : 'text-slate-500'}`}>{policy.agent_name || '—'}</p>
+                )}
 
                 {/* Policy # */}
                 <p className={`text-xs font-mono truncate ${isSelected ? 'text-white/70' : 'text-slate-500'}`}>{policy.policy_number ?? '—'}</p>
@@ -1751,16 +1774,17 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 </div>
               </div>
 
-              {/* View Full Details button */}
-              <div className="px-5 pb-5">
-                <button
-                  onClick={() => navigate('/policies/details', { state: { queue: [selectedPolicy.policy_id], startIndex: 0 } })}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 transition-colors"
-                >
-                  View Full Details
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              {!isTeamSource && (
+                <div className="px-5 pb-5">
+                  <button
+                    onClick={() => navigate('/policies/details', { state: { queue: [selectedPolicy.policy_id], startIndex: 0 } })}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 transition-colors"
+                  >
+                    View Full Details
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

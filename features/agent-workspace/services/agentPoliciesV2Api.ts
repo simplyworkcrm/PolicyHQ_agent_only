@@ -1,4 +1,5 @@
 const POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/policies';
+const TEAM_POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/team/policies';
 const UTILITY_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/utility';
 
 const getAuthToken = () => localStorage.getItem('authToken');
@@ -186,6 +187,28 @@ const getPaidStatusId = (policy: RawPolicyV2): string | null => (
   || null
 );
 
+const normalizePoliciesResponse = (payload: RawPoliciesV2Response): PoliciesV2Response => ({
+  ...payload,
+  items: (payload.items || []).map((policy, index) => ({
+    policy_id: policy.id,
+    selectionKey: `${String(policy.id || policy.policy_number || `${policy.client || 'client'}-${policy.ref_agent_owner || 'agent'}-${policy.created_at || Date.now()}`)}-${index}`,
+    created_at: policy.created_at,
+    client: policy.client,
+    policy_number: policy.policy_number,
+    carrier_product: policy.carrier_product,
+    initial_draft_date: policy.initial_draft_date,
+    annual_premium: policy.annual_premium,
+    isLocked: policy.isLocked,
+    carrier: policy.ref_carrier_name || '—',
+    status: policy.ref_policyStatus_name || policy.policy_status || '—',
+    paid_status: getPaidStatusLabel(policy),
+    paid_status_id: getPaidStatusId(policy),
+    agent_id: policy.ref_agent_owner,
+    agent_name: policy.ref_agent_owner_name,
+    source_name: policy.ref_metacontactsource_name,
+  })),
+});
+
 export const agentPoliciesV2Api = {
   async getPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {
     const response = await fetch(POLICIES_API_URL, {
@@ -209,27 +232,32 @@ export const agentPoliciesV2Api = {
     }
 
     const payload = await response.json() as RawPoliciesV2Response;
-    return {
-      ...payload,
-      items: (payload.items || []).map((policy, index) => ({
-        policy_id: policy.id,
-        selectionKey: `${String(policy.id || policy.policy_number || `${policy.client || 'client'}-${policy.ref_agent_owner || 'agent'}-${policy.created_at || Date.now()}`)}-${index}`,
-        created_at: policy.created_at,
-        client: policy.client,
-        policy_number: policy.policy_number,
-        carrier_product: policy.carrier_product,
-        initial_draft_date: policy.initial_draft_date,
-        annual_premium: policy.annual_premium,
-        isLocked: policy.isLocked,
-        carrier: policy.ref_carrier_name || '—',
-        status: policy.ref_policyStatus_name || policy.policy_status || '—',
-        paid_status: getPaidStatusLabel(policy),
-        paid_status_id: getPaidStatusId(policy),
-        agent_id: policy.ref_agent_owner,
-        agent_name: policy.ref_agent_owner_name,
-        source_name: policy.ref_metacontactsource_name,
-      })),
-    };
+    return normalizePoliciesResponse(payload);
+  },
+
+  async getTeamPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {
+    const response = await fetch(TEAM_POLICIES_API_URL, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify({
+        agent_id: query.agentIds[0] || null,
+        page: query.page,
+        per_page: query.perPage,
+        search: query.search || null,
+        sort: query.sort ?? {},
+        filter: query.filter ?? { expression: [] },
+        start_date: query.startDate,
+        end_date: query.endDate,
+        timeframe: query.timeframe,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const payload = await response.json() as RawPoliciesV2Response;
+    return normalizePoliciesResponse(payload);
   },
 
   async getCarrierOptions(): Promise<PolicyFilterOption[]> {
