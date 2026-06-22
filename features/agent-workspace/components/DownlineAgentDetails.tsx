@@ -26,6 +26,26 @@ interface DownlineBreadcrumb {
   profile_url?: string | null;
 }
 
+const encodeTrail = (trail: DownlineBreadcrumb[]) => encodeURIComponent(JSON.stringify(trail));
+
+const decodeTrail = (value: string | null): DownlineBreadcrumb[] => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item: any) => ({
+        agent_id: String(item.agent_id || ''),
+        first_name: String(item.first_name || ''),
+        last_name: String(item.last_name || ''),
+        profile_url: item.profile_url || null,
+      }))
+      .filter(item => item.agent_id);
+  } catch {
+    return [];
+  }
+};
+
 const getInitials = (firstName?: string, lastName?: string) => (
   `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || 'AG'
 );
@@ -111,7 +131,8 @@ export const DownlineAgentDetails: React.FC = () => {
     last_name: lastName || 'Agent',
     profile_url: profileUrl,
   };
-  const breadcrumbTrail = (routeState?.trail || []).filter((crumb, index, trail) => (
+  const urlTrail = decodeTrail(searchParams.get('trail'));
+  const breadcrumbTrail = ((routeState?.trail && routeState.trail.length > 0) ? routeState.trail : urlTrail).filter((crumb, index, trail) => (
     crumb.agent_id && crumb.agent_id !== agentId && trail.findIndex(item => item.agent_id === crumb.agent_id) === index
   ));
   const previousCrumb = breadcrumbTrail[breadcrumbTrail.length - 1];
@@ -173,7 +194,9 @@ export const DownlineAgentDetails: React.FC = () => {
   };
 
   const navigateToCrumb = (crumb: DownlineBreadcrumb, index: number) => {
-    navigate(`/downlines/${crumb.agent_id}?tab=downlines`, {
+    const nextTrail = breadcrumbTrail.slice(0, index);
+    const trailParam = nextTrail.length > 0 ? `&trail=${encodeTrail(nextTrail)}` : '';
+    navigate(`/downlines/${crumb.agent_id}?tab=downlines${trailParam}`, {
       state: {
         agent: {
           agent_id: crumb.agent_id,
@@ -182,65 +205,63 @@ export const DownlineAgentDetails: React.FC = () => {
           directDownline_count: 0,
           profile_url: crumb.profile_url,
         },
-        trail: breadcrumbTrail.slice(0, index),
+        trail: nextTrail,
       },
     });
   };
 
   const openNestedDownline = (agent: DownlineAgent) => {
-    navigate(`/downlines/${agent.agent_id}?tab=overview`, {
+    const nextTrail = [...breadcrumbTrail, currentCrumb];
+    navigate(`/downlines/${agent.agent_id}?tab=overview&trail=${encodeTrail(nextTrail)}`, {
       state: {
         agent,
-        trail: [...breadcrumbTrail, currentCrumb],
+        trail: nextTrail,
       },
     });
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      <div className="flex flex-col gap-3 rounded-3xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => previousCrumb ? navigateToCrumb(previousCrumb, breadcrumbTrail.length - 1) : navigate('/downlines')}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-500 transition-all hover:border-slate-300 hover:text-slate-900"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            {previousCrumb ? `Back to ${previousCrumb.first_name}` : 'Back to Downlines'}
-          </button>
-          <div className="h-6 w-px bg-slate-100" />
-          <button
-            type="button"
-            onClick={() => navigate('/downlines')}
-            className="rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
-          >
-            Downlines
-          </button>
-          {[...breadcrumbTrail, currentCrumb].map((crumb, index, all) => {
-            const isCurrent = index === all.length - 1;
-            return (
-              <React.Fragment key={`${crumb.agent_id}-${index}`}>
-                <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
-                <button
-                  type="button"
-                  disabled={isCurrent}
-                  onClick={() => navigateToCrumb(crumb, index)}
-                  className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
-                    isCurrent
-                      ? 'cursor-default bg-slate-900 text-white'
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  {`${crumb.first_name} ${crumb.last_name}`.trim()}
-                </button>
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </div>
-
       <section className="overflow-hidden rounded-[2.5rem] border border-slate-100 bg-white shadow-sm">
         <div className="border-b border-slate-100 bg-slate-950 px-7 py-7 text-white">
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+            <button
+              type="button"
+              onClick={() => previousCrumb ? navigateToCrumb(previousCrumb, breadcrumbTrail.length - 1) : navigate('/downlines')}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-950 transition-all hover:bg-amber-100"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {previousCrumb ? `Back to ${previousCrumb.first_name}` : 'Back to Downlines'}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/downlines')}
+              className="rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              Downlines
+            </button>
+            {[...breadcrumbTrail, currentCrumb].map((crumb, index, all) => {
+              const isCurrent = index === all.length - 1;
+              return (
+                <React.Fragment key={`${crumb.agent_id}-${index}`}>
+                  <ChevronRight className="h-3.5 w-3.5 text-white/25" />
+                  <button
+                    type="button"
+                    disabled={isCurrent}
+                    onClick={() => navigateToCrumb(crumb, index)}
+                    className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                      isCurrent
+                        ? 'cursor-default bg-amber-500 text-slate-950'
+                        : 'text-white/65 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {`${crumb.first_name} ${crumb.last_name}`.trim()}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-center gap-5">
               <div className="h-20 w-20 shrink-0 overflow-hidden rounded-3xl border border-white/10 bg-white/10 text-xl font-black text-amber-300 flex items-center justify-center">

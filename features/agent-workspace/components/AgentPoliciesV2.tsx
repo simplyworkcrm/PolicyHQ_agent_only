@@ -514,6 +514,11 @@ const makePolicyFilterGroup = (): PolicyFilterGroup => ({
   rows: [makePolicyFilterRow()],
 });
 
+const makePresetPolicyFilterRow = (row: Omit<PolicyFilterRow, 'id'>): PolicyFilterRow => ({
+  id: crypto.randomUUID(),
+  ...row,
+});
+
 const getPolicyFilterField = (key: PolicyFilterFieldKey | '') => POLICY_FILTER_FIELDS.find(field => field.key === key);
 
 const getPolicyFilterOps = (fieldKey: PolicyFilterFieldKey | '') => {
@@ -1130,6 +1135,133 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     setShowFilters(false);
   };
 
+  const findOptionByLabel = (options: PolicyFilterOption[], labels: string[]) => {
+    const normalizedLabels = labels.map(label => label.toLowerCase());
+    return options.find(option => normalizedLabels.includes(option.label.toLowerCase()));
+  };
+
+  const applyIssuedPlacedFilter = () => {
+    const issuedPlacedStatuses = ['Approved', 'Funding Pending', 'Issued']
+      .map(label => findOptionByLabel(policyStatusOptions, [label]))
+      .filter((option): option is PolicyFilterOption => Boolean(option));
+
+    if (issuedPlacedStatuses.length === 0) return;
+
+    setFilterGroups(issuedPlacedStatuses.map(option => ({
+      id: crypto.randomUUID(),
+      rows: [makePresetPolicyFilterRow({
+        field: 'ref_policyStatus_id',
+        op: '==',
+        value: option.id,
+        displayValue: option.label,
+      })],
+    })));
+    setSearchInput('');
+    setSearchTerm('');
+    setSelectedPolicy(null);
+    setPage(1);
+    setShowFilters(false);
+  };
+
+  const applyActiveInForceFilter = () => {
+    const funded = findOptionByLabel(policyStatusOptions, ['Funded']);
+    const approved = findOptionByLabel(policyStatusOptions, ['Approved']);
+    const paid = findOptionByLabel(paidStatusOptions, ['Paid']);
+    const groups: PolicyFilterGroup[] = [];
+
+    if (funded) {
+      groups.push({
+        id: crypto.randomUUID(),
+        rows: [makePresetPolicyFilterRow({
+          field: 'ref_policyStatus_id',
+          op: '==',
+          value: funded.id,
+          displayValue: funded.label,
+        })],
+      });
+    }
+
+    if (approved && paid) {
+      groups.push({
+        id: crypto.randomUUID(),
+        rows: [
+          makePresetPolicyFilterRow({
+            field: 'ref_policyStatus_id',
+            op: '==',
+            value: approved.id,
+            displayValue: approved.label,
+          }),
+          makePresetPolicyFilterRow({
+            field: 'meta_policy_paidstatus_id',
+            op: '==',
+            value: paid.id,
+            displayValue: paid.label,
+          }),
+        ],
+      });
+    }
+
+    if (groups.length === 0) return;
+
+    setFilterGroups(groups);
+    setSearchInput('');
+    setSearchTerm('');
+    setSelectedPolicy(null);
+    setPage(1);
+    setShowFilters(false);
+  };
+
+  const applySubmittedFilter = () => {
+    clearFilters();
+    setSelectedPolicy(null);
+    setShowFilters(false);
+  };
+
+  const applyNeedAttentionFilter = () => {
+    const attentionStatuses = [
+      'Cancelled before Draft',
+      'Follow Up',
+      'Declined',
+      'Lapsed Pending',
+      'Lapsed',
+      'Not Taken',
+      'Chargeback',
+    ]
+      .map(label => findOptionByLabel(policyStatusOptions, [label]))
+      .filter((option): option is PolicyFilterOption => Boolean(option));
+    const paidStatusNa = findOptionByLabel(paidStatusOptions, ['N/A', 'NA']);
+    const groups: PolicyFilterGroup[] = attentionStatuses.map(option => ({
+      id: crypto.randomUUID(),
+      rows: [makePresetPolicyFilterRow({
+        field: 'ref_policyStatus_id',
+        op: '==',
+        value: option.id,
+        displayValue: option.label,
+      })],
+    }));
+
+    if (paidStatusNa) {
+      groups.push({
+        id: crypto.randomUUID(),
+        rows: [makePresetPolicyFilterRow({
+          field: 'meta_policy_paidstatus_id',
+          op: '==',
+          value: paidStatusNa.id,
+          displayValue: paidStatusNa.label,
+        })],
+      });
+    }
+
+    if (groups.length === 0) return;
+
+    setFilterGroups(groups);
+    setSearchInput('');
+    setSearchTerm('');
+    setSelectedPolicy(null);
+    setPage(1);
+    setShowFilters(false);
+  };
+
   return (
     <div className={`animate-in fade-in duration-300 ${isDownlineVariant ? 'rounded-[2rem] border border-amber-100/80 bg-[#fffaf0] p-5 shadow-inner shadow-amber-900/5' : ''}`}>
 
@@ -1184,6 +1316,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               description: 'Total number of applications submitted in the selected time frame. This includes all policies that have been started and sent in.',
               icon: <Send className="w-5 h-5" />,
               tone: 'dark',
+              onClick: applySubmittedFilter,
             },
             {
               label: 'Issued / Placed',
@@ -1192,6 +1325,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               description: 'Policies that have been approved by the carrier and officially issued. This is the point where the application has passed underwriting.',
               icon: <CheckCheck className="w-5 h-5" />,
               tone: 'gold',
+              onClick: applyIssuedPlacedFilter,
             },
             {
               label: 'Placement Ratio',
@@ -1209,6 +1343,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               description: 'Number of policies that are currently active and being paid. These are in-force policies with ongoing premium payments.',
               icon: <Zap className="w-5 h-5" />,
               tone: 'white',
+              onClick: applyActiveInForceFilter,
             },
             {
               label: 'Persistency',
@@ -1227,8 +1362,9 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               alert: true,
               icon: <AlertTriangle className="w-5 h-5" />,
               tone: 'alert',
+              onClick: applyNeedAttentionFilter,
             },
-          ] as { label: string; value: number | string; sub: string; description: string; alert?: boolean; icon: React.ReactNode; tone: 'dark' | 'gold' | 'gold-soft' | 'white' | 'alert' }[]).map(({ label, value, sub, description, alert, icon, tone }) => {
+          ] as { label: string; value: number | string; sub: string; description: string; alert?: boolean; icon: React.ReactNode; tone: 'dark' | 'gold' | 'gold-soft' | 'white' | 'alert'; onClick?: () => void }[]).map(({ label, value, sub, description, alert, icon, tone, onClick }) => {
             const isAlertActive = alert && (stats?.need_attention ?? 0) > 0;
             const isDark = tone === 'dark';
             const isGold = tone === 'gold' || tone === 'gold-soft' || (tone === 'alert' && isAlertActive);
@@ -1247,21 +1383,26 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               ? 'bg-slate-950 text-white'
               : 'bg-slate-950 text-[#d49b17]';
             return (
-              <div key={label} className={`group relative overflow-visible rounded-2xl border px-4 py-4 ${cardClass}`}>
+              <button
+                key={label}
+                type="button"
+                onClick={onClick}
+                aria-disabled={!onClick}
+                className={`group relative overflow-visible rounded-2xl border px-4 py-4 text-left ${cardClass} ${onClick ? 'cursor-pointer transition-all hover:-translate-y-0.5 hover:z-50 hover:shadow-2xl focus:z-50 focus:outline-none focus:ring-4 focus:ring-brand-500/15' : 'cursor-default hover:z-50 focus:z-50 focus:outline-none'}`}
+              >
                 <div className={`absolute left-0 top-0 h-full w-1.5 ${isDark ? 'bg-[#d49b17]' : isGold ? 'bg-slate-950' : 'bg-[#d49b17]'}`} />
                 <div className="relative flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="mb-2 flex items-center gap-1.5">
                       <p className={`text-[10px] font-black uppercase tracking-widest ${labelClass}`}>{label}</p>
                       <div className="relative shrink-0">
-                        <button
-                          type="button"
+                        <span
                           aria-label={`About ${label}`}
-                          className={`rounded-full transition-colors ${isDark ? 'text-white/35 hover:text-white/60' : isGold ? 'text-slate-950/45 hover:text-slate-950/70' : 'text-slate-300 hover:text-slate-500'}`}
+                          className={`inline-flex rounded-full transition-colors ${isDark ? 'text-white/35 group-hover:text-white/60' : isGold ? 'text-slate-950/45 group-hover:text-slate-950/70' : 'text-slate-300 group-hover:text-slate-500'}`}
                         >
                           <Info className="w-3.5 h-3.5" />
-                        </button>
-                        <div className={`pointer-events-none absolute left-0 top-full z-30 mt-2 w-64 rounded-2xl border px-3 py-2 text-[11px] font-semibold normal-case tracking-normal shadow-xl opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 ${isDark ? 'border-slate-200 bg-white text-slate-700' : 'border-slate-900 bg-slate-950 text-white'}`}>
+                        </span>
+                        <div className={`pointer-events-none absolute left-0 top-full z-[80] mt-2 w-64 rounded-2xl border px-3 py-2 text-[11px] font-semibold normal-case tracking-normal shadow-xl opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:opacity-100 group-focus-within:translate-y-0 ${isDark ? 'border-slate-200 bg-white text-slate-700' : 'border-slate-900 bg-slate-950 text-white'}`}>
                           {description}
                         </div>
                       </div>
@@ -1283,7 +1424,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   </p>
                   <p className="text-[11px] text-slate-400 font-medium mt-1">{statsLoading ? '—' : sub}</p>
                 </div>
-              </div>
+              </button>
             );
           });
         })()}
