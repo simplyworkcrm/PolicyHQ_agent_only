@@ -80,6 +80,10 @@ export interface SplitPolicy {
   split_percentage: number;
   agent_name: string;
   agent_id: string;
+  source_name?: string | null;
+  contact_type_name?: string | null;
+  phone?: string | null;
+  state?: string | null;
 }
 
 export interface AgentMetric {
