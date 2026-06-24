@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertCircle, Briefcase, Check, ChevronDown, ImagePlus, Mail, Phone, Search, Settings, ShieldCheck, User } from 'lucide-react';
+import { AlertCircle, BookOpen, Briefcase, Check, ChevronDown, Copy, ImagePlus, KeyRound, Mail, Phone, RefreshCw, Search, Settings, ShieldCheck, User } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
-type SettingsTab = 'user' | 'agent' | 'carrier';
+type SettingsTab = 'user' | 'agent' | 'mcp' | 'carrier';
 type AgencyOption = {
   id: string;
   name: string;
@@ -22,6 +22,11 @@ type UplineOption = {
   agent_npn?: string | number;
 };
 type AgentProfileResponse = Record<string, any>;
+type McpAuthTokenResponse = {
+  Authorization?: string;
+  mcp_pit_generated_date?: string;
+  mcp_pit_expiration_date?: string;
+};
 
 const API_V2_BASE_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR';
 
@@ -53,6 +58,74 @@ const getFileFromUrl = async (url: string) => {
   if (!response.ok) throw new Error('Could not load existing profile image.');
   const blob = await response.blob();
   return new File([blob], getFilenameFromUrl(url), { type: blob.type || 'image/png' });
+};
+
+const maskSecret = (value?: string) => value ? '**** **** **** ****' : 'Not configured';
+
+const MCP_CONFIG_TEMPLATE = `{
+  "mcpServers": {
+    "policyhq": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://api1.simplyworkcrm.com/x2/mcp/V4CeR1bI/mcp/sse",
+        "--header",
+        "Authorization: Bearer \${Authorization_generated}"
+      ]
+    }
+  }
+}`;
+
+const getMcpConfigSnippet = (authorization?: string) =>
+  authorization
+    ? MCP_CONFIG_TEMPLATE.replace('${Authorization_generated}', authorization)
+    : MCP_CONFIG_TEMPLATE;
+
+const parseMcpDate = (value?: string) => {
+  if (!value) return null;
+  const match = value.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!match) return null;
+  const [, month, day, year] = match;
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+  if (
+    parsed.getFullYear() !== Number(year) ||
+    parsed.getMonth() !== Number(month) - 1 ||
+    parsed.getDate() !== Number(day)
+  ) {
+    return null;
+  }
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+};
+
+const isDateExpired = (value?: string) => {
+  const parsed = parseMcpDate(value);
+  if (!parsed) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return parsed.getTime() <= today.getTime();
+};
+
+const unwrapMcpPayload = (payload: any) => {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (Array.isArray(payload)) return payload[0] || {};
+  return payload.item || payload.data || payload.mcp_authToken || payload.mcpAuthToken || payload;
+};
+
+const getMcpAuthorization = (payload: any) => {
+  const data = unwrapMcpPayload(payload);
+  if (!data || typeof data !== 'object') return '';
+  return String(data.Authorization || data.authorization || data.authToken || data.token || '');
+};
+
+const normalizeMcpConfig = (payload: any): McpAuthTokenResponse | null => {
+  const data = unwrapMcpPayload(payload);
+  if (!data || typeof data !== 'object') return null;
+  return {
+    Authorization: getMcpAuthorization(data) ? 'configured' : '',
+    mcp_pit_generated_date: data.mcp_pit_generated_date,
+    mcp_pit_expiration_date: data.mcp_pit_expiration_date,
+  };
 };
 
 const mapAgentProfile = (payload: AgentProfileResponse) => {
@@ -227,7 +300,7 @@ export const SettingsPage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const location = useLocation();
   const tabParam = new URLSearchParams(location.search).get('tab');
-  const initialTab: SettingsTab = tabParam === 'agent' || tabParam === 'carrier' ? tabParam : 'user';
+  const initialTab: SettingsTab = tabParam === 'agent' || tabParam === 'mcp' || tabParam === 'carrier' ? tabParam : 'user';
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [savedAgentProfileId, setSavedAgentProfileId] = useState('');
   const currentAgentProfileId = savedAgentProfileId || user?.agentId || '';
@@ -257,10 +330,19 @@ export const SettingsPage: React.FC = () => {
   const [uplineSearch, setUplineSearch] = useState('');
   const [uplinesLoading, setUplinesLoading] = useState(false);
   const [uplinesError, setUplinesError] = useState<string | null>(null);
+  const [mcpConfig, setMcpConfig] = useState<McpAuthTokenResponse | null>(null);
+  const [mcpConfigLoading, setMcpConfigLoading] = useState(false);
+  const [mcpConfigError, setMcpConfigError] = useState<string | null>(null);
+  const [mcpConfigSaving, setMcpConfigSaving] = useState(false);
+  const [mcpConfigSaveError, setMcpConfigSaveError] = useState<string | null>(null);
+  const [mcpConfigSaveMessage, setMcpConfigSaveMessage] = useState<string | null>(null);
+  const [revealedAuthorization, setRevealedAuthorization] = useState('');
+  const [mcpCopyMessage, setMcpCopyMessage] = useState<string | null>(null);
+  const [mcpConfigCopyMessage, setMcpConfigCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const nextTab = new URLSearchParams(location.search).get('tab');
-    setActiveTab(nextTab === 'agent' || nextTab === 'carrier' ? nextTab : 'user');
+    setActiveTab(nextTab === 'agent' || nextTab === 'mcp' || nextTab === 'carrier' ? nextTab : 'user');
   }, [location.search]);
 
   useEffect(() => {
@@ -364,6 +446,40 @@ export const SettingsPage: React.FC = () => {
       .finally(() => setAgentProfileLoading(false));
   }, [activeTab, currentAgentProfileId, user?.firstName, user?.lastName]);
 
+  useEffect(() => {
+    if (activeTab !== 'mcp') return;
+
+    const token = localStorage.getItem('authToken');
+    setMcpConfigLoading(true);
+    setMcpConfigError(null);
+    setMcpConfigSaveError(null);
+    setMcpConfigSaveMessage(null);
+    setRevealedAuthorization('');
+    setMcpCopyMessage(null);
+    setMcpConfigCopyMessage(null);
+    fetch(`${API_V2_BASE_URL}/mcp_authToken`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`API error: ${response.status}`);
+        return response.json();
+      })
+      .then((data) => setMcpConfig(normalizeMcpConfig(data)))
+      .catch((error) => setMcpConfigError(error instanceof Error ? error.message : 'Failed to load MCP configuration'))
+      .finally(() => setMcpConfigLoading(false));
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'mcp') {
+      setRevealedAuthorization('');
+      setMcpCopyMessage(null);
+      setMcpConfigCopyMessage(null);
+    }
+  }, [activeTab]);
+
   const validateAgentProfile = () => {
     if (!agentFirstName.trim()) return 'First name is required.';
     if (!agentLastName.trim()) return 'Last name is required.';
@@ -425,6 +541,69 @@ export const SettingsPage: React.FC = () => {
       setAgentProfileSaveError(error instanceof Error ? error.message : 'Failed to save agent profile.');
     } finally {
       setAgentProfileSaving(false);
+    }
+  };
+
+  const hasMcpAuthorization = Boolean(mcpConfig?.Authorization);
+  const mcpExpirationState = hasMcpAuthorization ? isDateExpired(mcpConfig?.mcp_pit_expiration_date) : null;
+  const isMcpExpirationUnavailable = hasMcpAuthorization && mcpExpirationState === null;
+  const canManageMcpAuthorization = !hasMcpAuthorization || mcpExpirationState === true;
+  const mcpAuthorizationActionLabel = hasMcpAuthorization ? 'Refresh Authorization' : 'Create Authorization';
+
+  const handleMcpAuthorizationSubmit = async () => {
+    if (!canManageMcpAuthorization || mcpConfigSaving) return;
+
+    const confirmed = window.confirm(
+      'Authorization is shown only once after creation or refresh. Save it securely before leaving this tab.'
+    );
+    if (!confirmed) return;
+
+    const token = localStorage.getItem('authToken');
+    setMcpConfigSaving(true);
+    setMcpConfigSaveError(null);
+    setMcpConfigSaveMessage(null);
+    setMcpCopyMessage(null);
+    setMcpConfigCopyMessage(null);
+
+    try {
+      const response = await fetch(`${API_V2_BASE_URL}/mcp_authToken`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+      const data = await response.json();
+      const revealedToken = getMcpAuthorization(data);
+      setMcpConfig(normalizeMcpConfig(data));
+      setRevealedAuthorization(revealedToken);
+      setMcpConfigSaveMessage(revealedToken ? 'Authorization created. Save it before leaving this tab.' : 'MCP configuration updated, but no Authorization value was returned.');
+    } catch (error) {
+      setMcpConfigSaveError(error instanceof Error ? error.message : 'Failed to update MCP Authorization.');
+    } finally {
+      setMcpConfigSaving(false);
+    }
+  };
+
+  const handleCopyMcpAuthorization = async () => {
+    if (!revealedAuthorization) return;
+    try {
+      await navigator.clipboard.writeText(revealedAuthorization);
+      setMcpCopyMessage('Copied.');
+    } catch {
+      setMcpCopyMessage('Copy failed. Select and copy the value manually.');
+    }
+  };
+
+  const handleCopyMcpConfig = async (authorization?: string) => {
+    try {
+      await navigator.clipboard.writeText(getMcpConfigSnippet(authorization));
+      setMcpConfigCopyMessage(authorization ? 'Config with current Authorization copied.' : 'Config copied.');
+    } catch {
+      setMcpConfigCopyMessage('Copy failed. Select and copy the config manually.');
     }
   };
 
@@ -494,6 +673,13 @@ export const SettingsPage: React.FC = () => {
           Agent Settings
         </button>
         <button
+          onClick={() => setActiveTab('mcp')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black transition-all ${activeTab === 'mcp' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+        >
+          <KeyRound className="w-4 h-4" />
+          MCP Configuration
+        </button>
+        <button
           type="button"
           disabled
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black text-slate-400 cursor-not-allowed opacity-70"
@@ -535,6 +721,194 @@ export const SettingsPage: React.FC = () => {
               <p className="text-xs font-semibold text-slate-400">Coming soon.</p>
             </div>
           </div>
+        </section>
+      ) : activeTab === 'mcp' ? (
+        <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 mb-6 md:flex-row md:items-start md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-slate-900 text-amber-400 flex items-center justify-center">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-black text-slate-900">MCP Configuration</h2>
+                <p className="text-xs font-semibold text-slate-400">Review and manage your MCP Authorization.</p>
+              </div>
+            </div>
+            <div>
+              <button
+                type="button"
+                disabled={!canManageMcpAuthorization || mcpConfigLoading || mcpConfigSaving}
+                onClick={handleMcpAuthorizationSubmit}
+                className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+              >
+                <RefreshCw className={`w-4 h-4 ${mcpConfigSaving ? 'animate-spin' : ''}`} />
+                {mcpConfigSaving ? 'Working...' : mcpAuthorizationActionLabel}
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs font-bold leading-relaxed text-amber-800">
+              Authorization is shown only once after creation or refresh. Save it securely before leaving this tab. MCP Authorization expires after 1 year for security purposes, so refresh it regularly after expiration.
+            </p>
+          </div>
+
+          {mcpConfigError && (
+            <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-black text-red-900">Could not load MCP configuration</p>
+                <p className="text-xs font-semibold text-red-600 mt-0.5">{mcpConfigError}</p>
+              </div>
+            </div>
+          )}
+
+          {mcpConfigSaveError && (
+            <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold text-red-700">{mcpConfigSaveError}</p>
+            </div>
+          )}
+
+          {mcpConfigSaveMessage && (
+            <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 flex items-start gap-3">
+              <Check className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold text-emerald-700">{mcpConfigSaveMessage}</p>
+            </div>
+          )}
+
+          {isMcpExpirationUnavailable && (
+            <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold text-slate-600">Expiration date unavailable. Refresh is disabled until the expiration date is returned as MM-DD-YYYY.</p>
+            </div>
+          )}
+
+          {mcpConfigLoading ? (
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6 text-sm font-bold text-slate-500">
+              Loading MCP configuration...
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-3 rounded-2xl border border-slate-100 bg-slate-950 p-5 text-white">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Authorization</p>
+                      <p className={`mt-2 font-mono text-sm font-black tracking-wider ${revealedAuthorization ? 'text-amber-300 break-all' : 'text-amber-300'}`}>
+                        {revealedAuthorization || maskSecret(mcpConfig?.Authorization)}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${mcpConfig?.Authorization ? 'bg-emerald-400/10 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>
+                      {mcpConfig?.Authorization ? 'Configured' : 'Missing'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs font-semibold text-slate-400">
+                      {revealedAuthorization ? 'This value will be hidden when you leave this tab.' : 'The token is intentionally masked unless you create or refresh it.'}
+                    </p>
+                    {revealedAuthorization && (
+                      <div className="flex items-center gap-3">
+                        {mcpCopyMessage && <span className="text-xs font-bold text-emerald-300">{mcpCopyMessage}</span>}
+                        <button
+                          type="button"
+                          onClick={handleCopyMcpAuthorization}
+                          className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-900"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copy Authorization
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <FieldRow label="Generated Date" value={mcpConfig?.mcp_pit_generated_date} />
+                <FieldRow label="Expiration Date" value={mcpConfig?.mcp_pit_expiration_date} />
+                <FieldRow
+                  label="Token Status"
+                  value={
+                    !hasMcpAuthorization
+                      ? 'Not configured'
+                      : mcpExpirationState === true
+                        ? 'Expired'
+                        : mcpExpirationState === false
+                          ? 'Active'
+                          : 'Expiration unavailable'
+                  }
+                />
+              </div>
+
+              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white text-slate-900 flex items-center justify-center shadow-sm">
+                    <BookOpen className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-black text-slate-900">How to use PolicyHQ MCP</h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">
+                      Use your Authorization to connect your AI client to the PolicyHQ MCP server. Once connected, your agent can request PolicyHQ data through available MCP tools.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {[
+                    ['1', 'Get your Authorization', 'Create or refresh your Authorization above, then save it securely. It is only shown once.'],
+                    ['2', 'Configure your agent/client', 'Add the PolicyHQ MCP server to your AI client configuration. Replace ${Authorization_generated} with the Authorization you saved.'],
+                    ['3', 'Start making requests', 'Ask your AI client to use PolicyHQ MCP tools. New tools will be added over time.'],
+                  ].map(([number, title, description]) => (
+                    <div key={number} className="rounded-2xl border border-slate-100 bg-white p-4">
+                      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-amber-300">{number}</div>
+                      <p className="text-sm font-black text-slate-900">{title}</p>
+                      <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">{description}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 overflow-hidden rounded-2xl border border-slate-900 bg-slate-950">
+                  <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Client configuration</p>
+                      <p className="text-xs font-semibold text-slate-500">Paste this into your AI client MCP config.</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {mcpConfigCopyMessage && <span className="text-xs font-bold text-emerald-300">{mcpConfigCopyMessage}</span>}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyMcpConfig()}
+                        className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Copy config
+                      </button>
+                      {revealedAuthorization && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMcpConfig(revealedAuthorization)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-3 py-2 text-xs font-black text-slate-950"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copy with current Authorization
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <pre className="max-h-80 overflow-auto p-4 text-xs font-semibold leading-relaxed text-amber-100"><code>{MCP_CONFIG_TEMPLATE}</code></pre>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Available tools</p>
+                  <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3">
+                    <p className="text-sm font-black text-slate-900">policies</p>
+                    <p className="text-xs font-semibold text-slate-500">Fetches your policies in PolicyHQ.</p>
+                  </div>
+                  <p className="mt-3 text-xs font-semibold text-slate-400">PolicyHQ MCP is new. More tools will be added over time.</p>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       ) : (
         <section className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
