@@ -900,9 +900,30 @@ export const SettingsPage: React.FC = () => {
 
                 <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-4">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Available tools</p>
-                  <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3">
-                    <p className="text-sm font-black text-slate-900">policies</p>
-                    <p className="text-xs font-semibold text-slate-500">Fetches your policies in PolicyHQ.</p>
+                  <div className="mt-3 grid grid-cols-1 gap-3">
+                    {[
+                      {
+                        name: 'policies',
+                        description: 'Fetches your policies in PolicyHQ.',
+                      },
+                      {
+                        name: 'downlines',
+                        description: 'Shows your full team hierarchy and downline structure from your agent profile.',
+                      },
+                      {
+                        name: 'team_policies',
+                        description: 'Fetches policy records for your full team, including your own policies and all downline-owned policies.',
+                      },
+                      {
+                        name: 'splits',
+                        description: 'Fetches your split policy records, split production, partner summaries, and split policy breakdowns.',
+                      },
+                    ].map((tool) => (
+                      <div key={tool.name} className="rounded-xl bg-slate-50 px-4 py-3">
+                        <p className="font-mono text-sm font-black text-slate-900">{tool.name}</p>
+                        <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">{tool.description}</p>
+                      </div>
+                    ))}
                   </div>
                   <p className="mt-3 text-xs font-semibold text-slate-400">PolicyHQ MCP is new. More tools will be added over time.</p>
                 </div>
