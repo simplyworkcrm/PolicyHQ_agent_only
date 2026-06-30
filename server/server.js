@@ -22,7 +22,9 @@ const externalWsBaseUrl = 'wss://generativelanguage.googleapis.com';
 // Support either API key env-var variant
 const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-const staticPath = path.join(__dirname, '..', 'dist');
+const staticPath = fs.existsSync(path.join(__dirname, '..', 'dist'))
+  ? path.join(__dirname, '..', 'dist')
+  : path.join(__dirname, 'dist');
 const publicPath = path.join(__dirname,'public');
 
 
@@ -209,7 +211,10 @@ app.get('/', (req, res) => {
         if (err) {
             // index.html not found or unreadable, serve the original placeholder
             console.log('LOG: index.html not found or unreadable. Falling back to original placeholder.');
-            return res.sendFile(placeholderPath);
+            if (fs.existsSync(placeholderPath)) {
+              return res.sendFile(placeholderPath);
+            }
+            return res.status(500).send('Application build is missing. Please verify dist/index.html exists in the deployed image.');
         }
 
         // If API key is not set, serve original HTML without injection
