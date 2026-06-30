@@ -3,7 +3,6 @@ import {
   Users, 
   UserX, 
   Search, 
-  Filter, 
   ChevronRight, 
   Loader2, 
   FileText,
@@ -14,13 +13,17 @@ import {
   Lock,
   Building2,
   Phone,
-  Hash
+  Hash,
+  ArrowUpDown
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { Policy } from '../../../shared/types/index';
+
+type DownlineSortKey = 'first_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
+type DownlineSortConfig = { key: DownlineSortKey; direction: 'asc' | 'desc' };
 
 interface DateRange {
     start: number;
@@ -94,6 +97,15 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
 
 const getInitials = (firstName?: string, lastName?: string) => {
     return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase() || 'AG';
+};
+
+const DOWNLINE_SORT_FIELDS: Record<DownlineSortKey, string> = {
+  first_name: 'first_name',
+  ref_ffl_agency_name: 'ref_ffl_agency_name',
+  phone: 'phone',
+  npn: 'npn',
+  direct_downlines: 'direct_downlines',
+  status: 'status',
 };
 
 // --- COMPONENTS ---
@@ -246,6 +258,36 @@ const DateRangeSelector: React.FC<{
     );
 };
 
+const DownlineSortableHeader = ({
+  label,
+  sortKey,
+  sortConfig,
+  onSort,
+  className = '',
+}: {
+  label: string;
+  sortKey: DownlineSortKey;
+  sortConfig: DownlineSortConfig | null;
+  onSort: (key: DownlineSortKey) => void;
+  className?: string;
+}) => {
+  const isActive = sortConfig?.key === sortKey;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+        isActive ? 'text-slate-900' : 'text-slate-400 hover:text-slate-700'
+      } ${className}`}
+    >
+      {label}
+      <ArrowUpDown className={`h-3 w-3 ${isActive ? 'text-brand-500' : 'text-slate-300'}`} />
+      {isActive && <span className="text-[9px] text-brand-600">{sortConfig?.direction === 'asc' ? 'ASC' : 'DESC'}</span>}
+    </button>
+  );
+};
+
 export const AgentDownlines: React.FC = () => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName, hasAgentProfile } = useAgentContext();
   const navigate = useNavigate();
@@ -263,8 +305,21 @@ export const AgentDownlines: React.FC = () => {
   const [loadingPolicies, setLoadingPolicies] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>(getDateRange('monthly'));
   
-  // Table Filtering
+  // Table controls
   const [tableSearch, setTableSearch] = useState('');
+  const [debouncedTableSearch, setDebouncedTableSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
+  const [sortConfig, setSortConfig] = useState<DownlineSortConfig | null>(null);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedTableSearch(tableSearch.trim());
+      setPage(1);
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [tableSearch]);
 
   // 1. Keep the direct-downline request scoped to one selected agent.
   useEffect(() => {
@@ -273,6 +328,8 @@ export const AgentDownlines: React.FC = () => {
     if (nextSelectedId && nextSelectedId !== selectedAgentId) {
       setSelectedAgentId(nextSelectedId);
       setTableSearch('');
+      setDebouncedTableSearch('');
+      setPage(1);
     }
   }, [currentAgentId, selectedAgentId, selectedAgentIds]);
 
@@ -280,12 +337,17 @@ export const AgentDownlines: React.FC = () => {
   useEffect(() => {
     if (selectedAgentId) {
         setLoadingSelected(true);
-        agentDownlineApi.getHierarchy(selectedAgentId)
+        agentDownlineApi.getHierarchy(selectedAgentId, {
+            page,
+            perPage,
+            search: debouncedTableSearch,
+            sort: sortConfig ? { [DOWNLINE_SORT_FIELDS[sortConfig.key]]: sortConfig.direction } : null,
+        })
             .then(data => setSelectedHierarchyData(data))
             .catch(err => console.error(err))
             .finally(() => setLoadingSelected(false));
     }
-  }, [selectedAgentId]);
+  }, [debouncedTableSearch, page, perPage, selectedAgentId, sortConfig]);
 
   if (!hasAgentProfile) {
     return (
@@ -301,17 +363,20 @@ export const AgentDownlines: React.FC = () => {
     );
   }
 
-  // Filter Table Agents (from selectedHierarchyData)
-  const tableAgents = selectedHierarchyData?.direct_downlines?.filter(a => {
-    const search = tableSearch.toLowerCase();
-    return [
-      a.first_name,
-      a.last_name,
-      a.ref_ffl_agency_name,
-      a.phone,
-      a.npn,
-    ].some(value => String(value || '').toLowerCase().includes(search));
-  }) || [];
+  const tableAgents = selectedHierarchyData?.direct_downlines || [];
+  const totalAgents = selectedHierarchyData?.itemsTotal ?? tableAgents.length;
+  const pageTotal = selectedHierarchyData?.pageTotal ?? 1;
+  const currentPage = selectedHierarchyData?.curPage ?? page;
+  const pageStart = totalAgents === 0 ? 0 : ((currentPage - 1) * perPage) + 1;
+  const pageEnd = totalAgents === 0 ? 0 : Math.min(pageStart + tableAgents.length - 1, totalAgents);
+
+  const handleSort = (key: DownlineSortKey) => {
+    setSortConfig(current => ({
+      key,
+      direction: current?.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+    setPage(1);
+  };
 
   const agentSwitchOptions = (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
     .filter(Boolean)
@@ -371,6 +436,8 @@ export const AgentDownlines: React.FC = () => {
                 onClick={() => {
                   setSelectedAgentId(agent.id);
                   setTableSearch('');
+                  setDebouncedTableSearch('');
+                  setPage(1);
                   setPolicies([]);
                 }}
                 className={`shrink-0 px-4 py-2.5 rounded-2xl text-xs font-black border transition-all ${
@@ -414,6 +481,8 @@ export const AgentDownlines: React.FC = () => {
           headingTitle="Team Production"
           headingSubtitle={`Aggregated policies for ${selectedAgentLabel} and their downline tree.`}
           hideHeader
+          showDateRangeWhenHeaderHidden
+          initialTimeframe="monthly"
         />
       ) : (
       <div className="flex-1 min-w-0 bg-white border border-slate-100 shadow-sm overflow-visible relative min-h-[600px] flex flex-col rounded-[2.5rem]">
@@ -427,7 +496,7 @@ export const AgentDownlines: React.FC = () => {
               <h3 className="text-lg font-black text-slate-900 tracking-tight">{selectedAgentLabel}</h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                 {viewMode === 'team'
-                  ? `${tableAgents.length.toLocaleString()} direct agents loaded`
+                  ? `${totalAgents.toLocaleString()} direct agents matching current view`
                   : `${policies.length.toLocaleString()} production records loaded`}
               </p>
             </div>
@@ -438,15 +507,12 @@ export const AgentDownlines: React.FC = () => {
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within:text-brand-500 transition-colors" />
                 <input
                   type="text"
-                  placeholder="Filter list..."
+                  placeholder="Search list..."
                   value={tableSearch}
                   onChange={(e) => setTableSearch(e.target.value)}
                   className="w-full pl-11 pr-3 py-4 text-sm rounded-2xl bg-slate-50 border border-slate-100 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all font-bold"
                 />
               </div>
-              <button className="p-4 bg-slate-50 rounded-2xl hover:bg-slate-100 text-slate-500 border border-slate-100 hover:border-slate-200 transition-all">
-                <Filter className="w-4 h-4" />
-              </button>
             </div>
           ) : (
             <DateRangeSelector value={dateRange} onChange={setDateRange} />
@@ -456,15 +522,16 @@ export const AgentDownlines: React.FC = () => {
             <div className="overflow-x-auto">
               {viewMode === 'team' ? (
                   // TEAM TABLE
+                  <>
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="text-slate-400 border-b border-slate-100/50">
-                        <th className="py-5 pl-8 text-[10px] font-bold uppercase tracking-widest text-slate-400">Agent Name</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Agency</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Phone</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">NPN</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Direct Downlines</th>
-                        <th className="py-5 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</th>
+                        <th className="py-5 pl-8"><DownlineSortableHeader label="Agent Name" sortKey="first_name" sortConfig={sortConfig} onSort={handleSort} /></th>
+                        <th className="py-5 px-4"><DownlineSortableHeader label="Agency" sortKey="ref_ffl_agency_name" sortConfig={sortConfig} onSort={handleSort} /></th>
+                        <th className="py-5 px-4"><DownlineSortableHeader label="Phone" sortKey="phone" sortConfig={sortConfig} onSort={handleSort} /></th>
+                        <th className="py-5 px-4"><DownlineSortableHeader label="NPN" sortKey="npn" sortConfig={sortConfig} onSort={handleSort} /></th>
+                        <th className="py-5 px-4"><DownlineSortableHeader label="Direct Downlines" sortKey="direct_downlines" sortConfig={sortConfig} onSort={handleSort} /></th>
+                        <th className="py-5 px-4"><DownlineSortableHeader label="Status" sortKey="status" sortConfig={sortConfig} onSort={handleSort} /></th>
                         <th className="py-5 px-4 w-10"></th>
                       </tr>
                     </thead>
@@ -551,6 +618,47 @@ export const AgentDownlines: React.FC = () => {
                       )}
                     </tbody>
                   </table>
+                  <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3 text-xs font-bold text-slate-500">
+                      <span>
+                        Showing {pageStart.toLocaleString()}-{pageEnd.toLocaleString()} of {totalAgents.toLocaleString()}
+                      </span>
+                      <select
+                        value={perPage}
+                        onChange={(event) => {
+                          setPerPage(Number(event.target.value));
+                          setPage(1);
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 outline-none"
+                      >
+                        {[10, 25, 50, 100].map(size => (
+                          <option key={size} value={size}>{size} / page</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={currentPage <= 1 || loadingSelected}
+                        onClick={() => setPage(current => Math.max(1, current - 1))}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Prev
+                      </button>
+                      <span className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white">
+                        {currentPage} / {Math.max(pageTotal, 1)}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={currentPage >= pageTotal || loadingSelected}
+                        onClick={() => setPage(current => Math.min(pageTotal, current + 1))}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                  </>
               ) : (
                   // POLICIES TABLE
                   <table className="w-full text-left border-collapse">

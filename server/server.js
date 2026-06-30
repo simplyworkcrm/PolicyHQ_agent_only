@@ -13,6 +13,7 @@ const path = require('path');
 const WebSocket = require('ws');
 const { URLSearchParams, URL } = require('url');
 const rateLimit = require('express-rate-limit');
+const { internalAiRouter } = require('./internal-ai/router');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -21,7 +22,7 @@ const externalWsBaseUrl = 'wss://generativelanguage.googleapis.com';
 // Support either API key env-var variant
 const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
 
-const staticPath = path.join(__dirname,'dist');
+const staticPath = path.join(__dirname, '..', 'dist');
 const publicPath = path.join(__dirname,'public');
 
 
@@ -53,6 +54,7 @@ const proxyLimiter = rateLimit({
 
 // Apply the rate limiter to the /api-proxy route before the main proxy logic
 app.use('/api-proxy', proxyLimiter);
+app.use('/internal-ai', internalAiRouter);
 
 // Proxy route for Gemini API calls (HTTP)
 app.use('/api-proxy', async (req, res, next) => {

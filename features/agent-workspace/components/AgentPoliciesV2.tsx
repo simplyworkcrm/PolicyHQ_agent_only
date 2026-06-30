@@ -244,6 +244,16 @@ const fmtTs = (ts: number) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+const fmtMountainDate = (ts: number) => {
+  if (!ts) return '—';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+  }).format(new Date(ts));
+};
+
 // ── Sort header button ────────────────────────────────────────────────────────
 
 const SortBtn: React.FC<{
@@ -434,7 +444,7 @@ const normalizePolicySortConfig = (sortConfig: any): PolicySortConfig | null => 
 };
 
 type PolicyFilterOp = '==' | '!=' | 'ilike' | 'not ilike' | 'between' | '>=' | '<=' | 'is null' | 'is not null';
-type PolicyFilterFieldKey = 'client' | 'policy_number' | 'ref_agent_owner' | 'ref_carrier_id' | 'carrier_product' | 'ref_policyStatus_id' | 'meta_policy_paidstatus_id' | 'initial_draft_date' | 'isLocked';
+type PolicyFilterFieldKey = 'client' | 'policy_number' | 'ref_agent_owner' | 'ref_carrier_id' | 'carrier_product' | 'ref_policyStatus_id' | 'meta_policy_paidstatus_id' | 'ref_metacontactsource_id' | 'initial_draft_date' | 'isLocked';
 type PolicyFilterFieldType = 'text' | 'remote-select' | 'boolean-select' | 'date-range' | 'null-check';
 
 interface DateRange {
@@ -471,6 +481,7 @@ const POLICY_FILTER_FIELDS: PolicyFilterField[] = [
   { key: 'carrier_product', label: 'Product', type: 'text' },
   { key: 'ref_policyStatus_id', label: 'Policy Status', type: 'remote-select' },
   { key: 'meta_policy_paidstatus_id', label: 'Paid Status', type: 'remote-select' },
+  { key: 'ref_metacontactsource_id', label: 'Source', type: 'remote-select' },
   { key: 'isLocked', label: 'Lock Status', type: 'boolean-select' },
   { key: 'initial_draft_date', label: 'Effective Date', type: 'date-range' },
 ];
@@ -930,6 +941,8 @@ interface AgentPoliciesV2Props {
   variant?: 'default' | 'downline';
   readOnlyRows?: boolean;
   hideHeader?: boolean;
+  showDateRangeWhenHeaderHidden?: boolean;
+  initialTimeframe?: PoliciesTimeframe;
 }
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
@@ -940,6 +953,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   variant = 'default',
   readOnlyRows = false,
   hideHeader = false,
+  showDateRangeWhenHeaderHidden = false,
+  initialTimeframe = 'all',
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -960,9 +975,10 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const [carrierOptions, setCarrierOptions] = useState<PolicyFilterOption[]>([]);
   const [policyStatusOptions, setPolicyStatusOptions] = useState<PolicyFilterOption[]>([]);
   const [paidStatusOptions, setPaidStatusOptions] = useState<PolicyFilterOption[]>([]);
+  const [sourceOptions, setSourceOptions] = useState<PolicyFilterOption[]>([]);
   const [filterOptionsLoading, setFilterOptionsLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('all');
+  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>(initialTimeframe);
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
@@ -990,18 +1006,21 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       agentPoliciesV2Api.getCarrierOptions(),
       agentPoliciesV2Api.getPolicyStatusOptions(),
       agentPoliciesV2Api.getPolicyPaidStatusOptions(),
+      agentPoliciesV2Api.getSourceOptions(),
     ])
-      .then(([carriers, statuses, paidStatuses]) => {
+      .then(([carriers, statuses, paidStatuses, sources]) => {
         if (cancelled) return;
         setCarrierOptions(carriers);
         setPolicyStatusOptions(statuses);
         setPaidStatusOptions(paidStatuses);
+        setSourceOptions(sources);
       })
       .catch(() => {
         if (cancelled) return;
         setCarrierOptions([]);
         setPolicyStatusOptions([]);
         setPaidStatusOptions([]);
+        setSourceOptions([]);
       })
       .finally(() => {
         if (!cancelled) setFilterOptionsLoading(false);
@@ -1103,6 +1122,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     if (fieldKey === 'ref_carrier_id') return carrierOptions;
     if (fieldKey === 'ref_policyStatus_id') return policyStatusOptions;
     if (fieldKey === 'meta_policy_paidstatus_id') return paidStatusOptions;
+    if (fieldKey === 'ref_metacontactsource_id') return sourceOptions;
     if (fieldKey === 'isLocked') return LOCK_STATUS_OPTIONS;
     return [];
   };
@@ -1308,6 +1328,18 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       )}
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
+      {hideHeader && showDateRangeWhenHeaderHidden && (
+        <div className="mb-5 flex justify-end">
+          <PolicyDateRangeFilter
+            timeframe={timeframe}
+            startDate={startDate}
+            endDate={endDate}
+            onTimeframeChange={handleTimeframeChange}
+            onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
+          />
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Overview</p>
       </div>
@@ -1633,9 +1665,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   </div>
                   <div className="min-w-0">
                     <p className={`text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{policy.client}</p>
-                    {!isTeamSource && (
-                      <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.agent_name}</p>
-                    )}
+                    <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{fmtMountainDate(policy.created_at)}</p>
                   </div>
                 </div>
 

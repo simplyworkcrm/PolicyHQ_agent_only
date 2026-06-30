@@ -7,6 +7,7 @@ export interface DownlineAgent {
   first_name: string;
   last_name: string;
   directDownline_count: number;
+  direct_upline_name?: string | null;
   ref_ffl_agency_name?: string | null;
   profile_url?: string | null;
   phone?: string | null;
@@ -14,11 +15,28 @@ export interface DownlineAgent {
   status?: string | null;
 }
 
+export type DownlineSortDirection = 'asc' | 'desc';
+
+export interface DownlineQuery {
+  page: number;
+  perPage: number;
+  search: string;
+  sort?: Record<string, DownlineSortDirection> | null;
+}
+
 export interface DownlineHierarchy {
   id: string;
   first_name: string;
   last_name: string;
   direct_downlines: DownlineAgent[];
+  itemsReceived?: number;
+  curPage?: number;
+  nextPage?: number | null;
+  prevPage?: number | null;
+  offset?: number;
+  perPage?: number;
+  itemsTotal?: number;
+  pageTotal?: number;
 }
 
 const getAuthToken = () => localStorage.getItem('authToken');
@@ -66,6 +84,7 @@ const normalizeAgent = (item: any): DownlineAgent => {
     first_name: String(item.first_name || item.firstName || fallback.first_name),
     last_name: String(item.last_name || item.lastName || fallback.last_name),
     directDownline_count: getDirectDownlineCount(item),
+    direct_upline_name: item.direct_upline_name || item.directUplineName || item.upline_name || item.uplineName || null,
     ref_ffl_agency_name: item.ref_ffl_agency_name || item.agency_name || item.agencyName || item.agency?.name || null,
     profile_url: getProfileUrl(item),
     phone: item.phone || item.work_phone || item.business_phone || null,
@@ -88,14 +107,23 @@ const getDirectDownlineItems = (data: any): any[] => {
 
 const normalizeHierarchy = (agentId: string, data: any): DownlineHierarchy => {
   const rootName = splitName(data?.agent_name || data?.name || data?.full_name);
+  const directDownlines = getDirectDownlineItems(data)
+    .map(normalizeAgent)
+    .filter(agent => agent.agent_id);
 
   return {
     id: String(data?.id || data?.agent_id || data?.agentId || agentId),
     first_name: String(data?.first_name || data?.firstName || rootName.first_name),
     last_name: String(data?.last_name || data?.lastName || rootName.last_name),
-    direct_downlines: getDirectDownlineItems(data)
-      .map(normalizeAgent)
-      .filter(agent => agent.agent_id),
+    direct_downlines: directDownlines,
+    itemsReceived: Number(data?.itemsReceived ?? directDownlines.length),
+    curPage: Number(data?.curPage ?? 1),
+    nextPage: data?.nextPage ?? null,
+    prevPage: data?.prevPage ?? null,
+    offset: Number(data?.offset ?? 0),
+    perPage: Number(data?.perPage ?? data?.per_page ?? directDownlines.length),
+    itemsTotal: Number(data?.itemsTotal ?? directDownlines.length),
+    pageTotal: Number(data?.pageTotal ?? 1),
   };
 };
 
@@ -103,8 +131,15 @@ export const agentDownlineApi = {
   /**
    * Fetches direct downlines for an agent.
    */
-  getHierarchy: async (agentId: string): Promise<DownlineHierarchy> => {
-    const response = await fetch(`${DOWNLINES_API_URL}/${agentId}`, {
+  getHierarchy: async (agentId: string, query?: Partial<DownlineQuery>): Promise<DownlineHierarchy> => {
+    const params = new URLSearchParams({
+      page: String(query?.page ?? 1),
+      per_page: String(query?.perPage ?? 25),
+      search: query?.search || '',
+      sort: JSON.stringify(query?.sort ?? null),
+    });
+
+    const response = await fetch(`${DOWNLINES_API_URL}/${agentId}?${params.toString()}`, {
       method: 'GET',
       headers: authHeader(),
     });

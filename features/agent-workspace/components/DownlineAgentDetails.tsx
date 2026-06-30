@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  ArrowUpDown,
   Briefcase,
   Building2,
   ChevronRight,
@@ -18,6 +19,17 @@ import { PolicyV2 } from '../services/agentPoliciesV2Api';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 
 type DetailTab = 'overview' | 'downlines' | 'policies' | 'production';
+type DownlineSortKey = 'first_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
+type DownlineSortConfig = { key: DownlineSortKey; direction: 'asc' | 'desc' };
+
+const DOWNLINE_SORT_FIELDS: Record<DownlineSortKey, string> = {
+  first_name: 'first_name',
+  ref_ffl_agency_name: 'ref_ffl_agency_name',
+  phone: 'phone',
+  npn: 'npn',
+  direct_downlines: 'direct_downlines',
+  status: 'status',
+};
 
 interface DownlineBreadcrumb {
   agent_id: string;
@@ -100,6 +112,34 @@ const StatTile = ({
   </div>
 );
 
+const DownlineSortableHeader = ({
+  label,
+  sortKey,
+  sortConfig,
+  onSort,
+}: {
+  label: string;
+  sortKey: DownlineSortKey;
+  sortConfig: DownlineSortConfig | null;
+  onSort: (key: DownlineSortKey) => void;
+}) => {
+  const isActive = sortConfig?.key === sortKey;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest transition-colors ${
+        isActive ? 'text-slate-900' : 'text-slate-400 hover:text-slate-700'
+      }`}
+    >
+      {label}
+      <ArrowUpDown className={`h-3 w-3 ${isActive ? 'text-amber-500' : 'text-slate-300'}`} />
+      {isActive && <span className="text-[9px] text-amber-600">{sortConfig?.direction === 'asc' ? 'ASC' : 'DESC'}</span>}
+    </button>
+  );
+};
+
 export const DownlineAgentDetails: React.FC = () => {
   const { agentId = '' } = useParams();
   const navigate = useNavigate();
@@ -113,6 +153,10 @@ export const DownlineAgentDetails: React.FC = () => {
   const [hierarchy, setHierarchy] = useState<DownlineHierarchy | null>(null);
   const [downlinesLoading, setDownlinesLoading] = useState(false);
   const [downlineSearch, setDownlineSearch] = useState('');
+  const [debouncedDownlineSearch, setDebouncedDownlineSearch] = useState('');
+  const [downlinePage, setDownlinePage] = useState(1);
+  const [downlinePerPage, setDownlinePerPage] = useState(25);
+  const [downlineSortConfig, setDownlineSortConfig] = useState<DownlineSortConfig | null>(null);
   const activeTab = (searchParams.get('tab') as DetailTab) || 'overview';
   const safeTab: DetailTab = ['overview', 'downlines', 'policies', 'production'].includes(activeTab) ? activeTab : 'overview';
 
@@ -159,10 +203,31 @@ export const DownlineAgentDetails: React.FC = () => {
   }, [agentId]);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedDownlineSearch(downlineSearch.trim());
+      setDownlinePage(1);
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [downlineSearch]);
+
+  useEffect(() => {
+    setDownlineSearch('');
+    setDebouncedDownlineSearch('');
+    setDownlinePage(1);
+  }, [agentId]);
+
+  useEffect(() => {
     if (!agentId || safeTab !== 'downlines') return;
     let isMounted = true;
     setDownlinesLoading(true);
-    agentDownlineApi.getHierarchy(agentId)
+    agentDownlineApi.getHierarchy(agentId, {
+      page: downlinePage,
+      perPage: downlinePerPage,
+      search: debouncedDownlineSearch,
+      filter: null,
+      sort: downlineSortConfig ? { [DOWNLINE_SORT_FIELDS[downlineSortConfig.key]]: downlineSortConfig.direction } : null,
+    })
       .then(data => {
         if (isMounted) setHierarchy(data);
       })
@@ -176,18 +241,22 @@ export const DownlineAgentDetails: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [agentId, safeTab]);
+  }, [agentId, debouncedDownlineSearch, downlinePage, downlinePerPage, downlineSortConfig, safeTab]);
 
-  const filteredDownlines = useMemo(() => {
-    const search = downlineSearch.toLowerCase();
-    return (hierarchy?.direct_downlines || []).filter(agent => [
-      agent.first_name,
-      agent.last_name,
-      agent.ref_ffl_agency_name,
-      agent.phone,
-      agent.npn,
-    ].some(value => String(value || '').toLowerCase().includes(search)));
-  }, [hierarchy, downlineSearch]);
+  const filteredDownlines = useMemo(() => hierarchy?.direct_downlines || [], [hierarchy]);
+  const downlineTotal = hierarchy?.itemsTotal ?? filteredDownlines.length;
+  const downlinePageTotal = hierarchy?.pageTotal ?? 1;
+  const downlineCurrentPage = hierarchy?.curPage ?? downlinePage;
+  const downlinePageStart = downlineTotal === 0 ? 0 : ((downlineCurrentPage - 1) * downlinePerPage) + 1;
+  const downlinePageEnd = downlineTotal === 0 ? 0 : Math.min(downlinePageStart + filteredDownlines.length - 1, downlineTotal);
+
+  const handleDownlineSort = (key: DownlineSortKey) => {
+    setDownlineSortConfig(current => ({
+      key,
+      direction: current?.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+    setDownlinePage(1);
+  };
 
   const changeTab = (tab: DetailTab) => {
     setSearchParams({ tab });
@@ -381,7 +450,7 @@ export const DownlineAgentDetails: React.FC = () => {
               <div>
                 <h3 className="text-lg font-black text-slate-900">Direct Downlines</h3>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  {downlinesLoading ? 'Loading team...' : `${filteredDownlines.length} agents loaded`}
+                  {downlinesLoading ? 'Loading team...' : `${downlineTotal.toLocaleString()} agents matching current view`}
                 </p>
               </div>
               <div className="relative w-full lg:w-80">
@@ -398,6 +467,19 @@ export const DownlineAgentDetails: React.FC = () => {
               agents={filteredDownlines}
               loading={downlinesLoading}
               onOpenAgent={openNestedDownline}
+              sortConfig={downlineSortConfig}
+              onSort={handleDownlineSort}
+              currentPage={downlineCurrentPage}
+              pageTotal={downlinePageTotal}
+              pageStart={downlinePageStart}
+              pageEnd={downlinePageEnd}
+              total={downlineTotal}
+              perPage={downlinePerPage}
+              onPage={setDownlinePage}
+              onPerPage={(nextPerPage) => {
+                setDownlinePerPage(nextPerPage);
+                setDownlinePage(1);
+              }}
             />
           </div>
         )}
@@ -441,71 +523,128 @@ const DownlineTable = ({
   agents,
   loading,
   onOpenAgent,
+  sortConfig,
+  onSort,
+  currentPage,
+  pageTotal,
+  pageStart,
+  pageEnd,
+  total,
+  perPage,
+  onPage,
+  onPerPage,
 }: {
   agents: DownlineAgent[];
   loading: boolean;
   onOpenAgent: (agent: DownlineAgent) => void;
+  sortConfig: DownlineSortConfig | null;
+  onSort: (key: DownlineSortKey) => void;
+  currentPage: number;
+  pageTotal: number;
+  pageStart: number;
+  pageEnd: number;
+  total: number;
+  perPage: number;
+  onPage: (page: number) => void;
+  onPerPage: (perPage: number) => void;
 }) => (
-  <div className="overflow-x-auto">
-    <table className="w-full min-w-[920px] text-left">
-      <thead>
-        <tr className="border-b border-slate-100 bg-slate-50/60 text-[10px] font-black uppercase tracking-widest text-slate-400">
-          <th className="px-6 py-4">Agent Name</th>
-          <th className="px-4 py-4">Agency</th>
-          <th className="px-4 py-4">Phone</th>
-          <th className="px-4 py-4">NPN</th>
-          <th className="px-4 py-4">Direct Downlines</th>
-          <th className="px-4 py-4">Status</th>
-          <th className="px-4 py-4"></th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-50">
-        {loading ? (
-          <tr>
-            <td colSpan={7} className="py-12 text-center text-slate-400">
-              <div className="inline-flex items-center gap-2 text-sm font-bold">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Loading downlines...
-              </div>
-            </td>
+  <div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[920px] text-left">
+        <thead>
+          <tr className="border-b border-slate-100 bg-slate-50/60">
+            <th className="px-6 py-4"><DownlineSortableHeader label="Agent Name" sortKey="first_name" sortConfig={sortConfig} onSort={onSort} /></th>
+            <th className="px-4 py-4"><DownlineSortableHeader label="Agency" sortKey="ref_ffl_agency_name" sortConfig={sortConfig} onSort={onSort} /></th>
+            <th className="px-4 py-4"><DownlineSortableHeader label="Phone" sortKey="phone" sortConfig={sortConfig} onSort={onSort} /></th>
+            <th className="px-4 py-4"><DownlineSortableHeader label="NPN" sortKey="npn" sortConfig={sortConfig} onSort={onSort} /></th>
+            <th className="px-4 py-4"><DownlineSortableHeader label="Direct Downlines" sortKey="direct_downlines" sortConfig={sortConfig} onSort={onSort} /></th>
+            <th className="px-4 py-4"><DownlineSortableHeader label="Status" sortKey="status" sortConfig={sortConfig} onSort={onSort} /></th>
+            <th className="px-4 py-4"></th>
           </tr>
-        ) : agents.length > 0 ? agents.map(agent => (
-          <tr key={agent.agent_id} onClick={() => onOpenAgent(agent)} className="cursor-pointer transition-all hover:bg-amber-50/30">
-            <td className="px-6 py-5">
-              <div className="flex items-center gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 text-xs font-black text-slate-500">
-                  {agent.profile_url ? (
-                    <img src={agent.profile_url} alt={`${agent.first_name} ${agent.last_name}`} className="h-full w-full object-cover" />
-                  ) : (
-                    getInitials(agent.first_name, agent.last_name)
-                  )}
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          {loading ? (
+            <tr>
+              <td colSpan={7} className="py-12 text-center text-slate-400">
+                <div className="inline-flex items-center gap-2 text-sm font-bold">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Loading downlines...
                 </div>
-                <div>
-                  <p className="text-sm font-black text-slate-900">{agent.first_name} {agent.last_name}</p>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Open profile</p>
+              </td>
+            </tr>
+          ) : agents.length > 0 ? agents.map(agent => (
+            <tr key={agent.agent_id} onClick={() => onOpenAgent(agent)} className="cursor-pointer transition-all hover:bg-amber-50/30">
+              <td className="px-6 py-5">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 text-xs font-black text-slate-500">
+                    {agent.profile_url ? (
+                      <img src={agent.profile_url} alt={`${agent.first_name} ${agent.last_name}`} className="h-full w-full object-cover" />
+                    ) : (
+                      getInitials(agent.first_name, agent.last_name)
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-slate-900">{agent.first_name} {agent.last_name}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Open profile</p>
+                  </div>
                 </div>
-              </div>
-            </td>
-            <td className="px-4 py-5 text-xs font-bold text-slate-600">{agent.ref_ffl_agency_name || 'Not set'}</td>
-            <td className="px-4 py-5 text-xs font-bold text-slate-600">{agent.phone || 'Not set'}</td>
-            <td className="px-4 py-5 text-xs font-bold text-slate-600">{agent.npn || 'Not set'}</td>
-            <td className="px-4 py-5 text-sm font-black text-slate-900">{agent.directDownline_count}</td>
-            <td className="px-4 py-5">
-              <span className={`inline-flex rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${getStatusStyles(agent.status || 'Active')}`}>
-                {agent.status || 'Active'}
-              </span>
-            </td>
-            <td className="px-4 py-5 text-right text-slate-300">
-              <ChevronRight className="ml-auto h-4 w-4" />
-            </td>
-          </tr>
-        )) : (
-          <tr>
-            <td colSpan={7} className="py-12 text-center text-sm font-bold text-slate-400">No direct downlines found.</td>
-          </tr>
-        )}
-      </tbody>
-    </table>
+              </td>
+              <td className="px-4 py-5 text-xs font-bold text-slate-600">{agent.ref_ffl_agency_name || 'Not set'}</td>
+              <td className="px-4 py-5 text-xs font-bold text-slate-600">{agent.phone || 'Not set'}</td>
+              <td className="px-4 py-5 text-xs font-bold text-slate-600">{agent.npn || 'Not set'}</td>
+              <td className="px-4 py-5 text-sm font-black text-slate-900">{agent.directDownline_count}</td>
+              <td className="px-4 py-5">
+                <span className={`inline-flex rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${getStatusStyles(agent.status || 'Active')}`}>
+                  {agent.status || 'Active'}
+                </span>
+              </td>
+              <td className="px-4 py-5 text-right text-slate-300">
+                <ChevronRight className="ml-auto h-4 w-4" />
+              </td>
+            </tr>
+          )) : (
+            <tr>
+              <td colSpan={7} className="py-12 text-center text-sm font-bold text-slate-400">No direct downlines found.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+    <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3 text-xs font-bold text-slate-500">
+        <span>Showing {pageStart.toLocaleString()}-{pageEnd.toLocaleString()} of {total.toLocaleString()}</span>
+        <select
+          value={perPage}
+          onChange={event => onPerPage(Number(event.target.value))}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 outline-none"
+        >
+          {[10, 25, 50, 100].map(size => (
+            <option key={size} value={size}>{size} / page</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={currentPage <= 1 || loading}
+          onClick={() => onPage(Math.max(1, currentPage - 1))}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Prev
+        </button>
+        <span className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white">
+          {currentPage} / {Math.max(pageTotal, 1)}
+        </span>
+        <button
+          type="button"
+          disabled={currentPage >= pageTotal || loading}
+          onClick={() => onPage(Math.min(pageTotal, currentPage + 1))}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition-all hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+    </div>
   </div>
 );
 

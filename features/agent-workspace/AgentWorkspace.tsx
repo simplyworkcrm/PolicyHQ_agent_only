@@ -18,10 +18,12 @@ import {
   Trophy,
   Check, // Imported Check
   PhoneCall,
-  Settings
+  Settings,
+  Bot
 } from 'lucide-react';
 import { useAgentContext } from './context/AgentContext';
 import { useAuth } from '../../context/AuthContext';
+import { InternalAiProvider, useInternalAi } from './context/InternalAiContext';
 import { AgentOverview } from './components/AgentOverview';
 import { AgentPoliciesV2 } from './components/AgentPoliciesV2';
 import { AgentPolicyDetails } from './components/AgentPolicyDetails';
@@ -43,6 +45,7 @@ import { ModuleSwitcher } from '../../shared/components/ModuleSwitcher';
 import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { NotificationSale } from '../../shared/components/NotificationSale';
+import { InternalAiDrawer } from './components/InternalAiDrawer';
 
 // Sidebar Group - Expandable parent with sub-items
 const SidebarGroup = ({
@@ -211,6 +214,7 @@ const SidebarItem = ({
 
 const AgentLayout: React.FC = () => {
   const { user, logout } = useAuth();
+  const { toggleDrawer } = useInternalAi();
   const { 
     currentAgentId, 
     selectedAgentIds,
@@ -458,6 +462,14 @@ const AgentLayout: React.FC = () => {
 
                 <div className="flex items-center gap-3">
                     <ModuleSwitcher />
+                    <button
+                      type="button"
+                      onClick={toggleDrawer}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200/60 bg-white/70 px-4 py-2 text-xs font-black text-slate-700 shadow-sm transition-colors hover:bg-white hover:text-slate-900"
+                    >
+                      <Bot className="w-4 h-4 text-brand-500" />
+                      AI
+                    </button>
                     <div className="flex items-center gap-2 bg-white/50 backdrop-blur-sm p-1.5 rounded-full border border-slate-200/50 shadow-sm">
                         <NotificationDirect />
                         <NotificationBell />
@@ -510,6 +522,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </div>
+            <InternalAiDrawer />
             </div>
         )}
       </main>
@@ -524,7 +537,11 @@ const CheckCircleIcon = () => (
 );
 
 export const AgentWorkspace: React.FC = () => {
-  return <AgentLayout />;
+  return (
+    <InternalAiProvider>
+      <AgentLayout />
+    </InternalAiProvider>
+  );
 };
 
 export default AgentWorkspace;

@@ -27,6 +27,7 @@ export interface PolicyV2 {
   paid_status_id?: string | null;
   agent_id: string;
   agent_name: string;
+  source_id?: string | null;
   source_name: string;
 }
 
@@ -57,6 +58,7 @@ interface RawPolicyV2 {
   policy_paidStatus: string | null;
   ref_agent_owner_name: string;
   ref_metacontactsource_name: string;
+  ref_metacontactsource_id?: string | null;
   ref_carrier_name: string | null;
   ref_policyStatus_name: string | null;
   meta_policy_paidstatus_name: string | null;
@@ -205,6 +207,7 @@ const normalizePoliciesResponse = (payload: RawPoliciesV2Response): PoliciesV2Re
     paid_status_id: getPaidStatusId(policy),
     agent_id: policy.ref_agent_owner,
     agent_name: policy.ref_agent_owner_name,
+    source_id: policy.ref_metacontactsource_id ?? null,
     source_name: policy.ref_metacontactsource_name,
   })),
 });
@@ -285,5 +288,14 @@ export const agentPoliciesV2Api = {
     });
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return normalizeMetaOptions(await response.json(), 'Unknown Paid Status');
+  },
+
+  async getSourceOptions(): Promise<PolicyFilterOption[]> {
+    const response = await fetch(`${UTILITY_API_URL}/sources`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return normalizeMetaOptions(await response.json(), 'Unknown Source');
   },
 };
