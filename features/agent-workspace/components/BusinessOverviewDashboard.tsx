@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, BarChart3, Loader2, MapPinned, RotateCcw } from 'lucide-react';
+import { AlertCircle, BarChart3, Building2, ChevronLeft, ChevronRight, Loader2, MapPinned, RotateCcw, Target, Trophy } from 'lucide-react';
 import {
   Cell,
   Pie,
@@ -83,6 +83,11 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   const [data, setData] = useState<MyBusinessOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [monthlyGoalInput, setMonthlyGoalInput] = useState('');
+  const [isSavingGoal, setIsSavingGoal] = useState(false);
+  const [goalSaveError, setGoalSaveError] = useState<string | null>(null);
+  const [goalSaveMessage, setGoalSaveMessage] = useState<string | null>(null);
+  const [isLeaderboardCollapsed, setIsLeaderboardCollapsed] = useState(false);
 
   const agentOptions = useMemo(() => (
     (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
@@ -195,6 +200,27 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   const maxStatePremium = Math.max(...states.map(item => item.total_ap), 1);
   const maxPolicyStatusPremium = Math.max(...policyStatuses.map(item => item.total_ap), 1);
   const statesByCode = useMemo(() => new Map(states.map(item => [item.code, item])), [states]);
+  const agencyProfile = mode === 'agency' ? data?.ffl_agency : null;
+  const canEditAgencyGoal = mode === 'agency' && data?.isAgency_manager === true;
+  const getMediaUrl = (value: unknown) => {
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object' && 'url' in value) {
+      const url = (value as { url?: unknown }).url;
+      return typeof url === 'string' ? url : '';
+    }
+    return '';
+  };
+  const agencyLogoUrl = getMediaUrl(agencyProfile?.logo);
+
+  useEffect(() => {
+    if (!agencyProfile) {
+      setMonthlyGoalInput('');
+      return;
+    }
+
+    const goal = agencyProfile.monthly_goal_ap;
+    setMonthlyGoalInput(goal === null || goal === undefined ? '' : String(goal));
+  }, [agencyProfile]);
 
   const topSourceChartData = useMemo(() => (
     sources.slice(0, 6).map(item => ({
@@ -204,10 +230,66 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
     }))
   ), [sources]);
 
+  const agentLeaderboard = useMemo(() => (
+    [...(data?.by_agents || [])]
+      .map(item => {
+        const firstLastName = [item.first_name, item.last_name].filter(Boolean).join(' ');
+        const displayName = item.agent || item.agent_name || item.name || firstLastName || 'Unknown Agent';
+        return {
+          id: item.id || item.agent_id || item.ref_agent_owner || displayName || 'agent',
+          name: displayName,
+          records: Number(item.policy_count ?? item.records) || 0,
+          total_ap: Number(item.total_ap ?? item.annual_premium) || 0,
+          imageUrl: getMediaUrl(item.profile) || getMediaUrl(item.profile_image) || getMediaUrl(item.image),
+        };
+      })
+      .filter(item => item.name && (item.records > 0 || item.total_ap > 0))
+      .sort((a, b) => b.total_ap - a.total_ap)
+  ), [data]);
+
   const sourceTotals = useMemo(() => ({
     records: sources.reduce((sum, item) => sum + item.records, 0),
     annualPremium: sources.reduce((sum, item) => sum + item.total_ap, 0),
   }), [sources]);
+
+  const handleSaveMonthlyGoal = async () => {
+    if (!agencyProfile?.id || !canEditAgencyGoal) return;
+
+    const normalizedInput = monthlyGoalInput.trim();
+    const nextGoal = normalizedInput === '' ? null : Number(normalizedInput);
+    if (nextGoal !== null && (!Number.isFinite(nextGoal) || nextGoal < 0)) {
+      setGoalSaveError('Enter a valid monthly AP goal.');
+      setGoalSaveMessage(null);
+      return;
+    }
+
+    setIsSavingGoal(true);
+    setGoalSaveError(null);
+    setGoalSaveMessage(null);
+
+    try {
+      const result = await myBusinessOverviewApi.updateAgencyMonthlyGoal(agencyProfile.id, nextGoal);
+      setData(previous => {
+        const updatedAgency = result.ffl_agency || previous?.ffl_agency;
+        return {
+          ...(previous || {}),
+          ...result,
+          ffl_agency: updatedAgency
+            ? {
+              ...updatedAgency,
+              monthly_goal_ap: result.ffl_agency?.monthly_goal_ap ?? nextGoal,
+            }
+            : previous?.ffl_agency || null,
+        };
+      });
+      setMonthlyGoalInput(nextGoal === null ? '' : String(nextGoal));
+      setGoalSaveMessage('Monthly AP goal updated.');
+    } catch (err) {
+      setGoalSaveError(err instanceof Error ? err.message : 'Failed to update monthly goal.');
+    } finally {
+      setIsSavingGoal(false);
+    }
+  };
 
   const stateTileClass = (amount: number) => {
     if (amount <= 0) return 'border-slate-100 bg-slate-100 text-slate-300';
@@ -298,6 +380,79 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
           </div>
         ) : (
           <div className="space-y-6 bg-slate-50/70 p-6">
+            {agencyProfile && (
+              <section className="overflow-hidden rounded-[1.75rem] border border-slate-100 bg-white shadow-sm">
+                <div className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-amber-100 bg-amber-50 text-amber-600">
+                      {agencyLogoUrl ? (
+                        <img src={agencyLogoUrl} alt={agencyProfile.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <Building2 className="h-7 w-7" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Agency Goal</p>
+                      <h3 className="truncate text-2xl font-black tracking-tight text-slate-950">{agencyProfile.name || 'Agency'}</h3>
+                      <p className="mt-1 text-xs font-bold text-slate-500">
+                        {canEditAgencyGoal ? 'Manager access detected. Monthly AP goal is editable.' : 'Monthly AP goal is read-only for this account.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-amber-300">
+                          <Target className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Monthly AP Goal</p>
+                          <p className="text-2xl font-black tracking-tight text-slate-950">
+                            {agencyProfile.monthly_goal_ap === null || agencyProfile.monthly_goal_ap === undefined
+                              ? 'Not set'
+                              : currencyFormatter.format(Number(agencyProfile.monthly_goal_ap) || 0)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {canEditAgencyGoal && (
+                      <>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={monthlyGoalInput}
+                            onChange={(event) => setMonthlyGoalInput(event.target.value)}
+                            placeholder="Set monthly goal AP"
+                            className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-950 outline-none transition-all placeholder:text-slate-300 focus:border-amber-400"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveMonthlyGoal}
+                            disabled={isSavingGoal}
+                            className="rounded-2xl bg-slate-950 px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-slate-200 transition-all hover:bg-amber-500 hover:text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+                          >
+                            {isSavingGoal ? 'Saving...' : 'Save Goal'}
+                          </button>
+                        </div>
+
+                        {goalSaveError ? (
+                          <p className="mt-3 text-xs font-bold text-red-600">{goalSaveError}</p>
+                        ) : goalSaveMessage ? (
+                          <p className="mt-3 text-xs font-bold text-emerald-600">{goalSaveMessage}</p>
+                        ) : (
+                          <p className="mt-3 text-xs font-bold text-amber-700">Changes save to the agency monthly AP goal.</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="relative overflow-hidden rounded-[1.75rem] bg-slate-950 p-6 text-white shadow-xl shadow-slate-200">
                 <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full border border-white/10" />
@@ -330,7 +485,9 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className={`grid grid-cols-1 gap-6 ${agentLeaderboard.length > 0 ? '2xl:grid-cols-[minmax(0,1fr)_auto]' : ''}`}>
+              <div className="min-w-0 space-y-6">
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
               <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
                 <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
@@ -394,9 +551,9 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
                   })}
                 </div>
               </section>
-            </div>
+                </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
                 <div className="mb-5">
                   <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Policy Status</p>
@@ -500,6 +657,103 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
                   </div>
                 )}
               </section>
+                </div>
+              </div>
+
+              {agentLeaderboard.length > 0 && (
+                <aside className={`${isLeaderboardCollapsed ? '2xl:w-16' : '2xl:w-[25vw] 2xl:min-w-80 2xl:max-w-[26rem]'} transition-all duration-300`}>
+                  {isLeaderboardCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsLeaderboardCollapsed(false)}
+                      className="hidden h-full min-h-96 w-16 flex-col items-center justify-start gap-4 rounded-[2rem] border border-slate-100 bg-white p-4 text-slate-500 shadow-sm transition-all hover:text-slate-950 2xl:flex"
+                      title="Open agent leaderboard"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-amber-300">
+                        <Trophy className="h-4 w-4" />
+                      </div>
+                      <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] font-black uppercase tracking-[0.24em]">
+                        Leaderboard
+                      </span>
+                    </button>
+                  ) : (
+                    <section className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm 2xl:sticky 2xl:top-6">
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Agent Leaderboard</p>
+                          <h3 className="text-xl font-black tracking-tight text-slate-950">Top agents</h3>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">Ranked by annual premium.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsLeaderboardCollapsed(true)}
+                          className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-100 bg-slate-50 text-slate-400 transition-all hover:bg-slate-950 hover:text-white 2xl:flex"
+                          title="Collapse agent leaderboard"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="max-h-[44rem] space-y-3 overflow-y-auto p-4">
+                        {agentLeaderboard.slice(0, 12).map((agent, index) => {
+                          const rank = index + 1;
+                          const isTopThree = rank <= 3;
+                          const initials = agent.name
+                            .split(' ')
+                            .filter(Boolean)
+                            .slice(0, 2)
+                            .map(part => part[0])
+                            .join('')
+                            .toUpperCase() || 'A';
+
+                          return (
+                            <div
+                              key={`${agent.id}-${index}`}
+                              className={`relative overflow-hidden rounded-[1.25rem] border p-3 transition-all ${
+                                isTopThree
+                                  ? 'border-amber-200 bg-gradient-to-br from-slate-950 to-slate-800 text-white shadow-lg shadow-slate-200'
+                                  : 'border-slate-100 bg-slate-50 text-slate-950'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-black ${
+                                  rank === 1
+                                    ? 'bg-amber-400 text-slate-950'
+                                    : isTopThree
+                                      ? 'bg-white/10 text-white'
+                                      : 'bg-white text-slate-500'
+                                }`}>
+                                  {rank === 1 ? <Trophy className="h-4 w-4" /> : rank}
+                                </div>
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/80 text-xs font-black text-slate-500">
+                                  {agent.imageUrl ? (
+                                    <img src={agent.imageUrl} alt={agent.name} className="h-full w-full object-cover" />
+                                  ) : (
+                                    initials
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className={`truncate text-sm font-black ${isTopThree ? 'text-white' : 'text-slate-950'}`}>{agent.name}</p>
+                                  <p className={`mt-1 text-xs font-bold ${isTopThree ? 'text-white/55' : 'text-slate-400'}`}>
+                                    {agent.records.toLocaleString()} policies
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex items-center justify-between gap-3">
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${isTopThree ? 'text-white/40' : 'text-slate-400'}`}>Annual premium</p>
+                                <p className={`text-sm font-black ${isTopThree ? 'text-amber-300' : 'text-slate-950'}`}>
+                                  {currencyFormatter.format(agent.total_ap)}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+                </aside>
+              )}
             </div>
           </div>
         )}

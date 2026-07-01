@@ -49,11 +49,13 @@ interface DateRangePickerProps {
   startDate: number | undefined;
   endDate: number | undefined;
   onChange: (start: number | undefined, end: number | undefined) => void;
+  initialOpen?: boolean;
+  inline?: boolean;
 }
 
-const DateRangePicker: React.FC<DateRangePickerProps> = ({ startDate, endDate, onChange }) => {
+const DateRangePicker: React.FC<DateRangePickerProps> = ({ startDate, endDate, onChange, initialOpen = false, inline = false }) => {
   const ref = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const [phase, setPhase] = useState<'start' | 'end'>('start');
   const [hoverTs, setHoverTs] = useState<number | null>(null);
 
@@ -100,7 +102,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ startDate, endDate, o
         // end of day UTC
         onChange(startDate, dayTs + 86_400_000 - 1);
         setPhase('start');
-        setOpen(false);
+        if (!inline) setOpen(false);
       }
     }
   };
@@ -123,7 +125,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ startDate, endDate, o
     <div className="relative" ref={ref}>
       <button
         onClick={() => { setOpen(o => !o); if (!open) setPhase(startDate && !endDate ? 'end' : 'start'); }}
-        className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold border transition-all whitespace-nowrap ${
+        className={`${inline ? 'hidden' : 'flex'} items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold border transition-all whitespace-nowrap ${
           isActive
             ? 'bg-slate-900 text-white border-slate-900'
             : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
@@ -139,7 +141,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({ startDate, endDate, o
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-2 z-[200] bg-white rounded-2xl border border-slate-200 shadow-xl p-4 w-72 max-w-[calc(100vw-3rem)]">
+        <div className={`${inline ? 'relative mt-2' : 'absolute top-full left-0 mt-2 z-[200]'} bg-white rounded-2xl border border-slate-200 shadow-xl p-4 w-72 max-w-[calc(100vw-3rem)]`}>
           {/* Month nav */}
           <div className="flex items-center justify-between mb-3">
             <button onClick={prevMonth} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 transition">
@@ -689,6 +691,7 @@ export const PolicyDateRangeFilter: React.FC<{
   onDateChange: (start: number | undefined, end: number | undefined) => void;
 }> = ({ timeframe, startDate, endDate, onTimeframeChange, onDateChange }) => {
   const [open, setOpen] = useState(false);
+  const [customPickerKey, setCustomPickerKey] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const selected = TIMEFRAME_OPTIONS.find(option => option.value === timeframe) || TIMEFRAME_OPTIONS[0];
 
@@ -703,7 +706,11 @@ export const PolicyDateRangeFilter: React.FC<{
 
   const selectTimeframe = (next: PoliciesTimeframe) => {
     onTimeframeChange(next);
-    if (next !== 'custom') setOpen(false);
+    if (next === 'custom') {
+      setCustomPickerKey(key => key + 1);
+    } else {
+      setOpen(false);
+    }
   };
 
   return (
@@ -721,7 +728,7 @@ export const PolicyDateRangeFilter: React.FC<{
         <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-3 z-[220] w-72 rounded-[1.35rem] bg-white border border-slate-100 shadow-2xl shadow-slate-300/50 overflow-hidden p-2">
+        <div className="absolute right-0 top-full mt-3 z-[220] w-80 rounded-[1.35rem] bg-white border border-slate-100 shadow-2xl shadow-slate-300/50 overflow-hidden p-2">
           {TIMEFRAME_OPTIONS.filter(option => option.value !== 'custom').map(option => {
             const active = timeframe === option.value;
             return (
@@ -748,8 +755,15 @@ export const PolicyDateRangeFilter: React.FC<{
             <Calendar className="w-4 h-4 text-orange-500" />
           </button>
           {timeframe === 'custom' && (
-            <div className="mt-2 px-2 pb-1 flex justify-end">
-              <DateRangePicker startDate={startDate} endDate={endDate} onChange={onDateChange} />
+            <div className="mt-2 px-2 pb-1">
+              <DateRangePicker
+                key={customPickerKey}
+                startDate={startDate}
+                endDate={endDate}
+                onChange={onDateChange}
+                initialOpen
+                inline
+              />
             </div>
           )}
         </div>

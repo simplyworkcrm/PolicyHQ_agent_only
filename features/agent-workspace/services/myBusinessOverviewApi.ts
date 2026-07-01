@@ -44,10 +44,45 @@ export interface MyBusinessPolicyStatusBreakdown {
   total_ap?: number;
 }
 
+export interface MyBusinessAgencyLogo {
+  url?: string | null;
+  [key: string]: unknown;
+}
+
+export interface MyBusinessAgencyProfile {
+  id: string;
+  name: string;
+  ref_agent_manager?: string | null;
+  monthly_goal_ap?: number | null;
+  logo?: string | MyBusinessAgencyLogo | null;
+}
+
+export interface MyBusinessAgentBreakdown {
+  id?: string;
+  agent_id?: string;
+  ref_agent_owner?: string;
+  agent?: string;
+  name?: string;
+  agent_name?: string;
+  first_name?: string;
+  last_name?: string;
+  records?: number;
+  policy_count?: number;
+  total_ap?: number;
+  annual_premium?: number;
+  profile?: string | MyBusinessAgencyLogo | null;
+  profile_image?: string | MyBusinessAgencyLogo | null;
+  image?: string | MyBusinessAgencyLogo | null;
+  [key: string]: unknown;
+}
+
 export interface MyBusinessOverviewResponse {
   by_state?: MyBusinessStateBreakdown[];
   by_source?: MyBusinessSourceBreakdown[];
   by_policyStatus?: MyBusinessPolicyStatusBreakdown[];
+  by_agents?: MyBusinessAgentBreakdown[];
+  isAgency_manager?: boolean;
+  ffl_agency?: MyBusinessAgencyProfile | null;
   [key: string]: unknown;
 }
 
@@ -67,6 +102,20 @@ export const myBusinessOverviewApi = {
     const response = await fetch(url, {
       method: 'GET',
       headers: authHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  async updateAgencyMonthlyGoal(agencyId: string, monthlyGoalAp: number | null): Promise<MyBusinessOverviewResponse> {
+    const response = await fetch(`https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/${agencyId}/monthly_goal`, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify({ monthly_goal_ap: monthlyGoalAp }),
     });
 
     if (!response.ok) {
