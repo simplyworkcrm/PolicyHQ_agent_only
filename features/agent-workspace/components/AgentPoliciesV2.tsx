@@ -391,7 +391,7 @@ const Pagination: React.FC<{
 const STATUS_OPTIONS = ['Approved', 'Underwriting', 'Cancelled Before Draft', 'Declined', 'Not Taken'];
 const PAID_OPTIONS = ['Paid', 'Unpaid', 'N/A'];
 const PER_PAGE_OPTIONS = [10, 25, 50, 100];
-type PoliciesTimeframe = 'all' | 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+export type PoliciesTimeframe = 'all' | 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 const TIMEFRAME_OPTIONS: { label: string; value: PoliciesTimeframe }[] = [
   { label: 'All Time', value: 'all' },
   { label: 'Today', value: 'today' },
@@ -401,7 +401,7 @@ const TIMEFRAME_OPTIONS: { label: string; value: PoliciesTimeframe }[] = [
   { label: 'Custom', value: 'custom' },
 ];
 
-const toRequestDate = (ts: number | undefined) => {
+export const toPolicyRequestDate = (ts: number | undefined) => {
   if (ts === undefined) return null;
   const date = new Date(ts);
   return `${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}-${date.getUTCFullYear()}`;
@@ -681,7 +681,7 @@ const buildFilterExpression = (
   return expression.length > 0 ? { expression } : null;
 };
 
-const PolicyDateRangeFilter: React.FC<{
+export const PolicyDateRangeFilter: React.FC<{
   timeframe: PoliciesTimeframe;
   startDate: number | undefined;
   endDate: number | undefined;
@@ -1059,8 +1059,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
         sort: sortConfig ? { [SORT_FIELD_TO_API[sortConfig.key] || sortConfig.key]: sortConfig.direction } : {},
         filter: buildPolicyFilterExpression(filterGroups),
         timeframe: timeframe === 'all' ? null : timeframe,
-        startDate: timeframe === 'custom' ? toRequestDate(startDate) : null,
-        endDate: timeframe === 'custom' ? toRequestDate(endDate) : null,
+        startDate: timeframe === 'custom' ? toPolicyRequestDate(startDate) : null,
+        endDate: timeframe === 'custom' ? toPolicyRequestDate(endDate) : null,
       });
       setData(result);
     } catch (e) {

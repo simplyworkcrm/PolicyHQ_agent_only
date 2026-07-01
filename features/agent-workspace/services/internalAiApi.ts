@@ -87,6 +87,13 @@ export const internalAiApi = {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
+      if (response.status === 429) {
+        throw new ApiError(
+          data?.error || 'The AI assistant is receiving too many requests. Please wait a moment and try again.',
+          response.status
+        );
+      }
+
       throw new ApiError(data?.error || 'Internal AI request failed', response.status);
     }
 

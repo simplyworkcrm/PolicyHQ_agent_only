@@ -118,6 +118,20 @@ function normalizePagedArguments(args) {
   return nextArgs;
 }
 
+function getPolicyItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.policies?.items)) return payload.policies.items;
+  return [];
+}
+
+function getPolicyTotal(payload) {
+  if (Array.isArray(payload)) return payload.length;
+  if (payload?.itemsTotal != null) return Number(payload.itemsTotal);
+  if (payload?.policies?.itemsTotal != null) return Number(payload.policies.itemsTotal);
+  return getPolicyItems(payload).length;
+}
+
 function getNextPage(payload) {
   if (!payload || typeof payload !== 'object') return null;
   if (payload.nextPage != null) return Number(payload.nextPage);
@@ -128,6 +142,10 @@ function getNextPage(payload) {
 function mergePagedPayloads(name, aggregate, nextPayload) {
   if (!aggregate) return nextPayload;
   if (!nextPayload || typeof nextPayload !== 'object') return aggregate;
+
+  if (Array.isArray(aggregate) && Array.isArray(nextPayload)) {
+    return [...aggregate, ...nextPayload];
+  }
 
   if (name === 'splits' && aggregate.policies && nextPayload.policies) {
     return {
@@ -172,7 +190,7 @@ function buildToolMeta(name, args, payload) {
   }
 
   if (name === 'splits') {
-    const splitItems = payload?.policies?.items || [];
+    const splitItems = getPolicyItems(payload);
     const statusCount = Array.isArray(payload?.policies_by_status) ? payload.policies_by_status.length : 0;
     const paidStatusCount = Array.isArray(payload?.policies_by_paidStatus) ? payload.policies_by_paidStatus.length : 0;
 
@@ -184,8 +202,8 @@ function buildToolMeta(name, args, payload) {
     };
   }
 
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  const total = payload?.itemsTotal ?? items.length;
+  const items = getPolicyItems(payload);
+  const total = getPolicyTotal(payload);
   const stats = payload?.policy_stats || null;
 
   return {
@@ -204,10 +222,11 @@ function buildToolPayloadPreview(name, payload) {
   }
 
   if (name === 'splits') {
+    const splitItems = getPolicyItems(payload);
     const preview = {
       policies: {
-        itemsTotal: payload?.policies?.itemsTotal ?? payload?.policies?.items?.length ?? 0,
-        items: (payload?.policies?.items || []).slice(0, 10),
+        itemsTotal: getPolicyTotal(payload),
+        items: splitItems.slice(0, 10),
       },
       partner: payload?.partner || [],
       policies_by_status: payload?.policies_by_status || [],
@@ -217,8 +236,8 @@ function buildToolPayloadPreview(name, payload) {
   }
 
   const preview = {
-    itemsTotal: payload?.itemsTotal ?? payload?.items?.length ?? 0,
-    items: (payload?.items || []).slice(0, 10),
+    itemsTotal: getPolicyTotal(payload),
+    items: getPolicyItems(payload).slice(0, 10),
     policy_stats: payload?.policy_stats || null,
   };
 
@@ -262,15 +281,18 @@ async function planToolUsage(provider, tools, context, mcpStatus, prompt, conver
       role: 'system',
       content: buildToolPlannerPrompt({ tools, context, mcpStatus, prompt }),
     },
-    ...conversation.slice(-6).map((message) => ({
-      role: message.role,
-      content: message.content,
-    })),
+    {
+      role: 'user',
+      content: prompt,
+    },
   ];
 
   const response = await provider.createChatCompletion(messages, {
+    model: provider.config?.nvidiaToolModel,
+    apiKey: provider.config?.nvidiaToolApiKey,
     maxTokens: 800,
     temperature: 0.1,
+    topP: 0.95,
   });
 
   const parsed = tryParseJson(provider.extractText(response));
@@ -333,17 +355,19 @@ async function executeToolCalls({ mcpAuthorization, toolCalls, prompt }) {
   return executedTools;
 }
 
-function buildAnswerPrompt({ prompt, context, mcpStatus, toolResults }) {
+function buildAnswerPrompt({ prompt, context, mcpStatus, toolResults, plannerDirectAnswer }) {
   return [
     'You are the internal PolicyHQ assistant inside the agent portal.',
     'Answer concisely and clearly.',
     'If live PolicyHQ data was used, rely on the tool results and do not invent fields.',
     'If tools were unavailable, say that plainly and keep the answer useful.',
+    'If no live data was used, answer as a general assistant and do not claim you checked PolicyHQ.',
     'Do not expose raw authorization values or internal system details.',
     '',
     `Context: ${JSON.stringify(context)}`,
     `MCP status: ${JSON.stringify(mcpStatus)}`,
     `User prompt: ${prompt}`,
+    plannerDirectAnswer ? `Planner note: ${plannerDirectAnswer}` : '',
     '',
     'Tool results:',
     ...toolResults.map((result) => `Tool ${result.name}:\n${result.preview}`),
@@ -358,15 +382,24 @@ async function buildAssistantAnswer({
   toolResults,
   plannerDirectAnswer,
 }) {
-  if (!toolResults.length && plannerDirectAnswer) {
-    return plannerDirectAnswer;
-  }
+  const answerModel = toolResults.length
+    ? provider.config?.nvidiaToolModel
+    : provider.config?.nvidiaGeneralModel;
+  const answerApiKey = toolResults.length
+    ? provider.config?.nvidiaToolApiKey
+    : provider.config?.nvidiaGeneralApiKey;
 
   const response = await provider.createChatCompletion(
     [
       {
         role: 'system',
-        content: buildAnswerPrompt({ prompt, context, mcpStatus, toolResults }),
+        content: buildAnswerPrompt({
+          prompt,
+          context,
+          mcpStatus,
+          toolResults,
+          plannerDirectAnswer,
+        }),
       },
       {
         role: 'user',
@@ -374,8 +407,13 @@ async function buildAssistantAnswer({
       },
     ],
     {
-      maxTokens: 1200,
-      temperature: 0.35,
+      model: answerModel,
+      apiKey: answerApiKey,
+      maxTokens: toolResults.length ? 1800 : 4096,
+      temperature: toolResults.length ? 0.35 : 0.6,
+      topP: 0.95,
+      enableThinking: !toolResults.length,
+      reasoningBudget: !toolResults.length ? 16384 : undefined,
     }
   );
 

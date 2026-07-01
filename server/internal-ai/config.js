@@ -1,7 +1,15 @@
 const INTERNAL_AI_PROVIDER = process.env.INTERNAL_AI_PROVIDER || 'nvidia';
 const NVIDIA_API_URL = process.env.NVIDIA_API_URL || 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'minimaxai/minimax-m3';
 const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '';
+const NVIDIA_GENERAL_API_KEY = process.env.NVIDIA_GENERAL_API_KEY || NVIDIA_API_KEY;
+const NVIDIA_TOOL_API_KEY = process.env.NVIDIA_TOOL_API_KEY || NVIDIA_API_KEY;
+const NVIDIA_TOOL_MODEL = process.env.NVIDIA_TOOL_MODEL || 'minimaxai/minimax-m3';
+const NVIDIA_GENERAL_MODEL =
+  process.env.NVIDIA_GENERAL_MODEL ||
+  process.env.NVIDIA_MODEL ||
+  (process.env.NVIDIA_GENERAL_API_KEY
+    ? 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'
+    : NVIDIA_TOOL_MODEL);
 const INTERNAL_AI_TIMEOUT_MS = Number(process.env.INTERNAL_AI_TIMEOUT_MS || 45000);
 const INTERNAL_AI_MAX_TOOL_PAGES = Number(process.env.INTERNAL_AI_MAX_TOOL_PAGES || 5);
 const POLICYHQ_MCP_SSE_URL = process.env.POLICYHQ_MCP_SSE_URL || 'https://api1.simplyworkcrm.com/x2/mcp/V4CeR1bI/mcp/sse';
@@ -12,8 +20,12 @@ function getProviderConfig() {
   return {
     provider: INTERNAL_AI_PROVIDER,
     nvidiaApiUrl: NVIDIA_API_URL,
-    nvidiaModel: NVIDIA_MODEL,
+    nvidiaModel: NVIDIA_GENERAL_MODEL,
+    nvidiaGeneralModel: NVIDIA_GENERAL_MODEL,
+    nvidiaToolModel: NVIDIA_TOOL_MODEL,
     nvidiaApiKey: NVIDIA_API_KEY,
+    nvidiaGeneralApiKey: NVIDIA_GENERAL_API_KEY,
+    nvidiaToolApiKey: NVIDIA_TOOL_API_KEY,
     timeoutMs: INTERNAL_AI_TIMEOUT_MS,
     maxToolPages: INTERNAL_AI_MAX_TOOL_PAGES,
     policyhqMcpSseUrl: POLICYHQ_MCP_SSE_URL,
@@ -25,8 +37,18 @@ function getProviderConfig() {
 function getMissingProviderEnv() {
   const config = getProviderConfig();
 
-  if (config.provider === 'nvidia' && !config.nvidiaApiKey) {
-    return ['NVIDIA_API_KEY'];
+  if (config.provider === 'nvidia') {
+    const missing = [];
+
+    if (!config.nvidiaGeneralApiKey) {
+      missing.push('NVIDIA_GENERAL_API_KEY');
+    }
+
+    if (!config.nvidiaToolApiKey) {
+      missing.push('NVIDIA_TOOL_API_KEY');
+    }
+
+    return missing.length ? missing : [];
   }
 
   return [];

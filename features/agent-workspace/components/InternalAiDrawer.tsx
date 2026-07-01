@@ -111,6 +111,9 @@ export const InternalAiDrawer: React.FC = () => {
             <p className="mt-3 text-xs font-semibold text-slate-400">
               General chat works without MCP. Live PolicyHQ data needs a valid MCP Authorization in Settings.
             </p>
+            <p className="mt-2 rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+              Experimental cockpit: I am still learning the portal, so a few sparks and odd turns may happen.
+            </p>
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">

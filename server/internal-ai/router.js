@@ -15,12 +15,13 @@ const router = express.Router();
 
 const chatLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: Number(process.env.INTERNAL_AI_RATE_LIMIT_MAX || 120),
   standardHeaders: true,
   legacyHeaders: false,
+  message: {
+    error: 'The AI assistant is receiving too many requests. Please wait a moment and try again.',
+  },
 });
-
-router.use(chatLimiter);
 
 function getBearerToken(req) {
   const value = String(req.headers.authorization || '');
@@ -37,6 +38,21 @@ function normalizeMessages(messages) {
       content: String(message.content || '').trim(),
     }))
     .filter((message) => message.content);
+}
+
+function getErrorMessage(error, fallback) {
+  return (
+    error?.response?.data?.error?.message ||
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
+}
+
+function getSafeErrorMessage(error, fallback) {
+  const message = String(getErrorMessage(error, fallback) || fallback);
+  return message.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]');
 }
 
 async function fetchUserProfile(authToken, config) {
@@ -89,14 +105,12 @@ router.get('/status', async (req, res) => {
     });
   } catch (error) {
     const status = error?.response?.status || 500;
-    const message =
-      error?.response?.data?.message ||
-      error?.message ||
-      'Internal AI status request failed.';
+    const message = getSafeErrorMessage(error, 'Internal AI status request failed.');
 
     console.error('[internal-ai] status request failed', {
       status,
       message,
+      providerResponse: error?.response?.data,
     });
 
     return res.status(status).json({
@@ -105,7 +119,7 @@ router.get('/status', async (req, res) => {
   }
 });
 
-router.post('/chat', async (req, res) => {
+router.post('/chat', chatLimiter, async (req, res) => {
   const providerConfig = getProviderConfig();
   const missingProviderEnv = getMissingProviderEnv();
 
@@ -213,14 +227,12 @@ router.post('/chat', async (req, res) => {
     });
   } catch (error) {
     const status = error?.response?.status || 500;
-    const message =
-      error?.response?.data?.message ||
-      error?.message ||
-      'Internal AI request failed.';
+    const message = getSafeErrorMessage(error, 'Internal AI request failed.');
 
     console.error('[internal-ai] chat request failed', {
       status,
       message,
+      providerResponse: error?.response?.data,
     });
 
     return res.status(status).json({
