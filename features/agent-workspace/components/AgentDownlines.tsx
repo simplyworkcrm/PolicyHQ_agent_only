@@ -20,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
+import { BusinessOverviewDashboard } from './BusinessOverviewDashboard';
 import { Policy } from '../../../shared/types/index';
 
 type DownlineSortKey = 'first_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
@@ -298,7 +299,7 @@ export const AgentDownlines: React.FC = () => {
   const [loadingSelected, setLoadingSelected] = useState(false);
   
   // Tabs & Views
-  const [viewMode, setViewMode] = useState<'team' | 'policies'>('team');
+  const [viewMode, setViewMode] = useState<'overview' | 'team' | 'policies'>('overview');
 
   // Policy Table State
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -402,15 +403,25 @@ export const AgentDownlines: React.FC = () => {
             <Users className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">{viewMode === 'policies' ? 'Team Production' : 'Downlines'}</h2>
+            <h2 className="text-3xl font-black tracking-tight text-slate-900">
+              {viewMode === 'policies' ? 'Team Production' : viewMode === 'overview' ? 'My Agency' : 'Downlines'}
+            </h2>
             <p className="text-sm font-bold text-slate-500">
               {viewMode === 'policies'
                 ? `Aggregated policies for ${selectedAgentLabel} and their downline tree.`
-                : 'Review direct team access and aggregated production.'}
+                : viewMode === 'overview'
+                  ? 'Review agency analytics, state coverage, sources, and policy status trends.'
+                  : 'Review direct team access and aggregated production.'}
             </p>
           </div>
         </div>
         <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-100 shadow-sm shrink-0">
+          <button
+            onClick={() => setViewMode('overview')}
+            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'overview' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Overview
+          </button>
           <button
             onClick={() => setViewMode('team')}
             className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'team' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
@@ -426,7 +437,7 @@ export const AgentDownlines: React.FC = () => {
         </div>
       </div>
 
-      {agentSwitchOptions.length > 1 && (
+      {viewMode !== 'overview' && agentSwitchOptions.length > 1 && (
         <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1">
           {agentSwitchOptions.map(agent => {
             const active = agent.id === selectedAgentId;
@@ -453,7 +464,7 @@ export const AgentDownlines: React.FC = () => {
         </div>
       )}
 
-      {!agentSwitchOptions.some(agent => agent.id === selectedAgentId) && (
+      {viewMode !== 'overview' && !agentSwitchOptions.some(agent => agent.id === selectedAgentId) && (
         <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
           <div>
             <p className="text-xs font-black text-amber-900">Viewing direct downline profile</p>
@@ -474,7 +485,17 @@ export const AgentDownlines: React.FC = () => {
         </div>
       )}
 
-      {viewMode === 'policies' ? (
+      {viewMode === 'overview' ? (
+        <BusinessOverviewDashboard
+          mode="agency"
+          scopeEyebrow="Agency Scope"
+          overviewEyebrow="Agency Overview"
+          title="Agency Analytics Dashboard"
+          subtitlePrefix="Agency production signals for"
+          loadingLabel="Loading agency overview..."
+          initialTimeframe="weekly"
+        />
+      ) : viewMode === 'policies' ? (
         <AgentPoliciesV2
           agentIdsOverride={[selectedAgentId]}
           dataSource="team"

@@ -1,4 +1,7 @@
-const MY_BUSINESS_OVERVIEW_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/overview';
+const OVERVIEW_URLS = {
+  business: 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/overview',
+  agency: 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/overview',
+} as const;
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -14,6 +17,7 @@ export interface MyBusinessOverviewQuery {
   timeframe: MyBusinessOverviewTimeframe;
   startDate: string | null;
   endDate: string | null;
+  mode?: keyof typeof OVERVIEW_URLS;
 }
 
 export interface MyBusinessStateBreakdown {
@@ -58,7 +62,8 @@ export const myBusinessOverviewApi = {
       if (query.endDate) params.set('end_date', query.endDate);
     }
 
-    const url = params.toString() ? `${MY_BUSINESS_OVERVIEW_URL}?${params}` : MY_BUSINESS_OVERVIEW_URL;
+    const baseUrl = OVERVIEW_URLS[query.mode || 'business'];
+    const url = params.toString() ? `${baseUrl}?${params}` : baseUrl;
     const response = await fetch(url, {
       method: 'GET',
       headers: authHeader(),

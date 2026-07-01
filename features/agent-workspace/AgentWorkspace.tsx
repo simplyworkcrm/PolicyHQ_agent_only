@@ -279,7 +279,7 @@ const stateTileRows = [
 
 const MyBusinessOverview = () => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
-  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('all');
+  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('weekly');
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [selectedBusinessAgentId, setSelectedBusinessAgentId] = useState<string>(currentAgentId);
