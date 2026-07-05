@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   FileCheck, 
@@ -13,6 +13,7 @@ import {
   ChevronRight, 
   Briefcase, 
   BarChart3,
+  Calendar,
   History,
   Loader2,
   MapPinned,
@@ -22,9 +23,12 @@ import {
   Ticket,
   Trophy,
   Check, // Imported Check
+  Pencil,
   PhoneCall,
+  Plus,
   Settings,
   Bot,
+  Trash2,
   X
 } from 'lucide-react';
 import {
@@ -69,6 +73,7 @@ import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { NotificationSale } from '../../shared/components/NotificationSale';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
 import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myBusinessActivityApi } from './services/myBusinessActivityApi';
+import { MyBusinessExpenseRow, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
 
 // Sidebar Group - Expandable parent with sub-items
 const SidebarGroup = ({
@@ -2143,6 +2148,841 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
   );
 };
 
+type ExpenseTableView = 'rundown' | 'month';
+
+interface ExpenseFormState {
+  expenseDate: string;
+  expense: string;
+  cost: string;
+  notes: string;
+}
+
+const emptyExpenseForm = (): ExpenseFormState => ({
+  expenseDate: toLocalActivityDate(),
+  expense: '',
+  cost: '',
+  notes: '',
+});
+
+const toExpenseNumber = (value: unknown) => {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+};
+
+const formatExpenseCurrency = (value: unknown) => currencyFormatter.format(toExpenseNumber(value));
+
+const normalizeExpenseDate = (value?: string | null) => {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return toLocalActivityDate(date);
+};
+
+const formatExpenseMonth = (monthKey: string) => {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) return monthKey;
+
+  return new Date(year, month - 1, 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+const toExpenseMonthKey = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+
+const addExpenseMonths = (start: Date, end: Date) => {
+  const months: string[] = [];
+  const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+
+  while (cursor.getTime() <= last.getTime()) {
+    months.push(toExpenseMonthKey(cursor));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return months;
+};
+
+const getExpenseDisplayMonths = (
+  timeframe: PoliciesTimeframe,
+  startDate: number | undefined,
+  endDate: number | undefined,
+  rows: MyBusinessExpenseRow[]
+) => {
+  const now = new Date();
+  const currentUtcDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
+  if (timeframe === 'yearly') {
+    return Array.from({ length: 12 }, (_, month) => `${currentUtcDate.getUTCFullYear()}-${String(month + 1).padStart(2, '0')}`);
+  }
+
+  if (timeframe === 'custom' && startDate && endDate) {
+    return addExpenseMonths(new Date(startDate), new Date(endDate));
+  }
+
+  if (timeframe === 'all') {
+    const rowMonths = rows
+      .map(row => normalizeExpenseDate(row.expense_date))
+      .filter(Boolean)
+      .map(dateKey => dateKey.slice(0, 7));
+
+    if (rowMonths.length === 0) return [toExpenseMonthKey(currentUtcDate)];
+
+    const sortedMonths = [...new Set(rowMonths)].sort();
+    const [firstYear, firstMonth] = sortedMonths[0].split('-').map(Number);
+    const [lastYear, lastMonth] = sortedMonths[sortedMonths.length - 1].split('-').map(Number);
+
+    return addExpenseMonths(
+      new Date(Date.UTC(firstYear, firstMonth - 1, 1)),
+      new Date(Date.UTC(lastYear, lastMonth - 1, 1))
+    );
+  }
+
+  return [toExpenseMonthKey(currentUtcDate)];
+};
+
+const parseExpenseDateKey = (dateKey: string) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
+};
+
+const expenseDatePickerDays = (year: number, month: number) => {
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlanks = firstDay.getDay();
+
+  return [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ];
+};
+
+const ExpenseDatePicker = ({
+  value,
+  onChange,
+  onSelect,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSelect?: () => void;
+}) => {
+  const selectedDate = parseExpenseDateKey(value || toLocalActivityDate());
+  const [viewYear, setViewYear] = useState(selectedDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
+  const selectedKey = normalizeExpenseDate(value);
+  const todayKey = toLocalActivityDate();
+  const days = expenseDatePickerDays(viewYear, viewMonth);
+  const viewLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  useEffect(() => {
+    const nextDate = parseExpenseDateKey(value || toLocalActivityDate());
+    setViewYear(nextDate.getFullYear());
+    setViewMonth(nextDate.getMonth());
+  }, [value]);
+
+  const moveMonth = (step: number) => {
+    const nextDate = new Date(viewYear, viewMonth + step, 1);
+    setViewYear(nextDate.getFullYear());
+    setViewMonth(nextDate.getMonth());
+  };
+
+  const selectDay = (day: number) => {
+    const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(dateKey);
+    onSelect?.();
+  };
+
+  return (
+    <div className="rounded-3xl border border-slate-100 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => moveMonth(-1)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm transition hover:text-slate-950"
+          title="Previous month"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-amber-500" />
+          <span className="text-sm font-black text-slate-950">{viewLabel}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => moveMonth(1)}
+          className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm transition hover:text-slate-950"
+          title="Next month"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+          <span key={day} className="py-1">{day}</span>
+        ))}
+      </div>
+
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {days.map((day, index) => {
+          if (!day) return <span key={`blank-${index}`} className="h-9" />;
+
+          const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const selected = dateKey === selectedKey;
+          const today = dateKey === todayKey;
+
+          return (
+            <button
+              key={dateKey}
+              type="button"
+              onClick={() => selectDay(day)}
+              className={`h-9 rounded-xl text-xs font-black transition ${
+                selected
+                  ? 'bg-slate-950 text-white shadow-lg shadow-slate-200'
+                  : today
+                    ? 'border border-amber-300 bg-amber-50 text-amber-800'
+                    : 'bg-white text-slate-600 hover:bg-amber-100 hover:text-slate-950'
+              }`}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const MyBusinessExpenseLog = ({
+  selectedAgentId,
+  selectedAgentLabel,
+}: {
+  selectedAgentId: string;
+  selectedAgentLabel: string;
+}) => {
+  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('weekly');
+  const [startDate, setStartDate] = useState<number | undefined>();
+  const [endDate, setEndDate] = useState<number | undefined>();
+  const [rows, setRows] = useState<MyBusinessExpenseRow[]>([]);
+  const [summary, setSummary] = useState({ totalCost: 0, expenseCount: 0 });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [view, setView] = useState<ExpenseTableView>('rundown');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<MyBusinessExpenseRow | null>(null);
+  const [form, setForm] = useState<ExpenseFormState>(() => emptyExpenseForm());
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MyBusinessExpenseRow | null>(null);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
+  const datePickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!datePickerOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
+        setDatePickerOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [datePickerOpen]);
+
+  const loadExpenses = useCallback(async () => {
+    if (!selectedAgentId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const requestTimeframe = timeframe === 'all' ? null : timeframe;
+      const response = await myBusinessExpenseApi.getExpenses({
+        agentId: selectedAgentId,
+        timeframe: requestTimeframe,
+        startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+        endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+      });
+
+      const expenseLog = response.expense_log;
+      const nextRows = expenseLog?.rundown || [];
+      const nextTotalCost = toExpenseNumber(expenseLog?.summary?.total_cost);
+      const nextExpenseCount = toExpenseNumber(expenseLog?.summary?.expense_count);
+      const fallbackTotalCost = nextRows.reduce((sum, row) => sum + toExpenseNumber(row.cost), 0);
+
+      setRows(nextRows);
+      setSummary({
+        totalCost: nextTotalCost || fallbackTotalCost,
+        expenseCount: nextExpenseCount || nextRows.length,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load expenses.');
+    } finally {
+      setLoading(false);
+    }
+  }, [endDate, selectedAgentId, startDate, timeframe]);
+
+  useEffect(() => {
+    loadExpenses();
+  }, [loadExpenses]);
+
+  const sortedRows = useMemo(() => (
+    [...rows].sort((a, b) => normalizeExpenseDate(b.expense_date).localeCompare(normalizeExpenseDate(a.expense_date)))
+  ), [rows]);
+
+  const monthlyGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; total: number; count: number; rows: MyBusinessExpenseRow[] }>();
+    const displayMonths = getExpenseDisplayMonths(timeframe, startDate, endDate, sortedRows);
+
+    displayMonths.forEach(monthKey => {
+      groups.set(monthKey, { key: monthKey, total: 0, count: 0, rows: [] });
+    });
+
+    sortedRows.forEach(row => {
+      const dateKey = normalizeExpenseDate(row.expense_date) || 'Undated';
+      const monthKey = dateKey === 'Undated' ? 'Undated' : dateKey.slice(0, 7);
+      const group = groups.get(monthKey) || { key: monthKey, total: 0, count: 0, rows: [] };
+
+      group.total += toExpenseNumber(row.cost);
+      group.count += 1;
+      group.rows.push(row);
+      groups.set(monthKey, group);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => b.key.localeCompare(a.key));
+  }, [endDate, sortedRows, startDate, timeframe]);
+
+  const averageCost = summary.expenseCount > 0 ? summary.totalCost / summary.expenseCount : 0;
+
+  useEffect(() => {
+    setCollapsedMonths(current => {
+      const next: Record<string, boolean> = {};
+      monthlyGroups.forEach(group => {
+        next[group.key] = current[group.key] ?? group.count === 0;
+      });
+      return next;
+    });
+  }, [monthlyGroups]);
+
+  const toggleMonth = (monthKey: string) => {
+    setCollapsedMonths(current => ({
+      ...current,
+      [monthKey]: !current[monthKey],
+    }));
+  };
+
+  const openCreateForm = () => {
+    setEditingRow(null);
+    setForm(emptyExpenseForm());
+    setFormError(null);
+    setMessage(null);
+    setDatePickerOpen(false);
+    setFormOpen(true);
+  };
+
+  const openEditForm = (row: MyBusinessExpenseRow) => {
+    setEditingRow(row);
+    setForm({
+      expenseDate: normalizeExpenseDate(row.expense_date) || toLocalActivityDate(),
+      expense: String(row.expense || ''),
+      cost: row.cost === null || row.cost === undefined ? '' : String(row.cost),
+      notes: String(row.notes || ''),
+    });
+    setFormError(null);
+    setMessage(null);
+    setDatePickerOpen(false);
+    setFormOpen(true);
+  };
+
+  const closeForm = () => {
+    if (saving) return;
+    setFormOpen(false);
+    setEditingRow(null);
+    setForm(emptyExpenseForm());
+    setFormError(null);
+    setDatePickerOpen(false);
+  };
+
+  const handleSaveExpense = async () => {
+    if (!selectedAgentId) return;
+
+    const expenseDate = form.expenseDate.trim();
+    const expense = form.expense.trim();
+    const cost = Number(form.cost);
+
+    if (!expenseDate) {
+      setFormError('Date is required.');
+      return;
+    }
+
+    if (!expense) {
+      setFormError('Expense is required.');
+      return;
+    }
+
+    if (form.cost.trim() === '' || !Number.isFinite(cost) || cost < 0) {
+      setFormError('Cost must be zero or greater.');
+      return;
+    }
+
+    setSaving(true);
+    setFormError(null);
+    setMessage(null);
+
+    try {
+      const input = {
+        agentId: selectedAgentId,
+        expenseDate,
+        expense,
+        cost,
+        notes: form.notes.trim(),
+      };
+
+      if (editingRow?.id !== undefined && editingRow.id !== null) {
+        await myBusinessExpenseApi.updateExpense({ ...input, id: editingRow.id });
+        setMessage('Expense updated.');
+      } else {
+        await myBusinessExpenseApi.createExpense(input);
+        setMessage('Expense added.');
+      }
+
+      setFormOpen(false);
+      setEditingRow(null);
+      setForm(emptyExpenseForm());
+      await loadExpenses();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to save expense.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDeleteConfirm = (row: MyBusinessExpenseRow) => {
+    if (row.id === undefined || row.id === null) return;
+    setDeleteTarget(row);
+    setMessage(null);
+    setError(null);
+  };
+
+  const closeDeleteConfirm = () => {
+    if (deletingId !== null) return;
+    setDeleteTarget(null);
+  };
+
+  const confirmDeleteExpense = async () => {
+    if (deleteTarget?.id === undefined || deleteTarget.id === null) return;
+
+    setDeletingId(deleteTarget.id);
+    setMessage(null);
+    setError(null);
+
+    try {
+      await myBusinessExpenseApi.deleteExpense(deleteTarget.id);
+      setMessage('Expense deleted.');
+      setDeleteTarget(null);
+      await loadExpenses();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to delete expense.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const renderExpenseRows = (items: MyBusinessExpenseRow[], keyPrefix: string) => (
+    items.length > 0 ? (
+      items.map((row, index) => {
+        const isDeleting = deletingId !== null && row.id === deletingId;
+
+        return (
+          <div
+            key={`${keyPrefix}-${row.id ?? index}`}
+            className="grid min-w-[58rem] grid-cols-[1fr_1.2fr_0.8fr_1.5fr_0.8fr] items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600"
+          >
+            <span className="font-black text-slate-950">{formatManualActivityDate(normalizeExpenseDate(row.expense_date))}</span>
+            <span className="truncate text-slate-800">{row.expense || '-'}</span>
+            <span className="font-black text-slate-950">{formatExpenseCurrency(row.cost)}</span>
+            <span className="truncate">{row.notes || '-'}</span>
+            <span className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => openEditForm(row)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-500 transition hover:border-amber-200 hover:text-amber-700"
+                title="Edit expense"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => openDeleteConfirm(row)}
+                disabled={isDeleting}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+                title="Delete expense"
+              >
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              </button>
+            </span>
+          </div>
+        );
+      })
+    ) : (
+      <div className="border-t border-slate-50 px-5 py-10 text-center text-xs font-black text-slate-400">
+        No expenses found for this range.
+      </div>
+    )
+  );
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-end">
+        <PolicyDateRangeFilter
+          timeframe={timeframe}
+          startDate={startDate}
+          endDate={endDate}
+          onTimeframeChange={setTimeframe}
+          onDateChange={(start, end) => {
+            setStartDate(start);
+            setEndDate(end);
+          }}
+          label="Expense Date Range"
+          description="Controls expenses loaded from the API"
+        />
+
+        <button
+          type="button"
+          onClick={openCreateForm}
+          disabled={!selectedAgentId}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+        >
+          <Plus className="h-4 w-4" />
+          Add Expense
+        </button>
+      </div>
+
+      <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-sm">
+        <div className="flex flex-col gap-5 border-b border-slate-100 p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-amber-300 shadow-lg shadow-slate-200">
+              <ReceiptText className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Expense Log</p>
+              <h2 className="text-2xl font-black tracking-tight text-slate-950">Expense management</h2>
+              <p className="text-sm font-semibold text-slate-500">Track expenses for {selectedAgentLabel}.</p>
+            </div>
+          </div>
+
+          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black ${
+            error
+              ? 'border-red-100 bg-red-50 text-red-600'
+              : loading
+                ? 'border-amber-100 bg-amber-50 text-amber-700'
+                : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+          }`}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {error ? 'Unavailable' : loading ? 'Loading' : 'Live data'}
+          </span>
+        </div>
+
+        <div className="p-6">
+          {error ? (
+            <div className="mb-5 flex items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          ) : message ? (
+            <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              {message}
+            </div>
+          ) : null}
+
+          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+            {[
+              ['Total Cost', formatExpenseCurrency(summary.totalCost)],
+              ['Expense Count', Math.round(summary.expenseCount).toLocaleString()],
+              ['Average Cost', formatExpenseCurrency(averageCost)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
+                <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mb-5 flex flex-wrap gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-1.5">
+            {[
+              { key: 'rundown' as const, label: 'Rundown' },
+              { key: 'month' as const, label: 'By Month' },
+            ].map(item => {
+              const active = view === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setView(item.key)}
+                  className={`rounded-xl px-4 py-2.5 text-xs font-black transition-all ${
+                    active ? 'bg-slate-950 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-white hover:text-slate-950'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {view === 'rundown' ? (
+            <div className="overflow-hidden rounded-3xl border border-slate-100">
+              <div className="overflow-auto">
+                <div className="grid min-w-[58rem] grid-cols-[1fr_1.2fr_0.8fr_1.5fr_0.8fr] bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  <span>Date</span>
+                  <span>Expense</span>
+                  <span>Cost</span>
+                  <span>Notes</span>
+                  <span className="text-right">Actions</span>
+                </div>
+                {loading && sortedRows.length === 0 ? (
+                  <div className="border-t border-slate-50 px-5 py-10 text-center text-xs font-black text-slate-400">
+                    Loading expenses...
+                  </div>
+                ) : renderExpenseRows(sortedRows, 'expense')}
+              </div>
+            </div>
+          ) : monthlyGroups.length > 0 ? (
+            <div className="space-y-4">
+              {monthlyGroups.map(group => {
+                const collapsed = collapsedMonths[group.key] ?? group.count === 0;
+
+                return (
+                  <div key={group.key} className="overflow-hidden rounded-3xl border border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => toggleMonth(group.key)}
+                      className="flex w-full flex-col gap-2 border-b border-slate-100 bg-slate-50 px-5 py-4 text-left transition hover:bg-slate-100/70 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm">
+                          <ChevronDown className={`h-4 w-4 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+                        </span>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Month</p>
+                          <h3 className="text-lg font-black text-slate-950">{group.key === 'Undated' ? 'Undated' : formatExpenseMonth(group.key)}</h3>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-600">{group.count} expenses</span>
+                        <span className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-black text-white">{formatExpenseCurrency(group.total)}</span>
+                      </div>
+                    </button>
+                    {!collapsed ? (
+                      <div className="overflow-auto">
+                        <div className="grid min-w-[58rem] grid-cols-[1fr_1.2fr_0.8fr_1.5fr_0.8fr] bg-white px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                          <span>Date</span>
+                          <span>Expense</span>
+                          <span>Cost</span>
+                          <span>Notes</span>
+                          <span className="text-right">Actions</span>
+                        </div>
+                        {renderExpenseRows(group.rows, `month-${group.key}`)}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-slate-100 px-5 py-10 text-center text-xs font-black text-slate-400">
+              No monthly expense groups found for this range.
+            </div>
+          )}
+        </div>
+      </section>
+
+      {formOpen ? (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-950/20">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-950 px-6 py-5 text-white">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">Expense</p>
+                <h3 className="text-2xl font-black tracking-tight">{editingRow ? 'Edit expense' : 'Add expense'}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeForm}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="relative space-y-2" ref={datePickerRef}>
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Date</span>
+                  <button
+                    type="button"
+                    onClick={() => setDatePickerOpen(open => !open)}
+                    className="flex h-12 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-black text-slate-950 outline-none transition hover:border-amber-300 focus:border-amber-300"
+                  >
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      <Calendar className="h-4 w-4 shrink-0 text-amber-500" />
+                      <span className="truncate">{formatManualActivityDate(form.expenseDate)}</span>
+                    </span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${datePickerOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {datePickerOpen ? (
+                    <div className="absolute left-0 top-full z-[260] mt-2 w-[19rem] rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-2xl shadow-slate-300/60">
+                      <ExpenseDatePicker
+                        value={form.expenseDate}
+                        onChange={value => setForm(current => ({ ...current, expenseDate: value }))}
+                        onSelect={() => setDatePickerOpen(false)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+
+                <label className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Cost</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.cost}
+                    onChange={event => setForm(current => ({ ...current, cost: event.target.value }))}
+                    className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none transition focus:border-amber-300"
+                    placeholder="0.00"
+                  />
+                </label>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Expense</span>
+                <input
+                  type="text"
+                  value={form.expense}
+                  onChange={event => setForm(current => ({ ...current, expense: event.target.value }))}
+                  className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-900 outline-none transition focus:border-amber-300"
+                  placeholder="Lead source, software, travel, supplies"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Notes</span>
+                <textarea
+                  value={form.notes}
+                  onChange={event => setForm(current => ({ ...current, notes: event.target.value }))}
+                  className="min-h-28 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-900 outline-none transition focus:border-amber-300"
+                  placeholder="Optional notes"
+                />
+              </label>
+
+              {formError ? (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                  {formError}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="rounded-2xl border border-slate-100 bg-white px-5 py-3 text-sm font-black text-slate-600 transition hover:border-slate-200 hover:text-slate-950"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveExpense}
+                  disabled={saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {saving ? 'Saving...' : 'Save Expense'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-950/20">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-950 px-6 py-5 text-white">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-red-300">Delete Expense</p>
+                <h3 className="text-2xl font-black tracking-tight">Remove this expense?</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeDeleteConfirm}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-5 p-6">
+              <div className="rounded-3xl border border-red-100 bg-red-50 p-5">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-500">Expense</p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Date</p>
+                    <p className="mt-1 text-sm font-black text-slate-950">{formatManualActivityDate(normalizeExpenseDate(deleteTarget.expense_date))}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Cost</p>
+                    <p className="mt-1 text-sm font-black text-slate-950">{formatExpenseCurrency(deleteTarget.cost)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Name</p>
+                    <p className="mt-1 truncate text-sm font-black text-slate-950">{deleteTarget.expense || '-'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-sm font-semibold text-slate-500">
+                This removes the expense from the selected agent&apos;s expense log.
+              </p>
+
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeDeleteConfirm}
+                  disabled={deletingId !== null}
+                  className="rounded-2xl border border-slate-100 bg-white px-5 py-3 text-sm font-black text-slate-600 transition hover:border-slate-200 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteExpense}
+                  disabled={deletingId !== null}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-red-100 transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+                >
+                  {deletingId !== null ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {deletingId !== null ? 'Deleting...' : 'Delete Expense'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | 'expenses' }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const [selectedBusinessAgentId, setSelectedBusinessAgentId] = useState<string>(currentAgentId);
@@ -2257,11 +3097,7 @@ const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | '
       ) : tab === 'activity' ? (
         <MyBusinessActivityLog selectedAgentId={selectedBusinessAgentId} />
       ) : tab === 'expenses' ? (
-        <BusinessPlaceholder
-          title="Expense Log"
-          description={`Expense tracking for ${selectedBusinessAgentLabel} will live here once the expense workflow is connected.`}
-          icon={<ReceiptText className="h-6 w-6" />}
-        />
+        <MyBusinessExpenseLog selectedAgentId={selectedBusinessAgentId} selectedAgentLabel={selectedBusinessAgentLabel} />
       ) : (
         <MyBusinessOverview selectedAgentId={selectedBusinessAgentId} selectedAgentLabel={selectedBusinessAgentLabel} />
       )}

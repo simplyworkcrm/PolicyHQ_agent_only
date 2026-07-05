@@ -689,11 +689,24 @@ export const PolicyDateRangeFilter: React.FC<{
   endDate: number | undefined;
   onTimeframeChange: (timeframe: PoliciesTimeframe) => void;
   onDateChange: (start: number | undefined, end: number | undefined) => void;
-}> = ({ timeframe, startDate, endDate, onTimeframeChange, onDateChange }) => {
+  label?: string;
+  description?: string;
+  includeAllOption?: boolean;
+}> = ({
+  timeframe,
+  startDate,
+  endDate,
+  onTimeframeChange,
+  onDateChange,
+  label = 'Policy Date Range',
+  description = 'Controls records loaded from the API',
+  includeAllOption = true,
+}) => {
   const [open, setOpen] = useState(false);
   const [customPickerKey, setCustomPickerKey] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
-  const selected = TIMEFRAME_OPTIONS.find(option => option.value === timeframe) || TIMEFRAME_OPTIONS[0];
+  const timeframeOptions = TIMEFRAME_OPTIONS.filter(option => includeAllOption || option.value !== 'all');
+  const selected = timeframeOptions.find(option => option.value === timeframe) || timeframeOptions[0];
 
   useEffect(() => {
     if (!open) return;
@@ -716,8 +729,8 @@ export const PolicyDateRangeFilter: React.FC<{
   return (
     <div className="relative flex items-center gap-4" ref={ref}>
       <div className="text-right">
-        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Policy Date Range</p>
-        <p className="text-[11px] font-semibold text-slate-500">Controls records loaded from the API</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
+        <p className="text-[11px] font-semibold text-slate-500">{description}</p>
       </div>
       <button
         onClick={() => setOpen(value => !value)}
@@ -729,7 +742,7 @@ export const PolicyDateRangeFilter: React.FC<{
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-3 z-[220] w-80 rounded-[1.35rem] bg-white border border-slate-100 shadow-2xl shadow-slate-300/50 overflow-hidden p-2">
-          {TIMEFRAME_OPTIONS.filter(option => option.value !== 'custom').map(option => {
+          {timeframeOptions.filter(option => option.value !== 'custom').map(option => {
             const active = timeframe === option.value;
             return (
               <button
