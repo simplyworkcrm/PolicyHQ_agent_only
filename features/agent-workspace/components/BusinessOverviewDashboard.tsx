@@ -202,6 +202,8 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   const statesByCode = useMemo(() => new Map(states.map(item => [item.code, item])), [states]);
   const agencyProfile = mode === 'agency' ? data?.ffl_agency : null;
   const canEditAgencyGoal = mode === 'agency' && data?.isAgency_manager === true;
+  const monthlyGoalAp = Number(agencyProfile?.monthly_goal_ap) || 0;
+  const monthlyGoalProgress = monthlyGoalAp > 0 ? (totals.annualPremium / monthlyGoalAp) * 100 : null;
   const getMediaUrl = (value: unknown) => {
     if (typeof value === 'string') return value;
     if (value && typeof value === 'object' && 'url' in value) {
@@ -462,6 +464,23 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
                 <p className="mt-8 text-[10px] font-black uppercase tracking-[0.26em] text-white/45">Total Annual Premium</p>
                 <p className="mt-2 text-4xl font-black tracking-tight">{compactCurrencyFormatter.format(totals.annualPremium)}</p>
                 <p className="mt-1 text-xs font-bold text-white/55">{currencyFormatter.format(totals.annualPremium)} exact</p>
+                {monthlyGoalProgress !== null && (
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">Monthly Goal</p>
+                      <p className="text-sm font-black text-white">{monthlyGoalProgress.toFixed(1)}%</p>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-amber-400"
+                        style={{ width: `${Math.min(monthlyGoalProgress, 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[11px] font-bold text-white/55">
+                      {currencyFormatter.format(totals.annualPremium)} of {currencyFormatter.format(monthlyGoalAp)}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-[1.75rem] border border-slate-100 bg-white p-6 shadow-sm">

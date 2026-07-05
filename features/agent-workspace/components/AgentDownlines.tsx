@@ -23,7 +23,7 @@ import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { BusinessOverviewDashboard } from './BusinessOverviewDashboard';
 import { Policy } from '../../../shared/types/index';
 
-type DownlineSortKey = 'first_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
+type DownlineSortKey = 'first_name' | 'direct_upline_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
 type DownlineSortConfig = { key: DownlineSortKey; direction: 'asc' | 'desc' };
 
 interface DateRange {
@@ -102,6 +102,7 @@ const getInitials = (firstName?: string, lastName?: string) => {
 
 const DOWNLINE_SORT_FIELDS: Record<DownlineSortKey, string> = {
   first_name: 'first_name',
+  direct_upline_name: 'direct_upline_name',
   ref_ffl_agency_name: 'ref_ffl_agency_name',
   phone: 'phone',
   npn: 'npn',
@@ -548,6 +549,7 @@ export const AgentDownlines: React.FC = () => {
                     <thead>
                       <tr className="text-slate-400 border-b border-slate-100/50">
                         <th className="py-5 pl-8"><DownlineSortableHeader label="Agent Name" sortKey="first_name" sortConfig={sortConfig} onSort={handleSort} /></th>
+                        <th className="py-5 px-4"><DownlineSortableHeader label="Direct Upline" sortKey="direct_upline_name" sortConfig={sortConfig} onSort={handleSort} /></th>
                         <th className="py-5 px-4"><DownlineSortableHeader label="Agency" sortKey="ref_ffl_agency_name" sortConfig={sortConfig} onSort={handleSort} /></th>
                         <th className="py-5 px-4"><DownlineSortableHeader label="Phone" sortKey="phone" sortConfig={sortConfig} onSort={handleSort} /></th>
                         <th className="py-5 px-4"><DownlineSortableHeader label="NPN" sortKey="npn" sortConfig={sortConfig} onSort={handleSort} /></th>
@@ -559,7 +561,7 @@ export const AgentDownlines: React.FC = () => {
                     <tbody className="divide-y divide-slate-50">
                       {loadingSelected ? (
                         <tr>
-                          <td colSpan={7} className="py-12 text-center">
+                          <td colSpan={8} className="py-12 text-center">
                               <div className="flex items-center justify-center gap-2 text-slate-400">
                                 <Loader2 className="w-5 h-5 animate-spin" />
                                 <span className="text-sm font-bold">Loading details...</span>
@@ -588,6 +590,11 @@ export const AgentDownlines: React.FC = () => {
                                     <p className="font-bold text-slate-900 text-sm">{agent.first_name} {agent.last_name}</p>
                                     <p className="text-xs text-slate-400 font-medium">View profile and direct downlines</p>
                                   </div>
+                              </div>
+                            </td>
+                            <td className="py-5 px-4">
+                              <div className="text-xs font-bold text-slate-600">
+                                <span>{agent.direct_upline_name || 'Not set'}</span>
                               </div>
                             </td>
                             <td className="py-5 px-4">
@@ -632,7 +639,7 @@ export const AgentDownlines: React.FC = () => {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={7} className="py-12 text-center text-slate-400 text-sm font-medium">
+                          <td colSpan={8} className="py-12 text-center text-slate-400 text-sm font-medium">
                             No downline agents found for this selection.
                           </td>
                         </tr>

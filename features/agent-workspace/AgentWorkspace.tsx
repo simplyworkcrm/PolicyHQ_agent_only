@@ -24,13 +24,24 @@ import {
   Check, // Imported Check
   PhoneCall,
   Settings,
-  Bot
+  Bot,
+  X
 } from 'lucide-react';
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
   Cell,
+  Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
+  XAxis,
+  YAxis,
   Tooltip as RechartsTooltip,
 } from 'recharts';
 import { useAgentContext } from './context/AgentContext';
@@ -57,6 +68,7 @@ import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { NotificationSale } from '../../shared/components/NotificationSale';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
+import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myBusinessActivityApi } from './services/myBusinessActivityApi';
 
 // Sidebar Group - Expandable parent with sub-items
 const SidebarGroup = ({
@@ -277,43 +289,22 @@ const stateTileRows = [
   ['HI', '', 'TX', '', '', '', 'FL', '', '', '', ''],
 ];
 
-const MyBusinessOverview = () => {
-  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
+const MyBusinessOverview = ({
+  selectedAgentId,
+  selectedAgentLabel,
+}: {
+  selectedAgentId: string;
+  selectedAgentLabel: string;
+}) => {
   const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('weekly');
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
-  const [selectedBusinessAgentId, setSelectedBusinessAgentId] = useState<string>(currentAgentId);
   const [data, setData] = useState<MyBusinessOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const businessAgentOptions = useMemo(() => (
-    (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
-      .filter(Boolean)
-      .filter((agentId, index, all) => all.indexOf(agentId) === index)
-      .map(agentId => {
-        const subAgent = subAgents.find(agent => agent.agentId === agentId);
-        return {
-          id: agentId,
-          label: subAgent?.name || (agentId === currentAgentId ? viewingAgentName : agentId),
-        };
-      })
-  ), [currentAgentId, selectedAgentIds, subAgents, viewingAgentName]);
-
   useEffect(() => {
-    const nextSelectedId = businessAgentOptions.some(agent => agent.id === selectedBusinessAgentId)
-      ? selectedBusinessAgentId
-      : (businessAgentOptions[0]?.id || currentAgentId);
-
-    if (nextSelectedId && nextSelectedId !== selectedBusinessAgentId) {
-      setSelectedBusinessAgentId(nextSelectedId);
-    }
-  }, [businessAgentOptions, currentAgentId, selectedBusinessAgentId]);
-
-  const selectedBusinessAgentLabel = businessAgentOptions.find(agent => agent.id === selectedBusinessAgentId)?.label || viewingAgentName || 'My Business';
-
-  useEffect(() => {
-    if (!selectedBusinessAgentId) {
+    if (!selectedAgentId) {
       setData(null);
       return;
     }
@@ -327,7 +318,7 @@ const MyBusinessOverview = () => {
     setError(null);
 
     myBusinessOverviewApi.getOverview({
-      agentId: selectedBusinessAgentId,
+      agentId: selectedAgentId,
       timeframe: timeframe === 'all' ? null : timeframe,
       startDate: timeframe === 'custom' ? toPolicyRequestDate(startDate) : null,
       endDate: timeframe === 'custom' ? toPolicyRequestDate(endDate) : null,
@@ -345,7 +336,7 @@ const MyBusinessOverview = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedBusinessAgentId, timeframe, startDate, endDate]);
+  }, [selectedAgentId, timeframe, startDate, endDate]);
 
   const states = useMemo(() => (
     [...(data?.by_state || [])]
@@ -426,30 +417,7 @@ const MyBusinessOverview = () => {
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Business Scope</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {businessAgentOptions.map(agent => {
-              const active = agent.id === selectedBusinessAgentId;
-              return (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onClick={() => setSelectedBusinessAgentId(agent.id)}
-                  className={`rounded-2xl px-4 py-2.5 text-xs font-black transition-all ${
-                    active
-                      ? 'bg-slate-950 text-white shadow-lg shadow-slate-900/15'
-                      : 'border border-slate-100 bg-white text-slate-500 hover:border-slate-200 hover:text-slate-950'
-                  }`}
-                >
-                  {agent.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
+      <div className="flex justify-end">
         <PolicyDateRangeFilter
           timeframe={timeframe}
           startDate={startDate}
@@ -471,7 +439,7 @@ const MyBusinessOverview = () => {
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Business Overview</p>
               <h2 className="text-2xl font-black tracking-tight text-slate-950">Analytics Dashboard</h2>
-              <p className="text-sm font-semibold text-slate-500">Production signals for {selectedBusinessAgentLabel}.</p>
+              <p className="text-sm font-semibold text-slate-500">Production signals for {selectedAgentLabel}.</p>
             </div>
           </div>
 
@@ -714,24 +682,1527 @@ const MyBusinessOverview = () => {
   );
 };
 
+type ManualActivityKey = 'dials' | 'presentations' | 'appointments' | 'sold';
+type PlatformActivityName = 'Wavv' | 'PolicyTek' | 'CallX' | 'Submitted Sale';
+type PolicyTekRundownTab = 'lead_stat' | 'call_rundown';
+
+const emptyManualActivity: Record<ManualActivityKey, number> = {
+  dials: 0,
+  presentations: 0,
+  appointments: 0,
+  sold: 0,
+};
+
+const toManualActivityNumber = (value: unknown) => {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+};
+
+const formatActivityCount = (value: unknown) => Math.round(toManualActivityNumber(value)).toLocaleString();
+
+const formatActivityDuration = (seconds: unknown) => {
+  const totalSeconds = Math.max(0, Math.round(toManualActivityNumber(seconds)));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+};
+
+const formatActivityCurrency = (value: unknown) => compactCurrencyFormatter.format(toManualActivityNumber(value));
+
+const formatActivityPercent = (value: unknown) => `${toManualActivityNumber(value).toFixed(1)}%`;
+
+const denverDatePartsFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Denver',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const monthLabelFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+});
+
+const denverDateKeyFromTimestamp = (value?: number | string | null) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+
+  const timestamp = Number(value);
+  const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const parts = denverDatePartsFormatter.formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
+const dateKeyToUtcDate = (dateKey: string) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const getLastDayOfMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+const getActivityBucket = (dateKey: string, timeframe: PoliciesTimeframe) => {
+  const [year, month, day] = dateKey.split('-').map(Number);
+
+  if (timeframe === 'yearly') {
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+    return {
+      key,
+      label: monthLabelFormatter.format(new Date(Date.UTC(year, month - 1, 1))),
+      sort: Date.UTC(year, month - 1, 1),
+    };
+  }
+
+  if (timeframe === 'monthly') {
+    const startDay = Math.floor((day - 1) / 4) * 4 + 1;
+    const endDay = Math.min(startDay + 3, getLastDayOfMonth(year, month));
+    const key = `${year}-${String(month).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`;
+    return {
+      key,
+      label: `${monthLabelFormatter.format(new Date(Date.UTC(year, month - 1, 1)))} ${startDay}-${endDay}`,
+      sort: Date.UTC(year, month - 1, startDay),
+    };
+  }
+
+  return {
+    key: dateKey,
+    label: dateKeyToUtcDate(dateKey).toLocaleDateString('en-US', { month: 'short', day: '2-digit' }),
+    sort: dateKeyToUtcDate(dateKey).getTime(),
+  };
+};
+
+const normalizeManualActivity = (
+  value?: Partial<Record<ManualActivityKey, unknown>> | null
+): Record<ManualActivityKey, number> => ({
+  dials: toManualActivityNumber(value?.dials),
+  presentations: toManualActivityNumber(value?.presentations),
+  appointments: toManualActivityNumber(value?.appointments),
+  sold: toManualActivityNumber(value?.sold),
+});
+
+const hasManualActivityValues = (activity: Record<ManualActivityKey, number>) => (
+  activity.dials > 0 || activity.presentations > 0 || activity.appointments > 0 || activity.sold > 0
+);
+
+const toLocalActivityDate = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const resolveTodayManualActivity = (
+  todayActivity?: Partial<Record<ManualActivityKey, unknown>> | null,
+  rows: ManualActivityRundownRow[] = []
+) => {
+  const normalizedToday = normalizeManualActivity(todayActivity);
+  if (hasManualActivityValues(normalizedToday)) return normalizedToday;
+
+  const todayRow = rows.find(row => row.created_date === toLocalActivityDate());
+  return todayRow ? normalizeManualActivity(todayRow) : normalizedToday;
+};
+
+const formatManualActivityDate = (value?: string | null) => {
+  if (!value) return 'Not set';
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const formatActivityTimestamp = (value?: number | string | null) => {
+  if (value === null || value === undefined || value === '') return 'Not set';
+
+  const timestamp = Number(value);
+  const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const mockActivityChart = [
+  { date: 'Mon', manual: 62, wavv: 48, policytek: 18, callx: 22, sold: 2 },
+  { date: 'Tue', manual: 74, wavv: 55, policytek: 24, callx: 19, sold: 1 },
+  { date: 'Wed', manual: 58, wavv: 39, policytek: 16, callx: 28, sold: 3 },
+  { date: 'Thu', manual: 81, wavv: 61, policytek: 22, callx: 31, sold: 4 },
+  { date: 'Fri', manual: 69, wavv: 52, policytek: 20, callx: 24, sold: 2 },
+  { date: 'Sat', manual: 28, wavv: 19, policytek: 8, callx: 10, sold: 1 },
+  { date: 'Sun', manual: 18, wavv: 12, policytek: 4, callx: 6, sold: 0 },
+];
+
+const activityPlatforms = [
+  {
+    name: 'Wavv',
+    accent: 'emerald',
+    total: '286',
+    label: 'Calls dialed',
+    metrics: [
+      ['Conversations', '92'],
+      ['Contacts called', '178'],
+      ['Talk time', '7h 42m'],
+      ['Avg call', '5m 01s'],
+    ],
+  },
+  {
+    name: 'PolicyTek',
+    accent: 'amber',
+    total: '108',
+    label: 'Calls received',
+    metrics: [
+      ['Valid calls', '74'],
+      ['Avg call', '4m 18s'],
+      ['Submitted', '16'],
+      ['Submitted AP', '$18.4K'],
+    ],
+  },
+  {
+    name: 'CallX',
+    accent: 'sky',
+    total: '126',
+    label: 'Calls received',
+    metrics: [
+      ['Valid calls', '91'],
+      ['Paid calls', '67'],
+      ['Submitted', '21'],
+      ['Submitted AP', '$26.7K'],
+    ],
+  },
+  {
+    name: 'Submitted Sale',
+    accent: 'slate',
+    total: '68',
+    label: 'Dials',
+    metrics: [
+      ['Contacts', '24'],
+      ['Sits', '8'],
+      ['Submitted', '2'],
+      ['Submitted AP', '$4.8K'],
+    ],
+  },
+];
+
+const emptyWavvSummary = {
+  dials: 0,
+  conversations: 0,
+  contacts: 0,
+  talkTime: 0,
+  avgCallLength: 0,
+};
+
+const emptyPolicyTekSummary = {
+  callsReceived: 0,
+  validCalls: 0,
+  submitted: 0,
+  submittedPremium: 0,
+  averageCall: 0,
+};
+
+const emptyCallXSummary = {
+  callsReceived: 0,
+  validCalls: 0,
+  paidCalls: 0,
+  submitted: 0,
+  submittedPremium: 0,
+};
+
+const emptySubmittedSaleSummary = {
+  dials: 0,
+  contacts: 0,
+  sits: 0,
+  submitted: 0,
+  submittedAp: 0,
+};
+
+const platformRundownRows: Record<PlatformActivityName, Array<Record<string, string | number>>> = {
+  Wavv: [
+    { date: 'Jul 01, 2026', calls: 64, conversations: 21, contacts: 39, talkTime: '1h 42m', avgCall: '4m 51s' },
+    { date: 'Jun 30, 2026', calls: 71, conversations: 24, contacts: 44, talkTime: '1h 58m', avgCall: '4m 55s' },
+    { date: 'Jun 29, 2026', calls: 58, conversations: 19, contacts: 36, talkTime: '1h 31m', avgCall: '4m 47s' },
+    { date: 'Jun 28, 2026', calls: 42, conversations: 15, contacts: 27, talkTime: '1h 09m', avgCall: '4m 36s' },
+    { date: 'Jun 27, 2026', calls: 51, conversations: 13, contacts: 32, talkTime: '1h 22m', avgCall: '6m 18s' },
+  ],
+  PolicyTek: [
+    { date: 'Jul 01, 2026', callsReceived: 26, validCalls: 18, submitted: 4, submittedAp: '$4.7K', avgCall: '4m 12s' },
+    { date: 'Jun 30, 2026', callsReceived: 24, validCalls: 17, submitted: 3, submittedAp: '$3.6K', avgCall: '4m 38s' },
+    { date: 'Jun 29, 2026', callsReceived: 19, validCalls: 12, submitted: 2, submittedAp: '$2.1K', avgCall: '3m 58s' },
+    { date: 'Jun 28, 2026', callsReceived: 17, validCalls: 11, submitted: 3, submittedAp: '$5.2K', avgCall: '4m 44s' },
+    { date: 'Jun 27, 2026', callsReceived: 22, validCalls: 16, submitted: 4, submittedAp: '$2.8K', avgCall: '3m 59s' },
+  ],
+  CallX: [
+    { date: 'Jul 01, 2026', callsReceived: 31, validCalls: 23, paidCalls: 18, submitted: 5, submittedAp: '$6.4K' },
+    { date: 'Jun 30, 2026', callsReceived: 28, validCalls: 21, paidCalls: 16, submitted: 4, submittedAp: '$5.1K' },
+    { date: 'Jun 29, 2026', callsReceived: 24, validCalls: 18, paidCalls: 13, submitted: 3, submittedAp: '$3.2K' },
+    { date: 'Jun 28, 2026', callsReceived: 19, validCalls: 14, paidCalls: 10, submitted: 4, submittedAp: '$7.8K' },
+    { date: 'Jun 27, 2026', callsReceived: 24, validCalls: 15, paidCalls: 10, submitted: 5, submittedAp: '$4.2K' },
+  ],
+  'Submitted Sale': [
+    { date: 'Jul 01, 2026', dials: 18, contacts: 8, sits: 3, submitted: 1, submittedAp: '$2.4K' },
+    { date: 'Jun 30, 2026', dials: 21, contacts: 7, sits: 2, submitted: 1, submittedAp: '$2.4K' },
+    { date: 'Jun 29, 2026', dials: 16, contacts: 5, sits: 2, submitted: 0, submittedAp: '$0' },
+    { date: 'Jun 28, 2026', dials: 13, contacts: 4, sits: 1, submitted: 0, submittedAp: '$0' },
+  ],
+};
+
+const platformRundownColumns: Record<PlatformActivityName, Array<{ key: string; label: string }>> = {
+  Wavv: [
+    { key: 'date', label: 'Date' },
+    { key: 'calls', label: 'Calls' },
+    { key: 'conversations', label: 'Conversations' },
+    { key: 'contacts', label: 'Contacts' },
+    { key: 'talkTime', label: 'Talk Time' },
+    { key: 'avgCall', label: 'Avg Call' },
+  ],
+  PolicyTek: [
+    { key: 'date', label: 'Date' },
+    { key: 'callsReceived', label: 'Calls' },
+    { key: 'validCalls', label: 'Valid' },
+    { key: 'submitted', label: 'Submitted' },
+    { key: 'submittedAp', label: 'Submitted AP' },
+    { key: 'avgCall', label: 'Avg Call' },
+  ],
+  CallX: [
+    { key: 'date', label: 'Date' },
+    { key: 'callsReceived', label: 'Calls' },
+    { key: 'validCalls', label: 'Valid' },
+    { key: 'paidCalls', label: 'Paid' },
+    { key: 'submitted', label: 'Submitted' },
+    { key: 'submittedAp', label: 'Submitted AP' },
+  ],
+  'Submitted Sale': [
+    { key: 'date', label: 'Date' },
+    { key: 'dials', label: 'Dials' },
+    { key: 'contacts', label: 'Contacts' },
+    { key: 'sits', label: 'Sits' },
+    { key: 'submitted', label: 'Submitted' },
+    { key: 'submittedAp', label: 'Submitted AP' },
+  ],
+};
+
+const ActivityMetricStepper = ({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) => (
+  <div className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{label}</p>
+    <div className="mt-4 flex items-center justify-between gap-3">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(0, value - 1))}
+        className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-500 transition hover:border-amber-300 hover:text-slate-950"
+      >
+        -
+      </button>
+      <input
+        type="number"
+        min={0}
+        value={value}
+        onChange={(event) => onChange(Math.max(0, Number(event.target.value) || 0))}
+        className="h-12 min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white text-center text-2xl font-black text-slate-950 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(value + 1)}
+        className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-lg font-black text-white shadow-lg shadow-slate-200 transition hover:bg-slate-800"
+      >
+        +
+      </button>
+    </div>
+  </div>
+);
+
+const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string }) => {
+  const currentAgentId = selectedAgentId;
+  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('weekly');
+  const [startDate, setStartDate] = useState<number | undefined>(undefined);
+  const [endDate, setEndDate] = useState<number | undefined>(undefined);
+  const [manualActivity, setManualActivity] = useState<Record<ManualActivityKey, number>>(emptyManualActivity);
+  const [manualSummary, setManualSummary] = useState<Record<ManualActivityKey, number>>(emptyManualActivity);
+  const [manualRows, setManualRows] = useState<ManualActivityRundownRow[]>([]);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualSaveError, setManualSaveError] = useState<string | null>(null);
+  const [manualSaveMessage, setManualSaveMessage] = useState<string | null>(null);
+  const [wavvSummary, setWavvSummary] = useState(emptyWavvSummary);
+  const [wavvRows, setWavvRows] = useState<WavvActivityRundownRow[]>([]);
+  const [wavvLoading, setWavvLoading] = useState(false);
+  const [wavvError, setWavvError] = useState<string | null>(null);
+  const [policyTekSummary, setPolicyTekSummary] = useState(emptyPolicyTekSummary);
+  const [policyTekRows, setPolicyTekRows] = useState<PolicyTekLeadStatRow[]>([]);
+  const [policyTekCallRows, setPolicyTekCallRows] = useState<PolicyTekCallRundownRow[]>([]);
+  const [policyTekLoading, setPolicyTekLoading] = useState(false);
+  const [policyTekError, setPolicyTekError] = useState<string | null>(null);
+  const [policyTekRundownTab, setPolicyTekRundownTab] = useState<PolicyTekRundownTab>('lead_stat');
+  const [callXSummary, setCallXSummary] = useState(emptyCallXSummary);
+  const [callXRows, setCallXRows] = useState<CallXActivityRundownRow[]>([]);
+  const [callXLoading, setCallXLoading] = useState(false);
+  const [callXError, setCallXError] = useState<string | null>(null);
+  const [submittedSaleSummary, setSubmittedSaleSummary] = useState(emptySubmittedSaleSummary);
+  const [submittedSaleRows, setSubmittedSaleRows] = useState<SubmittedSaleActivityRundownRow[]>([]);
+  const [submittedSaleLoading, setSubmittedSaleLoading] = useState(false);
+  const [submittedSaleError, setSubmittedSaleError] = useState<string | null>(null);
+  const [selectedRundown, setSelectedRundown] = useState<PlatformActivityName | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadManualActivity = async () => {
+      if (!currentAgentId) {
+        setManualActivity(emptyManualActivity);
+        setManualSummary(emptyManualActivity);
+        setManualRows([]);
+        return;
+      }
+
+      if (timeframe === 'custom' && (!startDate || !endDate)) {
+        return;
+      }
+
+      setManualLoading(true);
+      setManualError(null);
+
+      try {
+        const response = await myBusinessActivityApi.getManualActivity({
+          agentId: currentAgentId,
+          timeframe,
+          startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+          endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+        });
+
+        if (cancelled) return;
+
+        const manual = response.manual_activity;
+        const rows = Array.isArray(manual?.rundown) ? manual.rundown : [];
+        setManualActivity(resolveTodayManualActivity(manual?.today_activity, rows));
+        setManualSummary(normalizeManualActivity(manual?.summary));
+        setManualRows(rows);
+      } catch (error) {
+        if (cancelled) return;
+
+        setManualActivity(emptyManualActivity);
+        setManualSummary(emptyManualActivity);
+        setManualRows([]);
+        setManualError(error instanceof Error ? error.message : 'Failed to load manual activity');
+      } finally {
+        if (!cancelled) setManualLoading(false);
+      }
+    };
+
+    loadManualActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAgentId, timeframe, startDate, endDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSubmittedSaleActivity = async () => {
+      if (!currentAgentId) {
+        setSubmittedSaleSummary(emptySubmittedSaleSummary);
+        setSubmittedSaleRows([]);
+        return;
+      }
+
+      if (timeframe === 'custom' && (!startDate || !endDate)) {
+        return;
+      }
+
+      setSubmittedSaleLoading(true);
+      setSubmittedSaleError(null);
+
+      try {
+        const response = await myBusinessActivityApi.getSubmittedSaleActivity({
+          agentId: currentAgentId,
+          timeframe,
+          startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+          endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+        });
+
+        if (cancelled) return;
+
+        if (response.submitted_sale?.connected === false) {
+          setSubmittedSaleSummary(emptySubmittedSaleSummary);
+          setSubmittedSaleRows([]);
+          setSubmittedSaleError('Submitted Sale is not connected');
+          return;
+        }
+
+        const rows = Array.isArray(response.submitted_sale?.rundown) ? response.submitted_sale.rundown : [];
+        const summary = response.submitted_sale?.summary;
+        const rundownDials = rows.reduce((sum, row) => sum + toManualActivityNumber(row.outboundLogDials), 0);
+        const rundownContacts = rows.reduce((sum, row) => sum + toManualActivityNumber(row.outboundLogContacts), 0);
+        const rundownSits = rows.reduce((sum, row) => sum + toManualActivityNumber(row.outboundLogSits), 0);
+        const rundownSubmitted = rows.reduce((sum, row) => sum + toManualActivityNumber(row.outboundLogSales), 0);
+        const rundownSubmittedAp = rows.reduce((sum, row) => sum + toManualActivityNumber(row.annual_premium), 0);
+
+        setSubmittedSaleRows(rows);
+        setSubmittedSaleSummary({
+          dials: summary?.dials === null || summary?.dials === undefined ? rundownDials : toManualActivityNumber(summary.dials),
+          contacts: summary?.contacts === null || summary?.contacts === undefined ? rundownContacts : toManualActivityNumber(summary.contacts),
+          sits: summary?.sits === null || summary?.sits === undefined ? rundownSits : toManualActivityNumber(summary.sits),
+          submitted: summary?.submitted === null || summary?.submitted === undefined ? rundownSubmitted : toManualActivityNumber(summary.submitted),
+          submittedAp: summary?.submitted_ap === null || summary?.submitted_ap === undefined ? rundownSubmittedAp : toManualActivityNumber(summary.submitted_ap),
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        setSubmittedSaleSummary(emptySubmittedSaleSummary);
+        setSubmittedSaleRows([]);
+        setSubmittedSaleError(error instanceof Error ? error.message : 'Failed to load submitted sale activity');
+      } finally {
+        if (!cancelled) setSubmittedSaleLoading(false);
+      }
+    };
+
+    loadSubmittedSaleActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAgentId, timeframe, startDate, endDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWavvActivity = async () => {
+      if (!currentAgentId) {
+        setWavvSummary(emptyWavvSummary);
+        setWavvRows([]);
+        return;
+      }
+
+      if (timeframe === 'custom' && (!startDate || !endDate)) {
+        return;
+      }
+
+      setWavvLoading(true);
+      setWavvError(null);
+
+      try {
+        const response = await myBusinessActivityApi.getWavvActivity({
+          agentId: currentAgentId,
+          timeframe,
+          startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+          endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+        });
+
+        if (cancelled) return;
+
+        const rows = Array.isArray(response.wavv?.rundown) ? response.wavv.rundown : [];
+        const summary = response.wavv?.summary;
+        const rundownDials = rows.reduce((sum, row) => sum + toManualActivityNumber(row.calls), 0);
+        const rundownConversations = rows.reduce((sum, row) => sum + toManualActivityNumber(row.conversations), 0);
+        const rundownContacts = rows.reduce((sum, row) => sum + toManualActivityNumber(row.contactsCalled), 0);
+        const rundownTalkTime = rows.reduce((sum, row) => sum + toManualActivityNumber(row.talktime), 0);
+
+        setWavvRows(rows);
+        setWavvSummary({
+          dials: summary?.dials === null || summary?.dials === undefined ? rundownDials : toManualActivityNumber(summary.dials),
+          conversations: rundownConversations,
+          contacts: summary?.contacts === null || summary?.contacts === undefined ? rundownContacts : toManualActivityNumber(summary.contacts),
+          talkTime: summary?.talk_time === null || summary?.talk_time === undefined ? rundownTalkTime : toManualActivityNumber(summary.talk_time),
+          avgCallLength: toManualActivityNumber(summary?.avgCallLength),
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        setWavvSummary(emptyWavvSummary);
+        setWavvRows([]);
+        setWavvError(error instanceof Error ? error.message : 'Failed to load Wavv activity');
+      } finally {
+        if (!cancelled) setWavvLoading(false);
+      }
+    };
+
+    loadWavvActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAgentId, timeframe, startDate, endDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPolicyTekActivity = async () => {
+      if (!currentAgentId) {
+        setPolicyTekSummary(emptyPolicyTekSummary);
+        setPolicyTekRows([]);
+        setPolicyTekCallRows([]);
+        return;
+      }
+
+      if (timeframe === 'custom' && (!startDate || !endDate)) {
+        return;
+      }
+
+      setPolicyTekLoading(true);
+      setPolicyTekError(null);
+
+      try {
+        const response = await myBusinessActivityApi.getPolicyTekActivity({
+          agentId: currentAgentId,
+          timeframe,
+          startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+          endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+        });
+
+        if (cancelled) return;
+
+        if (response.policytek?.connected === false) {
+          setPolicyTekSummary(emptyPolicyTekSummary);
+          setPolicyTekRows([]);
+          setPolicyTekCallRows([]);
+          setPolicyTekError('PolicyTek is not connected');
+          return;
+        }
+
+        const rows = Array.isArray(response.policytek?.rundown?.lead_stat) ? response.policytek.rundown.lead_stat : [];
+        const callRows = Array.isArray(response.policytek?.rundown?.call_rundown) ? response.policytek.rundown.call_rundown : [];
+        const summary = response.policytek?.summary;
+        const rundownCallsReceived = rows.reduce((sum, row) => sum + toManualActivityNumber(row.leadsAssigned), 0);
+        const rundownValidCalls = rows.reduce((sum, row) => sum + toManualActivityNumber(row.validLeads), 0);
+        const rundownSubmitted = rows.reduce((sum, row) => sum + toManualActivityNumber(row.applicationSubmitted), 0);
+        const rundownSubmittedPremium = rows.reduce((sum, row) => sum + toManualActivityNumber(row.submittedPremium), 0);
+
+        setPolicyTekRows(rows);
+        setPolicyTekCallRows(callRows);
+        setPolicyTekSummary({
+          callsReceived: summary?.calls_received === null || summary?.calls_received === undefined ? rundownCallsReceived : toManualActivityNumber(summary.calls_received),
+          validCalls: summary?.valid_calls === null || summary?.valid_calls === undefined ? rundownValidCalls : toManualActivityNumber(summary.valid_calls),
+          submitted: summary?.submitted === null || summary?.submitted === undefined ? rundownSubmitted : toManualActivityNumber(summary.submitted),
+          submittedPremium: summary?.submitted_premium === null || summary?.submitted_premium === undefined ? rundownSubmittedPremium : toManualActivityNumber(summary.submitted_premium),
+          averageCall: toManualActivityNumber(summary?.averageMin_perCall),
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        setPolicyTekSummary(emptyPolicyTekSummary);
+        setPolicyTekRows([]);
+        setPolicyTekCallRows([]);
+        setPolicyTekError(error instanceof Error ? error.message : 'Failed to load PolicyTek activity');
+      } finally {
+        if (!cancelled) setPolicyTekLoading(false);
+      }
+    };
+
+    loadPolicyTekActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAgentId, timeframe, startDate, endDate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCallXActivity = async () => {
+      if (!currentAgentId) {
+        setCallXSummary(emptyCallXSummary);
+        setCallXRows([]);
+        return;
+      }
+
+      if (timeframe === 'custom' && (!startDate || !endDate)) {
+        return;
+      }
+
+      setCallXLoading(true);
+      setCallXError(null);
+
+      try {
+        const response = await myBusinessActivityApi.getCallXActivity({
+          agentId: currentAgentId,
+          timeframe,
+          startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+          endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+        });
+
+        if (cancelled) return;
+
+        if (response.callx?.connected === false) {
+          setCallXSummary(emptyCallXSummary);
+          setCallXRows([]);
+          setCallXError('CallX is not connected');
+          return;
+        }
+
+        const rows = Array.isArray(response.callx?.rundown) ? response.callx.rundown : [];
+        const summary = response.callx?.summary;
+        const rundownCallsReceived = rows.reduce((sum, row) => sum + toManualActivityNumber(row.total), 0);
+        const rundownValidCalls = rows.reduce((sum, row) => sum + toManualActivityNumber(row.valid), 0);
+        const rundownPaidCalls = rows.reduce((sum, row) => sum + toManualActivityNumber(row.paid), 0);
+        const rundownSubmitted = rows.reduce((sum, row) => sum + toManualActivityNumber(row.submitted), 0);
+        const rundownSubmittedPremium = rows.reduce((sum, row) => sum + toManualActivityNumber(row.totalSubmittedAP), 0);
+
+        setCallXRows(rows);
+        setCallXSummary({
+          callsReceived: summary?.calls_received === null || summary?.calls_received === undefined ? rundownCallsReceived : toManualActivityNumber(summary.calls_received),
+          validCalls: summary?.valid_calls === null || summary?.valid_calls === undefined ? rundownValidCalls : toManualActivityNumber(summary.valid_calls),
+          paidCalls: rundownPaidCalls,
+          submitted: summary?.submitted === null || summary?.submitted === undefined ? rundownSubmitted : toManualActivityNumber(summary.submitted),
+          submittedPremium: summary?.submitted_premium === null || summary?.submitted_premium === undefined ? rundownSubmittedPremium : toManualActivityNumber(summary.submitted_premium),
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        setCallXSummary(emptyCallXSummary);
+        setCallXRows([]);
+        setCallXError(error instanceof Error ? error.message : 'Failed to load CallX activity');
+      } finally {
+        if (!cancelled) setCallXLoading(false);
+      }
+    };
+
+    loadCallXActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAgentId, timeframe, startDate, endDate]);
+
+  const updateManualActivity = (key: ManualActivityKey, value: number) => {
+    setManualSaveError(null);
+    setManualSaveMessage(null);
+    setManualActivity(current => ({ ...current, [key]: value }));
+  };
+
+  const refreshManualActivity = async () => {
+    if (!currentAgentId) return;
+    if (timeframe === 'custom' && (!startDate || !endDate)) return;
+
+    const response = await myBusinessActivityApi.getManualActivity({
+      agentId: currentAgentId,
+      timeframe,
+      startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
+      endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+    });
+    const manual = response.manual_activity;
+    const rows = Array.isArray(manual?.rundown) ? manual.rundown : [];
+    setManualActivity(resolveTodayManualActivity(manual?.today_activity, rows));
+    setManualSummary(normalizeManualActivity(manual?.summary));
+    setManualRows(rows);
+  };
+
+  const handleSaveManualActivity = async () => {
+    if (!currentAgentId || manualSaving) return;
+
+    setManualSaving(true);
+    setManualSaveError(null);
+    setManualSaveMessage(null);
+
+    try {
+      const response = await myBusinessActivityApi.saveManualActivity({
+        agentId: currentAgentId,
+        dials: manualActivity.dials,
+        presentations: manualActivity.presentations,
+        appointments: manualActivity.appointments,
+        sold: manualActivity.sold,
+      });
+
+      if (response.manual_activity?.today_activity) {
+        setManualActivity(normalizeManualActivity(response.manual_activity.today_activity));
+      }
+
+      await refreshManualActivity();
+      setManualSaveMessage('Activity saved.');
+    } catch (error) {
+      setManualSaveError(error instanceof Error ? error.message : 'Failed to save activity');
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
+  const liveActivityPlatforms = activityPlatforms.map(platform => {
+    if (platform.name === 'Submitted Sale') {
+      return {
+        ...platform,
+        total: submittedSaleLoading ? '...' : formatActivityCount(submittedSaleSummary.dials),
+        metrics: [
+          ['Contacts', submittedSaleLoading ? '...' : formatActivityCount(submittedSaleSummary.contacts)],
+          ['Sits', submittedSaleLoading ? '...' : formatActivityCount(submittedSaleSummary.sits)],
+          ['Submitted', submittedSaleLoading ? '...' : formatActivityCount(submittedSaleSummary.submitted)],
+          ['Submitted AP', submittedSaleLoading ? '...' : formatActivityCurrency(submittedSaleSummary.submittedAp)],
+        ],
+      };
+    }
+
+    if (platform.name === 'CallX') {
+      return {
+        ...platform,
+        total: callXLoading ? '...' : formatActivityCount(callXSummary.callsReceived),
+        metrics: [
+          ['Valid calls', callXLoading ? '...' : formatActivityCount(callXSummary.validCalls)],
+          ['Paid calls', callXLoading ? '...' : formatActivityCount(callXSummary.paidCalls)],
+          ['Submitted', callXLoading ? '...' : formatActivityCount(callXSummary.submitted)],
+          ['Submitted AP', callXLoading ? '...' : formatActivityCurrency(callXSummary.submittedPremium)],
+        ],
+      };
+    }
+
+    if (platform.name === 'PolicyTek') {
+      return {
+        ...platform,
+        total: policyTekLoading ? '...' : formatActivityCount(policyTekSummary.callsReceived),
+        metrics: [
+          ['Valid calls', policyTekLoading ? '...' : formatActivityCount(policyTekSummary.validCalls)],
+          ['Avg call', policyTekLoading ? '...' : formatActivityDuration(policyTekSummary.averageCall)],
+          ['Submitted', policyTekLoading ? '...' : formatActivityCount(policyTekSummary.submitted)],
+          ['Submitted AP', policyTekLoading ? '...' : formatActivityCurrency(policyTekSummary.submittedPremium)],
+        ],
+      };
+    }
+
+    if (platform.name !== 'Wavv') return platform;
+
+    return {
+      ...platform,
+      total: wavvLoading ? '...' : formatActivityCount(wavvSummary.dials),
+      metrics: [
+        ['Conversations', wavvLoading ? '...' : formatActivityCount(wavvSummary.conversations)],
+        ['Contacts called', wavvLoading ? '...' : formatActivityCount(wavvSummary.contacts)],
+        ['Talk time', wavvLoading ? '...' : formatActivityDuration(wavvSummary.talkTime)],
+        ['Avg call', wavvLoading ? '...' : formatActivityDuration(wavvSummary.avgCallLength)],
+      ],
+    };
+  });
+  const wavvRundownRows = wavvRows.map((row, index) => ({
+    date: formatManualActivityDate(row.stat_date),
+    calls: formatActivityCount(row.calls),
+    conversations: formatActivityCount(row.conversations),
+    contacts: formatActivityCount(row.contactsCalled),
+    talkTime: formatActivityDuration(row.talktime),
+    avgCall: formatActivityDuration(row.avgCallLength),
+    id: row.id ?? `${row.stat_date ?? 'wavv'}-${index}`,
+  }));
+  const policyTekRundownRows = policyTekRows.map((row, index) => ({
+    date: formatManualActivityDate(row.date),
+    callsReceived: formatActivityCount(row.leadsAssigned),
+    validCalls: formatActivityCount(row.validLeads),
+    noSale: formatActivityCount(row.noSale),
+    refund: formatActivityCount(row.refund),
+    quoted: formatActivityCount(row.quoted),
+    submitted: formatActivityCount(row.applicationSubmitted),
+    submittedAp: formatActivityCurrency(row.submittedPremium),
+    totalCost: formatActivityCurrency(row.totalCost),
+    id: row.id ?? `${row.date ?? 'policytek'}-${index}`,
+  }));
+  const policyTekCallRundownRows = policyTekCallRows.map((row, index) => ({
+    createdAt: formatActivityTimestamp(row.created_at),
+    duration: row.duration === null || row.duration === undefined ? '-' : formatActivityDuration(row.duration),
+    direction: row.direction || '-',
+    leadSource: row.leadSource || '-',
+    result: row.result || '-',
+    callRecordId: row.callRecordId || '-',
+    id: row.id ?? row.callRecordId ?? `policytek-call-${index}`,
+  }));
+  const policyTekLeadStatColumns = [
+    { key: 'date', label: 'Date' },
+    { key: 'callsReceived', label: 'Leads' },
+    { key: 'validCalls', label: 'Valid' },
+    { key: 'noSale', label: 'No Sale' },
+    { key: 'refund', label: 'Refund' },
+    { key: 'quoted', label: 'Quoted' },
+    { key: 'submitted', label: 'Submitted' },
+    { key: 'submittedAp', label: 'Submitted AP' },
+    { key: 'totalCost', label: 'Cost' },
+  ];
+  const policyTekCallRundownColumns = [
+    { key: 'createdAt', label: 'Created' },
+    { key: 'duration', label: 'Duration' },
+    { key: 'direction', label: 'Direction' },
+    { key: 'leadSource', label: 'Lead Source' },
+    { key: 'result', label: 'Result' },
+    { key: 'callRecordId', label: 'Call Record' },
+  ];
+  const callXRundownRows = callXRows.map((row, index) => ({
+    date: formatActivityTimestamp(row.stat_date),
+    callsReceived: formatActivityCount(row.total),
+    paidCalls: formatActivityCount(row.paid),
+    validCalls: formatActivityCount(row.valid),
+    refund: formatActivityCount(row.refund),
+    submitted: formatActivityCount(row.submitted),
+    quoted: formatActivityCount(row.quoted),
+    submittedPercentage: formatActivityPercent(row.submittedPercentage),
+    quotedPercentage: formatActivityPercent(row.quotedPercentage),
+    closePercentage: formatActivityPercent(row.closePercentage),
+    scpa: formatActivityCurrency(row.scpa),
+    totalSpend: formatActivityCurrency(row.totalSpend),
+    submittedAp: formatActivityCurrency(row.totalSubmittedAP),
+    id: row.id ?? `${row.stat_date ?? 'callx'}-${index}`,
+  }));
+  const callXRundownColumns = [
+    { key: 'date', label: 'Date' },
+    { key: 'callsReceived', label: 'Calls' },
+    { key: 'paidCalls', label: 'Paid' },
+    { key: 'validCalls', label: 'Valid' },
+    { key: 'refund', label: 'Refund' },
+    { key: 'submitted', label: 'Submitted' },
+    { key: 'quoted', label: 'Quoted' },
+    { key: 'submittedPercentage', label: 'Submitted %' },
+    { key: 'quotedPercentage', label: 'Quoted %' },
+    { key: 'closePercentage', label: 'Close %' },
+    { key: 'scpa', label: 'SCPA' },
+    { key: 'totalSpend', label: 'Spend' },
+    { key: 'submittedAp', label: 'Submitted AP' },
+  ];
+  const submittedSaleRundownRows = submittedSaleRows.map((row, index) => ({
+    createdAt: formatActivityTimestamp(row.created_at),
+    client: row.client || '-',
+    policyNumber: row.policy_number || '-',
+    dials: formatActivityCount(row.outboundLogDials),
+    contacts: formatActivityCount(row.outboundLogContacts),
+    sits: formatActivityCount(row.outboundLogSits),
+    submitted: formatActivityCount(row.outboundLogSales),
+    annualPremium: formatActivityCurrency(row.annual_premium),
+    id: row.id ?? `${row.policy_number ?? row.client ?? 'sale'}-${index}`,
+  }));
+  const submittedSaleRundownColumns = [
+    { key: 'createdAt', label: 'Created' },
+    { key: 'client', label: 'Client' },
+    { key: 'policyNumber', label: 'Policy #' },
+    { key: 'dials', label: 'Dials' },
+    { key: 'contacts', label: 'Contacts' },
+    { key: 'sits', label: 'Sits' },
+    { key: 'submitted', label: 'Submitted' },
+    { key: 'annualPremium', label: 'Annual Premium' },
+  ];
+  const chartMode = timeframe === 'today' ? 'bar' : timeframe === 'yearly' ? 'line' : 'area';
+  const activityChartData = useMemo(() => {
+    if (timeframe === 'today') {
+      return [
+        { label: 'Manual', value: manualActivity.dials },
+        { label: 'Wavv', value: wavvSummary.dials },
+        { label: 'PolicyTek', value: policyTekSummary.callsReceived },
+        { label: 'CallX', value: callXSummary.callsReceived },
+        { label: 'Submitted', value: submittedSaleSummary.dials },
+      ];
+    }
+
+    const buckets = new Map<string, {
+      label: string;
+      sort: number;
+      manual: number;
+      wavv: number;
+      policytek: number;
+      callx: number;
+      submitted: number;
+    }>();
+    const ensureBucket = (dateKey: string) => {
+      const bucket = getActivityBucket(dateKey, timeframe);
+      const existing = buckets.get(bucket.key);
+      if (existing) return existing;
+
+      const next = {
+        label: bucket.label,
+        sort: bucket.sort,
+        manual: 0,
+        wavv: 0,
+        policytek: 0,
+        callx: 0,
+        submitted: 0,
+      };
+      buckets.set(bucket.key, next);
+      return next;
+    };
+
+    manualRows.forEach(row => {
+      if (!row.created_date) return;
+      ensureBucket(row.created_date).manual += toManualActivityNumber(row.dials);
+    });
+    wavvRows.forEach(row => {
+      const dateKey = denverDateKeyFromTimestamp(row.stat_date);
+      if (!dateKey) return;
+      ensureBucket(dateKey).wavv += toManualActivityNumber(row.calls);
+    });
+    policyTekRows.forEach(row => {
+      if (!row.date) return;
+      ensureBucket(row.date).policytek += toManualActivityNumber(row.leadsAssigned);
+    });
+    callXRows.forEach(row => {
+      const dateKey = denverDateKeyFromTimestamp(row.stat_date);
+      if (!dateKey) return;
+      ensureBucket(dateKey).callx += toManualActivityNumber(row.total);
+    });
+    submittedSaleRows.forEach(row => {
+      const dateKey = denverDateKeyFromTimestamp(row.created_at);
+      if (!dateKey) return;
+      ensureBucket(dateKey).submitted += toManualActivityNumber(row.outboundLogDials);
+    });
+
+    return Array.from(buckets.values()).sort((a, b) => a.sort - b.sort);
+  }, [
+    callXRows,
+    callXSummary.callsReceived,
+    manualActivity.dials,
+    manualRows,
+    policyTekRows,
+    policyTekSummary.callsReceived,
+    submittedSaleRows,
+    submittedSaleSummary.dials,
+    timeframe,
+    wavvRows,
+    wavvSummary.dials,
+  ]);
+  const chartTotalSold = submittedSaleSummary.submitted || manualSummary.sold;
+  const activePolicyTekRows = policyTekRundownTab === 'lead_stat' ? policyTekRundownRows : policyTekCallRundownRows;
+  const activePolicyTekColumns = policyTekRundownTab === 'lead_stat' ? policyTekLeadStatColumns : policyTekCallRundownColumns;
+  const activePolicyTekTitle = policyTekRundownTab === 'lead_stat' ? 'Lead Stat' : 'Call Rundown';
+  const activePolicyTekEmptyMessage = policyTekRundownTab === 'lead_stat'
+    ? 'No PolicyTek lead stats found for this range.'
+    : 'No PolicyTek calls found for this range.';
+  const selectedRundownColumns = selectedRundown ? platformRundownColumns[selectedRundown] : [];
+  const selectedRundownRows = selectedRundown === 'Wavv'
+    ? wavvRundownRows
+    : selectedRundown === 'PolicyTek'
+      ? policyTekRundownRows
+    : selectedRundown === 'CallX'
+      ? callXRundownRows
+    : selectedRundown === 'Submitted Sale'
+      ? submittedSaleRundownRows
+    : selectedRundown
+      ? platformRundownRows[selectedRundown]
+      : [];
+  const selectedRundownIsLoading = (selectedRundown === 'Wavv' && wavvLoading) || (selectedRundown === 'PolicyTek' && policyTekLoading) || (selectedRundown === 'CallX' && callXLoading) || (selectedRundown === 'Submitted Sale' && submittedSaleLoading);
+  const selectedRundownError = selectedRundown === 'Wavv' ? wavvError : selectedRundown === 'PolicyTek' ? policyTekError : selectedRundown === 'CallX' ? callXError : selectedRundown === 'Submitted Sale' ? submittedSaleError : null;
+  const selectedRundownIsPolicyTek = selectedRundown === 'PolicyTek';
+  const selectedRundownIsCallX = selectedRundown === 'CallX';
+  const selectedRundownIsSubmittedSale = selectedRundown === 'Submitted Sale';
+  const renderRundownTable = (
+    title: string,
+    columns: Array<{ key: string; label: string }>,
+    rows: Array<Record<string, unknown>>,
+    emptyMessage: string
+  ) => (
+    <div className="overflow-hidden rounded-3xl border border-slate-100">
+      <div className="border-b border-slate-100 bg-white px-5 py-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{title}</p>
+      </div>
+      <div className="max-h-[28rem] overflow-auto">
+        <div className="min-w-[48rem]">
+          <div
+            className="sticky top-0 z-10 grid bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"
+            style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
+          >
+            {columns.map((column) => (
+              <span key={column.key}>{column.label}</span>
+            ))}
+          </div>
+          {rows.length > 0 ? (
+            rows.map((row, index) => (
+              <div
+                key={`${title}-${row.id ?? index}`}
+                className="grid items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600"
+                style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
+              >
+                {columns.map((column) => (
+                  <span key={column.key} className={column.key === 'date' || column.key === 'createdAt' ? 'font-black text-slate-950' : 'truncate'}>
+                    {String(row[column.key] ?? '-')}
+                  </span>
+                ))}
+              </div>
+            ))
+          ) : (
+            <div className="border-t border-slate-50 px-5 py-8 text-center text-xs font-black text-slate-400">
+              {emptyMessage}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300">
+      <div className="flex justify-end">
+        <PolicyDateRangeFilter
+          timeframe={timeframe}
+          startDate={startDate}
+          endDate={endDate}
+          onTimeframeChange={setTimeframe}
+          onDateChange={(start, end) => {
+            setStartDate(start);
+            setEndDate(end);
+          }}
+        />
+      </div>
+
+      <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-sm">
+        <div className="grid grid-cols-1 gap-0 xl:grid-cols-[1fr_1.2fr]">
+          <div className="border-b border-slate-100 p-6 xl:border-b-0 xl:border-r">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Manual Entry</p>
+                <h3 className="text-2xl font-black tracking-tight text-slate-950">Today&apos;s activity</h3>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ActivityMetricStepper label="Dials" value={manualActivity.dials} onChange={(value) => updateManualActivity('dials', value)} />
+              <ActivityMetricStepper label="Presentations" value={manualActivity.presentations} onChange={(value) => updateManualActivity('presentations', value)} />
+              <ActivityMetricStepper label="Appointments" value={manualActivity.appointments} onChange={(value) => updateManualActivity('appointments', value)} />
+              <ActivityMetricStepper label="Sold" value={manualActivity.sold} onChange={(value) => updateManualActivity('sold', value)} />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveManualActivity}
+              disabled={!currentAgentId || manualSaving}
+              className="mt-5 w-full rounded-2xl bg-amber-400 px-5 py-4 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+            >
+              {manualSaving ? 'Saving...' : 'Save Activity'}
+            </button>
+            {manualSaveError ? (
+              <p className="mt-3 text-xs font-bold text-red-600">{manualSaveError}</p>
+            ) : manualSaveMessage ? (
+              <p className="mt-3 text-xs font-bold text-emerald-600">{manualSaveMessage}</p>
+            ) : null}
+          </div>
+
+          <div className="p-6">
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Manual Log</p>
+                <h3 className="text-2xl font-black tracking-tight text-slate-950">Manual activity by date</h3>
+              </div>
+              <span className={`rounded-full border px-3 py-1 text-xs font-black ${
+                manualError
+                  ? 'border-red-100 bg-red-50 text-red-600'
+                  : manualLoading
+                    ? 'border-amber-100 bg-amber-50 text-amber-700'
+                    : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+              }`}>
+                {manualError ? 'Unavailable' : manualLoading ? 'Loading' : 'Live data'}
+              </span>
+            </div>
+
+            <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                ['Dials', manualSummary.dials],
+                ['Presentations', manualSummary.presentations],
+                ['Appointments', manualSummary.appointments],
+                ['Sold', manualSummary.sold],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+                  <p className="mt-2 text-xl font-black text-slate-950">{Number(value).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="overflow-hidden rounded-3xl border border-slate-100">
+              <div className="grid grid-cols-[1.2fr_repeat(4,0.8fr)] bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                <span>Date</span>
+                <span>Dials</span>
+                <span>Pres.</span>
+                <span>Appts.</span>
+                <span>Sold</span>
+              </div>
+              {manualLoading ? (
+                <div className="border-t border-slate-50 px-5 py-8 text-center text-xs font-black text-slate-400">
+                  Loading manual activity...
+                </div>
+              ) : manualError ? (
+                <div className="border-t border-slate-50 px-5 py-8 text-center text-xs font-black text-red-500">
+                  {manualError}
+                </div>
+              ) : manualRows.length > 0 ? (
+                manualRows.map((row, index) => {
+                  const normalized = normalizeManualActivity(row);
+
+                  return (
+                    <div key={`${row.id ?? row.created_date ?? index}`} className="grid grid-cols-[1.2fr_repeat(4,0.8fr)] items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600">
+                      <span className="font-black text-slate-950">{formatManualActivityDate(row.created_date)}</span>
+                      <span>{normalized.dials}</span>
+                      <span>{normalized.presentations}</span>
+                      <span>{normalized.appointments}</span>
+                      <span>{normalized.sold}</span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="border-t border-slate-50 px-5 py-8 text-center text-xs font-black text-slate-400">
+                  No manual activity found for this range.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
+        {liveActivityPlatforms.map((platform) => {
+          const hasRundown = platform.name === 'Wavv' || platform.name === 'PolicyTek' || platform.name === 'CallX' || platform.name === 'Submitted Sale';
+          const cardClass =
+            platform.accent === 'slate' ? 'border-slate-900/10 bg-slate-950 text-white shadow-xl shadow-slate-300' :
+            platform.accent === 'emerald' ? 'border-emerald-100 bg-gradient-to-br from-white via-white to-emerald-50/80' :
+            platform.accent === 'amber' ? 'border-amber-100 bg-gradient-to-br from-white via-white to-amber-50/90' :
+            'border-sky-100 bg-gradient-to-br from-white via-white to-sky-50/90';
+          const titleClass = platform.accent === 'slate' ? 'text-slate-400' : 'text-slate-400';
+          const totalClass = platform.accent === 'slate' ? 'text-white' : 'text-slate-950';
+          const labelClass = platform.accent === 'slate' ? 'text-slate-400' : 'text-slate-400';
+          const metricClass = platform.accent === 'slate'
+            ? 'border-white/10 bg-white/5'
+            : 'border-slate-100 bg-white/70';
+          const metricLabelClass = platform.accent === 'slate' ? 'text-slate-400' : 'text-slate-400';
+          const metricValueClass = platform.accent === 'slate' ? 'text-white' : 'text-slate-950';
+
+          return (
+            <section key={platform.name} className={`rounded-[2rem] border p-6 shadow-sm ${cardClass}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${titleClass}`}>{platform.name}</p>
+                  <h3 className={`mt-2 text-4xl font-black tracking-tight ${totalClass}`}>{platform.total}</h3>
+                  <p className={`text-xs font-bold ${labelClass}`}>{platform.label}</p>
+                  {((platform.name === 'Wavv' && wavvError) || (platform.name === 'PolicyTek' && policyTekError) || (platform.name === 'CallX' && callXError)) && (
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-red-500">Unavailable</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {hasRundown && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (platform.name === 'PolicyTek') setPolicyTekRundownTab('lead_stat');
+                        setSelectedRundown(platform.name as PlatformActivityName);
+                      }}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/70 bg-white/80 text-slate-500 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-slate-950"
+                      aria-label={`View ${platform.name} rundown`}
+                      title={`View ${platform.name} rundown`}
+                    >
+                      <BarChart3 className="h-4 w-4" />
+                    </button>
+                  )}
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm ${
+                    platform.accent === 'slate' ? 'border-amber-400/20 bg-amber-300 text-slate-950 shadow-amber-950/10' :
+                    platform.accent === 'emerald' ? 'border-emerald-200 bg-emerald-100 text-emerald-700 shadow-emerald-200/60' :
+                    platform.accent === 'amber' ? 'border-amber-200 bg-amber-100 text-amber-700 shadow-amber-200/60' :
+                    'border-sky-200 bg-sky-100 text-sky-700 shadow-sky-200/60'
+                  }`}>
+                    {platform.accent === 'slate' ? <History className="h-5 w-5" /> : <PhoneCall className="h-5 w-5" />}
+                  </div>
+                </div>
+              </div>
+              <div className={`mt-6 grid gap-3 ${platform.metrics.length > 4 ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2' : 'grid-cols-2'}`}>
+                {platform.metrics.map(([label, value]) => (
+                  <div key={`${platform.name}-${label}`} className={`rounded-2xl border p-4 ${metricClass}`}>
+                    <p className={`text-[10px] font-black uppercase tracking-[0.14em] ${metricLabelClass}`}>{label}</p>
+                    <p className={`mt-2 text-lg font-black ${metricValueClass}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <section className="overflow-hidden rounded-[2rem] border border-slate-900 bg-slate-950 p-6 shadow-2xl shadow-slate-300">
+        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300">Combined Activity</p>
+            <h3 className="text-3xl font-black tracking-tight text-white">Activity momentum</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-400">Manual effort, Wavv, PolicyTek, CallX, and submitted sales in one view.</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Submitted</p>
+            <p className="text-2xl font-black text-white">{formatActivityCount(chartTotalSold)}</p>
+          </div>
+        </div>
+        <div className="h-[360px] min-w-0">
+          <ResponsiveContainer width="100%" height="100%">
+            {chartMode === 'today' ? (
+              <BarChart data={activityChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
+                <XAxis dataKey="label" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 800 }} />
+                <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 800 }} />
+                <RechartsTooltip
+                  contentStyle={{ borderRadius: 18, border: '1px solid rgba(255,255,255,0.12)', background: '#020617', color: '#fff' }}
+                  labelStyle={{ color: '#fbbf24', fontWeight: 900 }}
+                />
+                <Bar dataKey="value" name="Activity" fill="#f59e0b" radius={[10, 10, 0, 0]} />
+              </BarChart>
+            ) : chartMode === 'yearly' ? (
+              <LineChart data={activityChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
+                <XAxis dataKey="label" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 800 }} />
+                <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 800 }} />
+                <RechartsTooltip
+                  contentStyle={{ borderRadius: 18, border: '1px solid rgba(255,255,255,0.12)', background: '#020617', color: '#fff' }}
+                  labelStyle={{ color: '#fbbf24', fontWeight: 900 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12, fontWeight: 800, color: '#cbd5e1' }} />
+                <Line type="monotone" dataKey="manual" name="Manual dials" stroke="#f59e0b" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="wavv" name="Wavv calls" stroke="#10b981" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="policytek" name="PolicyTek" stroke="#38bdf8" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="callx" name="CallX" stroke="#a78bfa" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="submitted" name="Submitted Sale" stroke="#facc15" strokeWidth={3} dot={false} />
+              </LineChart>
+            ) : (
+              <AreaChart data={activityChartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="manualActivityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.45} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="wavvActivityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="platformActivityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.18)" vertical={false} />
+                <XAxis dataKey="label" stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 800 }} />
+                <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 800 }} />
+                <RechartsTooltip
+                  contentStyle={{ borderRadius: 18, border: '1px solid rgba(255,255,255,0.12)', background: '#020617', color: '#fff' }}
+                  labelStyle={{ color: '#fbbf24', fontWeight: 900 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12, fontWeight: 800, color: '#cbd5e1' }} />
+                <Area type="monotone" dataKey="manual" name="Manual dials" stroke="#f59e0b" strokeWidth={3} fill="url(#manualActivityGradient)" />
+                <Area type="monotone" dataKey="wavv" name="Wavv calls" stroke="#10b981" strokeWidth={3} fill="url(#wavvActivityGradient)" />
+                <Area type="monotone" dataKey="policytek" name="PolicyTek" stroke="#38bdf8" strokeWidth={3} fill="url(#platformActivityGradient)" />
+                <Area type="monotone" dataKey="callx" name="CallX" stroke="#a78bfa" strokeWidth={3} fillOpacity={0.08} fill="#a78bfa" />
+                <Area type="monotone" dataKey="submitted" name="Submitted Sale" stroke="#facc15" strokeWidth={3} fillOpacity={0.08} fill="#facc15" />
+              </AreaChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      {selectedRundown && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/45 p-6 backdrop-blur-sm">
+          <div className="flex max-h-[calc(100vh-3rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-950/20">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-950 px-6 py-5 text-white">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">{selectedRundown} Rundown</p>
+                <h3 className="mt-1 text-2xl font-black tracking-tight">Daily source breakdown</h3>
+                <p className="mt-1 text-sm font-semibold text-slate-400">
+                  {selectedRundown === 'Wavv'
+                    ? 'Date-level Wavv records for the selected range.'
+                    : selectedRundown === 'PolicyTek'
+                      ? 'Date-level PolicyTek lead records for the selected range.'
+                    : selectedRundown === 'CallX'
+                      ? 'Date-level CallX records for the selected range.'
+                    : selectedRundown === 'Submitted Sale'
+                      ? 'Submitted sale records for the selected range.'
+                    : 'Mock date-level records showing how this platform total came together.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRundown(null)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white transition hover:bg-white/20"
+                aria-label="Close rundown"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              {selectedRundownIsLoading ? (
+                <div className="rounded-3xl border border-slate-100 px-5 py-8 text-center text-xs font-black text-slate-400">
+                  Loading {selectedRundown} activity...
+                </div>
+              ) : selectedRundownError ? (
+                <div className="rounded-3xl border border-red-100 bg-red-50 px-5 py-8 text-center text-xs font-black text-red-500">
+                  {selectedRundownError}
+                </div>
+              ) : selectedRundownIsPolicyTek ? (
+                <div className="space-y-5">
+                  <div className="inline-flex rounded-2xl border border-slate-100 bg-slate-50 p-1.5">
+                    {[
+                      { key: 'lead_stat' as const, label: 'Lead Stat' },
+                      { key: 'call_rundown' as const, label: 'Call Rundown' },
+                    ].map((item) => {
+                      const active = item.key === policyTekRundownTab;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setPolicyTekRundownTab(item.key)}
+                          className={`rounded-xl px-4 py-2 text-xs font-black transition ${
+                            active
+                              ? 'bg-slate-950 text-white shadow-sm'
+                              : 'text-slate-500 hover:bg-white hover:text-slate-950'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {renderRundownTable(
+                    activePolicyTekTitle,
+                    activePolicyTekColumns,
+                    activePolicyTekRows,
+                    activePolicyTekEmptyMessage
+                  )}
+                </div>
+              ) : selectedRundownIsCallX ? (
+                renderRundownTable(
+                  'CallX Rundown',
+                  callXRundownColumns,
+                  callXRundownRows,
+                  'No CallX activity found for this range.'
+                )
+              ) : selectedRundownIsSubmittedSale ? (
+                renderRundownTable(
+                  'Submitted Sale Rundown',
+                  submittedSaleRundownColumns,
+                  submittedSaleRundownRows,
+                  'No submitted sales found for this range.'
+                )
+              ) : (
+                <div className="overflow-hidden rounded-3xl border border-slate-100">
+                  <div
+                    className="grid bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"
+                    style={{ gridTemplateColumns: `repeat(${selectedRundownColumns.length}, minmax(0, 1fr))` }}
+                  >
+                    {selectedRundownColumns.map((column) => (
+                      <span key={column.key}>{column.label}</span>
+                    ))}
+                  </div>
+                  {selectedRundownRows.length > 0 ? (
+                    selectedRundownRows.map((row, index) => (
+                      <div
+                        key={`${selectedRundown}-${row.id ?? index}`}
+                        className="grid items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600"
+                        style={{ gridTemplateColumns: `repeat(${selectedRundownColumns.length}, minmax(0, 1fr))` }}
+                      >
+                        {selectedRundownColumns.map((column) => (
+                          <span key={column.key} className={column.key === 'date' ? 'font-black text-slate-950' : ''}>
+                            {row[column.key] ?? '-'}
+                          </span>
+                        ))}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="border-t border-slate-50 px-5 py-8 text-center text-xs font-black text-slate-400">
+                      No {selectedRundown} activity found for this range.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-5 flex items-center justify-between gap-4 rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4">
+                <p className="text-sm font-bold text-amber-900">
+                  {selectedRundown === 'Wavv'
+                    ? 'Wavv rows are loaded from the live activity log API for the selected range.'
+                    : selectedRundown === 'PolicyTek'
+                      ? 'PolicyTek rows are loaded from the live activity log API for the selected range.'
+                    : selectedRundown === 'CallX'
+                      ? 'CallX rows are loaded from the live activity log API for the selected range.'
+                    : selectedRundown === 'Submitted Sale'
+                      ? 'Submitted sale rows are loaded from the live activity log API for the selected range.'
+                    : 'This is mock data for layout review. PolicyTek, CallX, and submitted sale logs can be connected as their APIs come online.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRundown(null)}
+                  className="shrink-0 rounded-2xl bg-slate-900 px-5 py-3 text-xs font-black uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | 'expenses' }) => {
+  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
+  const [selectedBusinessAgentId, setSelectedBusinessAgentId] = useState<string>(currentAgentId);
   const tabs = [
     { key: 'overview', label: 'Overview', to: '/business', icon: <BarChart3 className="h-4 w-4" /> },
     { key: 'policies', label: 'Policies', to: '/business/policies', icon: <FileCheck className="h-4 w-4" /> },
     { key: 'activity', label: 'Activity Log', to: '/business/activity-log', icon: <History className="h-4 w-4" /> },
     { key: 'expenses', label: 'Expense Log', to: '/business/expense-log', icon: <ReceiptText className="h-4 w-4" /> },
   ] as const;
+  const pageMeta = tab === 'activity'
+    ? {
+        title: 'Daily Activity',
+        description: `Track manual effort and agent-scoped platform activity for ${viewingAgentName}.`,
+        icon: <History className="h-5 w-5" />,
+      }
+    : tab === 'expenses'
+      ? {
+          title: 'Expense Log',
+          description: 'Track business expenses and field costs.',
+          icon: <ReceiptText className="h-5 w-5" />,
+        }
+      : {
+          title: 'My Business',
+          description: 'Review your personal production, policy records, activity, and expenses.',
+          icon: <Briefcase className="h-5 w-5" />,
+        };
+  const businessAgentOptions = useMemo(() => (
+    (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
+      .filter(Boolean)
+      .filter((agentId, index, all) => all.indexOf(agentId) === index)
+      .map(agentId => {
+        const subAgent = subAgents.find(agent => agent.agentId === agentId);
+        return {
+          id: agentId,
+          label: subAgent?.name || (agentId === currentAgentId ? viewingAgentName : agentId),
+        };
+      })
+  ), [currentAgentId, selectedAgentIds, subAgents, viewingAgentName]);
+  useEffect(() => {
+    const nextSelectedId = businessAgentOptions.some(agent => agent.id === selectedBusinessAgentId)
+      ? selectedBusinessAgentId
+      : (businessAgentOptions[0]?.id || currentAgentId);
+
+    if (nextSelectedId && nextSelectedId !== selectedBusinessAgentId) {
+      setSelectedBusinessAgentId(nextSelectedId);
+    }
+  }, [businessAgentOptions, currentAgentId, selectedBusinessAgentId]);
+
+  const selectedBusinessAgentLabel = businessAgentOptions.find(agent => agent.id === selectedBusinessAgentId)?.label || viewingAgentName || 'My Business';
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-amber-300 shadow-lg shadow-slate-200">
-            <Briefcase className="h-5 w-5" />
+            {pageMeta.icon}
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-950">My Business</h1>
-            <p className="text-sm font-semibold text-slate-500">Review your personal production, policy records, activity, and expenses.</p>
+            <h1 className="text-3xl font-black tracking-tight text-slate-950">{pageMeta.title}</h1>
+            <p className="text-sm font-semibold text-slate-500">{pageMeta.description}</p>
           </div>
         </div>
 
@@ -756,22 +2227,43 @@ const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | '
         </div>
       </div>
 
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Business Scope</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {businessAgentOptions.map(agent => {
+              const active = agent.id === selectedBusinessAgentId;
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => setSelectedBusinessAgentId(agent.id)}
+                  className={`rounded-2xl px-4 py-2.5 text-xs font-black transition-all ${
+                    active
+                      ? 'bg-slate-950 text-white shadow-lg shadow-slate-900/15'
+                      : 'border border-slate-100 bg-white text-slate-500 hover:border-slate-200 hover:text-slate-950'
+                  }`}
+                >
+                  {agent.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       {tab === 'policies' ? (
-        <AgentPoliciesV2 hideHeader showDateRangeWhenHeaderHidden />
+        <AgentPoliciesV2 agentIdsOverride={selectedBusinessAgentId ? [selectedBusinessAgentId] : []} hideHeader showDateRangeWhenHeaderHidden />
       ) : tab === 'activity' ? (
-        <BusinessPlaceholder
-          title="Activity Log"
-          description="A timeline for business activity will live here once the activity workflow is connected."
-          icon={<History className="h-6 w-6" />}
-        />
+        <MyBusinessActivityLog selectedAgentId={selectedBusinessAgentId} />
       ) : tab === 'expenses' ? (
         <BusinessPlaceholder
           title="Expense Log"
-          description="Expense tracking will live here once the expense workflow is connected."
+          description={`Expense tracking for ${selectedBusinessAgentLabel} will live here once the expense workflow is connected.`}
           icon={<ReceiptText className="h-6 w-6" />}
         />
       ) : (
-        <MyBusinessOverview />
+        <MyBusinessOverview selectedAgentId={selectedBusinessAgentId} selectedAgentLabel={selectedBusinessAgentLabel} />
       )}
     </div>
   );
