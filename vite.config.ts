@@ -12,6 +12,18 @@ export default defineConfig(({ mode }) => {
           '/internal-ai': {
             target: env.VITE_INTERNAL_AI_PROXY_TARGET || 'http://localhost:3001',
             changeOrigin: true,
+          },
+          '/twilio-verify': {
+            target: 'https://verify3-8725-yyfcuu.twil.io',
+            changeOrigin: true,
+            secure: true,
+            rewrite: (path) => path.replace(/^\/twilio-verify/, ''),
+          },
+          '/xano-api': {
+            target: 'https://api1.simplyworkcrm.com',
+            changeOrigin: true,
+            secure: true,
+            rewrite: (path) => path.replace(/^\/xano-api/, ''),
           }
         }
       },

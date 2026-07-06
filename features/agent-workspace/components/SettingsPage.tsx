@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertCircle, BookOpen, Briefcase, Check, ChevronDown, Copy, ImagePlus, KeyRound, Mail, Phone, RefreshCw, Search, Settings, ShieldCheck, User } from 'lucide-react';
+import { AlertCircle, BookOpen, Briefcase, Check, ChevronDown, Copy, ImagePlus, KeyRound, Mail, Phone, RefreshCw, Search, Settings, ShieldCheck, User, X } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
 type SettingsTab = 'user' | 'agent' | 'mcp' | 'carrier';
@@ -28,7 +28,65 @@ type McpAuthTokenResponse = {
   mcp_pit_expiration_date?: string;
 };
 
-const API_V2_BASE_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR';
+type PhoneCountryCode = 'US';
+
+const PHONE_COUNTRY_OPTIONS: Array<{
+  id: PhoneCountryCode;
+  label: string;
+  dialCode: string;
+  areaCodeRequired: boolean;
+  areaCodes?: string[];
+  localLength: number;
+  placeholder: string;
+}> = [
+  {
+    id: 'US',
+    label: 'United States',
+    dialCode: '+1',
+    areaCodeRequired: true,
+    areaCodes: ['406', '201', '202', '212', '213', '305', '312', '415', '469', '702', '713', '818', '917'],
+    localLength: 7,
+    placeholder: '5551234',
+  },
+];
+
+const stripPhoneDigits = (value: string) => value.replace(/\D/g, '');
+
+const parseWorkPhone = (value: string) => {
+  const digits = stripPhoneDigits(value);
+  if (!digits) return { country: 'US' as PhoneCountryCode, areaCode: '', localNumber: '' };
+
+  const usDigits = digits.startsWith('1') ? digits.slice(1) : digits;
+  return {
+    country: 'US' as PhoneCountryCode,
+    areaCode: usDigits.slice(0, 3),
+    localNumber: usDigits.slice(3, 10),
+  };
+};
+
+const buildWorkPhone = (country: PhoneCountryCode, areaCode: string, localNumber: string) => {
+  const option = PHONE_COUNTRY_OPTIONS.find(item => item.id === country) || PHONE_COUNTRY_OPTIONS[0];
+  const areaDigits = stripPhoneDigits(areaCode).slice(0, 3);
+  const localDigits = stripPhoneDigits(localNumber).slice(0, option.localLength);
+  return `${option.dialCode}${option.areaCodeRequired ? areaDigits : ''}${localDigits}`;
+};
+
+const getWorkPhoneValidationError = (country: PhoneCountryCode, areaCode: string, localNumber: string) => {
+  const option = PHONE_COUNTRY_OPTIONS.find(item => item.id === country) || PHONE_COUNTRY_OPTIONS[0];
+  const areaDigits = stripPhoneDigits(areaCode);
+  const localDigits = stripPhoneDigits(localNumber);
+
+  if (option.areaCodeRequired && areaDigits.length !== 3) return 'Work phone area code must be 3 digits.';
+  if (localDigits.length !== option.localLength) return 'US work phone must be 7 digits after the area code.';
+  return null;
+};
+
+const API_V2_BASE_URL = import.meta.env.DEV
+  ? '/xano-api/api:SZgR1JsR'
+  : 'https://api1.simplyworkcrm.com/api:SZgR1JsR';
+const PROFILE_IMAGE_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/agent-profile/profile-image';
+const START_PHONE_VERIFY_URL = '/twilio-verify/start-verify';
+const CHECK_PHONE_VERIFY_URL = '/twilio-verify/check-verify';
 
 const unwrapApiPayload = (payload: any) => {
   if (!payload || typeof payload !== 'object') return payload;
@@ -39,25 +97,60 @@ const unwrapApiPayload = (payload: any) => {
 const getImageUrl = (value: any): string => {
   if (!value) return '';
   if (typeof value === 'string') return value;
-  return value.url || value.src || value.path || '';
+  return value.url || value.src || value.path || value.profile_url || value.profileImage || value.image_url || '';
+};
+
+const getUploadErrorMessage = async (response: Response) => {
+  const fallback = `Image upload failed: ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) return fallback;
+
+  const text = await response.text().catch(() => '');
+  if (!text) return fallback;
+  if (text.trim().startsWith('<')) return fallback;
+
+  try {
+    const parsed = JSON.parse(text);
+    return String(parsed.message || parsed.error || parsed.detail || fallback);
+  } catch {
+    return text.slice(0, 180);
+  }
+};
+
+const uploadProfileImage = async (profile: File, agentId: string, token: string) => {
+  const formData = new FormData();
+  formData.append('agent_id', agentId);
+  formData.append('profile', profile);
+
+  const response = await fetch(PROFILE_IMAGE_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await getUploadErrorMessage(response));
+  }
+
+  const payload = await response.json().catch(() => null);
+  const unwrapped = unwrapApiPayload(payload);
+  return getImageUrl(
+    unwrapped?.profile ||
+      unwrapped?.profile_image ||
+      unwrapped?.image ||
+      unwrapped?.profile_url ||
+      unwrapped?.image_url ||
+      unwrapped?.url ||
+      unwrapped
+  ) || '';
 };
 
 const getNestedId = (value: any): string => {
   if (!value) return '';
   if (typeof value === 'string' || typeof value === 'number') return String(value);
   return String(value.id || value.agent_id || value.value || '');
-};
-
-const getFilenameFromUrl = (url: string) => {
-  const path = url.split('?')[0].split('/').pop() || 'agent-profile-image';
-  return decodeURIComponent(path.replace(/\+/g, ' '));
-};
-
-const getFileFromUrl = async (url: string) => {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Could not load existing profile image.');
-  const blob = await response.blob();
-  return new File([blob], getFilenameFromUrl(url), { type: blob.type || 'image/png' });
 };
 
 const maskSecret = (value?: string) => value ? '**** **** **** ****' : 'Not configured';
@@ -308,12 +401,26 @@ export const SettingsPage: React.FC = () => {
   const [agentFirstName, setAgentFirstName] = useState(user?.firstName || '');
   const [agentLastName, setAgentLastName] = useState(user?.lastName || '');
   const [agentPhone, setAgentPhone] = useState('');
+  const [agentPhoneCountry, setAgentPhoneCountry] = useState<PhoneCountryCode>('US');
+  const [agentPhoneAreaCode, setAgentPhoneAreaCode] = useState('406');
+  const [agentPhoneLocalNumber, setAgentPhoneLocalNumber] = useState('');
+  const [verifiedAgentPhone, setVerifiedAgentPhone] = useState('');
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpChecking, setOtpChecking] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpMessage, setOtpMessage] = useState<string | null>(null);
+  const [otpResendSeconds, setOtpResendSeconds] = useState(0);
   const [agentEmail, setAgentEmail] = useState('');
   const [agentNpn, setAgentNpn] = useState('');
   const [hasExistingNpn, setHasExistingNpn] = useState(false);
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
   const [existingProfileImageUrl, setExistingProfileImageUrl] = useState('');
+  const [profileImageUploading, setProfileImageUploading] = useState(false);
+  const [profileImageError, setProfileImageError] = useState<string | null>(null);
+  const [profileImageMessage, setProfileImageMessage] = useState<string | null>(null);
   const [agentProfileLoading, setAgentProfileLoading] = useState(false);
   const [agentProfileError, setAgentProfileError] = useState<string | null>(null);
   const [agentProfileSaving, setAgentProfileSaving] = useState(false);
@@ -348,6 +455,128 @@ export const SettingsPage: React.FC = () => {
   useEffect(() => {
     if (user?.agentId) setSavedAgentProfileId(user.agentId);
   }, [user?.agentId]);
+
+  const phoneVerified = Boolean(agentPhone && verifiedAgentPhone === agentPhone);
+
+  useEffect(() => {
+    if (otpResendSeconds <= 0) return;
+    const timer = window.setTimeout(() => setOtpResendSeconds(seconds => Math.max(0, seconds - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [otpResendSeconds]);
+
+  const applyAgentPhoneParts = (value: string) => {
+    const parsed = parseWorkPhone(value);
+    setAgentPhoneCountry(parsed.country);
+    setAgentPhoneAreaCode(parsed.areaCode || (parsed.country === 'US' ? '406' : ''));
+    setAgentPhoneLocalNumber(parsed.localNumber);
+    const formattedPhone = buildWorkPhone(parsed.country, parsed.areaCode || (parsed.country === 'US' ? '406' : ''), parsed.localNumber);
+    setAgentPhone(formattedPhone);
+    setVerifiedAgentPhone(formattedPhone);
+  };
+
+  const updateAgentPhoneParts = (next: Partial<{ country: PhoneCountryCode; areaCode: string; localNumber: string }>) => {
+    const country = next.country ?? agentPhoneCountry;
+    const option = PHONE_COUNTRY_OPTIONS.find(item => item.id === country) || PHONE_COUNTRY_OPTIONS[0];
+    const areaCode = option.areaCodeRequired
+      ? stripPhoneDigits(next.areaCode ?? agentPhoneAreaCode).slice(0, 3)
+      : '';
+    const localNumber = stripPhoneDigits(next.localNumber ?? agentPhoneLocalNumber).slice(0, option.localLength);
+
+    setAgentPhoneCountry(country);
+    setAgentPhoneAreaCode(areaCode);
+    setAgentPhoneLocalNumber(localNumber);
+    const formattedPhone = buildWorkPhone(country, areaCode, localNumber);
+    setAgentPhone(formattedPhone);
+    if (formattedPhone !== verifiedAgentPhone) {
+      setVerifiedAgentPhone('');
+      setOtpMessage(null);
+    }
+  };
+
+  const updateAgentPhoneDigits = (value: string) => {
+    const digits = stripPhoneDigits(value).slice(0, 10);
+    updateAgentPhoneParts({
+      country: 'US',
+      areaCode: digits.slice(0, 3),
+      localNumber: digits.slice(3, 10),
+    });
+  };
+
+  const sendPhoneOtp = async () => {
+    const phoneError = getWorkPhoneValidationError(agentPhoneCountry, agentPhoneAreaCode, agentPhoneLocalNumber);
+    if (phoneError) {
+      setOtpError(phoneError);
+      return;
+    }
+
+    setOtpSending(true);
+    setOtpError(null);
+    setOtpCode('');
+    setOtpModalOpen(true);
+    setOtpResendSeconds(10);
+    setOtpMessage(`Sending code to ${agentPhone}...`);
+
+    try {
+      const body = new URLSearchParams();
+      body.set('channel', 'sms');
+      body.set('locale', 'en');
+      body.set('to', agentPhone);
+
+      const response = await fetch(START_PHONE_VERIFY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      if (!response.ok) throw new Error(`Verify API error: ${response.status}`);
+
+      setOtpMessage(`Code sent to ${agentPhone}.`);
+    } catch (error) {
+      setOtpError(error instanceof Error ? error.message : 'Unable to send verification code.');
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const verifyPhoneOtp = async () => {
+    const code = stripPhoneDigits(otpCode);
+    if (code.length < 4) {
+      setOtpError('Enter the verification code.');
+      return;
+    }
+
+    setOtpChecking(true);
+    setOtpError(null);
+    setOtpMessage(null);
+
+    try {
+      const body = new URLSearchParams();
+      body.set('to', agentPhone);
+      body.set('code', code);
+
+      const response = await fetch(CHECK_PHONE_VERIFY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      if (!response.ok) throw new Error(`Verify API error: ${response.status}`);
+
+      const payload = await response.json().catch(() => ({}));
+      const status = String(payload.status || '').toLowerCase();
+      const approved = status === 'approved' || payload.valid === true || payload.success === true || payload.approved === true;
+      if (!approved) throw new Error('Verification code was not approved.');
+
+      setVerifiedAgentPhone(agentPhone);
+      setOtpModalOpen(false);
+      setOtpCode('');
+      setOtpMessage('Work phone verified.');
+    } catch (error) {
+      setOtpError(error instanceof Error ? error.message : 'Unable to verify code.');
+    } finally {
+      setOtpChecking(false);
+    }
+  };
 
   useEffect(() => {
     if (currentAgentProfileId) return;
@@ -432,7 +661,7 @@ export const SettingsPage: React.FC = () => {
         if (profile.id) setSavedAgentProfileId(profile.id);
         setAgentFirstName(profile.firstName || user.firstName || '');
         setAgentLastName(profile.lastName || user.lastName || '');
-        setAgentPhone(profile.phone);
+        applyAgentPhoneParts(profile.phone);
         setAgentEmail(profile.email);
         setAgentNpn(profile.npn ? String(profile.npn) : '');
         setHasExistingNpn(Boolean(profile.npn));
@@ -480,16 +709,49 @@ export const SettingsPage: React.FC = () => {
     }
   }, [activeTab]);
 
+  const handleProfileImageChange = async (file: File | null) => {
+    if (!file) return;
+
+    const token = localStorage.getItem('authToken');
+    const imageAgentId = user?.agentId || '';
+    if (!imageAgentId) {
+      setProfileImageError('Save the agent profile before uploading a profile image.');
+      return;
+    }
+
+    setProfileImage(file);
+    setProfileImageUploading(true);
+    setProfileImageError(null);
+    setProfileImageMessage(null);
+    setAgentProfileSaveError(null);
+    setAgentProfileSaveMessage(null);
+
+    try {
+      const uploadedUrl = await uploadProfileImage(file, imageAgentId, token || '');
+      if (!uploadedUrl) throw new Error('Image upload returned no image URL.');
+      setExistingProfileImageUrl(uploadedUrl);
+      setProfileImage(null);
+      setProfileImageMessage('Profile image updated.');
+      await refreshUser();
+    } catch (error) {
+      setProfileImageError(error instanceof Error ? error.message : 'Failed to upload profile image.');
+    } finally {
+      setProfileImageUploading(false);
+    }
+  };
+
   const validateAgentProfile = () => {
     if (!agentFirstName.trim()) return 'First name is required.';
     if (!agentLastName.trim()) return 'Last name is required.';
     if (!selectedAgencyId) return 'Agency is required.';
-    if (!selectedUplineId) return 'Direct upline is required.';
     if (!agentNpn.trim()) return 'NPN is required.';
     if (!agentPhone.trim()) return 'Work phone is required.';
+    const phoneError = getWorkPhoneValidationError(agentPhoneCountry, agentPhoneAreaCode, agentPhoneLocalNumber);
+    if (phoneError) return phoneError;
+    if (!phoneVerified) return 'Verify work phone before saving.';
     if (!agentEmail.trim()) return 'Work email is required.';
-    if (!currentAgentProfileId && !profileImage) return 'Profile image is required.';
-    if (currentAgentProfileId && !profileImage && !existingProfileImageUrl) return 'Profile image is required.';
+    if (profileImageUploading) return 'Wait for the profile image upload to finish.';
+    if (!existingProfileImageUrl) return 'Profile image is required.';
     return null;
   };
 
@@ -500,30 +762,26 @@ export const SettingsPage: React.FC = () => {
     if (validationError) return;
 
     const token = localStorage.getItem('authToken');
-    const formData = new FormData();
-    formData.append('first_name', agentFirstName.trim());
-    formData.append('last_name', agentLastName.trim());
-    formData.append('ref_ffl_agency', selectedAgencyId);
-    formData.append('ref_agent_upline', selectedUplineId);
-    formData.append('npn', agentNpn.trim());
-    formData.append('phone', agentPhone.trim());
-    formData.append('email', agentEmail.trim());
-
     const isUpdate = Boolean(currentAgentProfileId);
     setAgentProfileSaving(true);
     try {
-      if (profileImage) {
-        formData.append('profile', profileImage);
-      } else if (isUpdate && existingProfileImageUrl) {
-        formData.append('profile', await getFileFromUrl(existingProfileImageUrl));
-      }
+      const body = JSON.stringify({
+        first_name: agentFirstName.trim(),
+        last_name: agentLastName.trim(),
+        ref_ffl_agency: selectedAgencyId,
+        ref_agent_upline: selectedUplineId || null,
+        npn: agentNpn.trim(),
+        phone: agentPhone.trim(),
+        email: agentEmail.trim(),
+      });
 
       const response = await fetch(`${API_V2_BASE_URL}/agent-profile${isUpdate ? `/${currentAgentProfileId}` : ''}`, {
         method: isUpdate ? 'PUT' : 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-        body: formData,
+        body,
       });
 
       if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -996,9 +1254,16 @@ export const SettingsPage: React.FC = () => {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(event) => setProfileImage(event.target.files?.[0] || null)}
+                  disabled={profileImageUploading}
+                  onChange={(event) => {
+                    void handleProfileImageChange(event.target.files?.[0] || null);
+                    event.target.value = '';
+                  }}
                 />
               </label>
+              {profileImageUploading && <p className="text-[11px] font-bold text-slate-500">Uploading profile image...</p>}
+              {profileImageError && <p className="text-[11px] font-bold text-red-500">{profileImageError}</p>}
+              {profileImageMessage && <p className="text-[11px] font-bold text-emerald-600">{profileImageMessage}</p>}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1039,7 +1304,7 @@ export const SettingsPage: React.FC = () => {
               <div className="space-y-2">
                 <AppDropdown
                   label="Direct Upline"
-                  placeholder={selectedAgencyId ? 'Select upline' : 'Select agency first'}
+                  placeholder={selectedAgencyId ? 'None' : 'Select agency first'}
                   options={uplineDropdownOptions}
                   value={selectedUplineId}
                   onChange={(value) => {
@@ -1052,6 +1317,7 @@ export const SettingsPage: React.FC = () => {
                   searchTerm={uplineSearch}
                   onSearchChange={setUplineSearch}
                 />
+                <p className="text-[11px] font-semibold text-slate-400">Optional. If none is selected, direct upline is saved as null.</p>
                 {uplinesError && <p className="text-[11px] font-bold text-red-500">{uplinesError}</p>}
               </div>
               <div className="space-y-2">
@@ -1071,15 +1337,47 @@ export const SettingsPage: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Work Phone</label>
-                <input
-                  type="tel"
-                  value={agentPhone}
-                  disabled={agentProfileLoading}
-                  onChange={(event) => setAgentPhone(event.target.value)}
-                  placeholder="Work phone"
-                  className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-300"
-                />
-                <p className="text-[11px] font-semibold text-slate-400">This is separate from your user phone. Add a work phone if you have one; it will be used for HQ SMS notifications.</p>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2">
+                  <div className="grid grid-cols-[0.55fr_1.45fr] gap-2">
+                    <div className="flex h-11 items-center justify-center rounded-xl border border-slate-100 bg-white px-3 text-xs font-black text-slate-800">
+                      +1
+                    </div>
+
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      value={`${agentPhoneAreaCode}${agentPhoneLocalNumber}`}
+                      disabled={agentProfileLoading}
+                      onChange={(event) => updateAgentPhoneDigits(event.target.value)}
+                      placeholder="4065551212"
+                      className="h-11 min-w-0 rounded-xl border border-slate-100 bg-white px-3 text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-300"
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Formatted</span>
+                    <span className="text-xs font-black text-slate-900">{agentPhone}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${
+                      phoneVerified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {phoneVerified ? <Check className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+                      {phoneVerified ? 'Verified' : 'Not verified'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={sendPhoneOtp}
+                      disabled={agentProfileLoading || otpSending}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                    >
+                      {otpSending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                      {phoneVerified ? 'Verify Again' : 'Verify via OTP'}
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] font-semibold text-slate-400">
+                  Work phone is saved in US international format, for example +14065551212.
+                </p>
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Work Email</label>
@@ -1098,7 +1396,7 @@ export const SettingsPage: React.FC = () => {
           <div className="mt-5 flex justify-end">
             <button
               type="button"
-              disabled={agentProfileLoading || agentProfileSaving}
+              disabled={agentProfileLoading || agentProfileSaving || profileImageUploading}
               onClick={handleAgentProfileSubmit}
               className="px-5 py-3 rounded-2xl bg-slate-900 text-white text-sm font-black shadow-lg shadow-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
             >
@@ -1115,6 +1413,81 @@ export const SettingsPage: React.FC = () => {
         <Phone className="w-4 h-4" />
         <span className="text-xs font-bold truncate">{user?.phone || 'No phone on file'}</span>
       </div>
+
+      {otpModalOpen && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-950/20">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-950 px-6 py-5 text-white">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">Phone Verification</p>
+                <h3 className="text-2xl font-black tracking-tight">Enter OTP</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (otpChecking) return;
+                  setOtpModalOpen(false);
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sent to</p>
+                <p className="mt-1 text-lg font-black text-slate-950">{agentPhone}</p>
+              </div>
+
+              <label className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">OTP Code</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={otpCode}
+                  onChange={(event) => setOtpCode(stripPhoneDigits(event.target.value).slice(0, 10))}
+                  placeholder="Enter code"
+                  className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-center text-xl font-black tracking-widest text-slate-900 outline-none transition focus:border-brand-300 focus:ring-2 focus:ring-brand-500/20"
+                />
+              </label>
+
+              {otpError ? (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                  {otpError}
+                </div>
+              ) : otpMessage ? (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                  {otpMessage}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={sendPhoneOtp}
+                  disabled={otpSending || otpResendSeconds > 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-sm font-black text-slate-600 transition hover:border-slate-200 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {otpSending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {otpResendSeconds > 0 ? `Resend in ${otpResendSeconds}s` : 'Resend Code'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={verifyPhoneOtp}
+                  disabled={otpChecking}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+                >
+                  {otpChecking ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {otpChecking ? 'Verifying...' : 'Verify Phone'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
