@@ -687,12 +687,13 @@ const MyBusinessOverview = ({
   );
 };
 
-type ManualActivityKey = 'dials' | 'presentations' | 'appointments' | 'sold';
+type ManualActivityKey = 'dials' | 'contacts' | 'presentations' | 'appointments' | 'sold';
 type PlatformActivityName = 'Wavv' | 'PolicyTek' | 'CallX' | 'Submitted Sale';
 type PolicyTekRundownTab = 'lead_stat' | 'call_rundown';
 
 const emptyManualActivity: Record<ManualActivityKey, number> = {
   dials: 0,
+  contacts: 0,
   presentations: 0,
   appointments: 0,
   sold: 0,
@@ -790,13 +791,14 @@ const normalizeManualActivity = (
   value?: Partial<Record<ManualActivityKey, unknown>> | null
 ): Record<ManualActivityKey, number> => ({
   dials: toManualActivityNumber(value?.dials),
+  contacts: toManualActivityNumber(value?.contacts),
   presentations: toManualActivityNumber(value?.presentations),
   appointments: toManualActivityNumber(value?.appointments),
   sold: toManualActivityNumber(value?.sold),
 });
 
 const hasManualActivityValues = (activity: Record<ManualActivityKey, number>) => (
-  activity.dials > 0 || activity.presentations > 0 || activity.appointments > 0 || activity.sold > 0
+  activity.dials > 0 || activity.contacts > 0 || activity.presentations > 0 || activity.appointments > 0 || activity.sold > 0
 );
 
 const toLocalActivityDate = (date = new Date()) => {
@@ -1008,13 +1010,22 @@ const ActivityMetricStepper = ({
   label,
   value,
   onChange,
+  tooltip,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  tooltip?: string;
 }) => (
   <div className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
-    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{label}</p>
+    <div className="group relative inline-flex">
+      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{label}</p>
+      {tooltip ? (
+        <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-2xl border border-slate-100 bg-slate-950 px-3 py-2 text-[11px] font-bold leading-snug text-white opacity-0 shadow-xl shadow-slate-900/20 transition group-hover:opacity-100">
+          {tooltip}
+        </div>
+      ) : null}
+    </div>
     <div className="mt-4 flex items-center justify-between gap-3">
       <button
         type="button"
@@ -1428,6 +1439,7 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
       const response = await myBusinessActivityApi.saveManualActivity({
         agentId: currentAgentId,
         dials: manualActivity.dials,
+        contacts: manualActivity.contacts,
         presentations: manualActivity.presentations,
         appointments: manualActivity.appointments,
         sold: manualActivity.sold,
@@ -1770,11 +1782,21 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <ActivityMetricStepper label="Dials" value={manualActivity.dials} onChange={(value) => updateManualActivity('dials', value)} />
-              <ActivityMetricStepper label="Presentations" value={manualActivity.presentations} onChange={(value) => updateManualActivity('presentations', value)} />
-              <ActivityMetricStepper label="Appointments" value={manualActivity.appointments} onChange={(value) => updateManualActivity('appointments', value)} />
-              <ActivityMetricStepper label="Sold" value={manualActivity.sold} onChange={(value) => updateManualActivity('sold', value)} />
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ActivityMetricStepper label="Dials" value={manualActivity.dials} onChange={(value) => updateManualActivity('dials', value)} />
+                <ActivityMetricStepper
+                  label="Contacts"
+                  value={manualActivity.contacts}
+                  onChange={(value) => updateManualActivity('contacts', value)}
+                  tooltip="Calls that ran for more than 1 minute."
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ActivityMetricStepper label="Presentations" value={manualActivity.presentations} onChange={(value) => updateManualActivity('presentations', value)} />
+                <ActivityMetricStepper label="Appointments" value={manualActivity.appointments} onChange={(value) => updateManualActivity('appointments', value)} />
+                <ActivityMetricStepper label="Sold" value={manualActivity.sold} onChange={(value) => updateManualActivity('sold', value)} />
+              </div>
             </div>
 
             <button
@@ -1809,9 +1831,10 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
               </span>
             </div>
 
-            <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
               {[
                 ['Dials', manualSummary.dials],
+                ['Contacts', manualSummary.contacts],
                 ['Presentations', manualSummary.presentations],
                 ['Appointments', manualSummary.appointments],
                 ['Sold', manualSummary.sold],
@@ -1824,9 +1847,10 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
             </div>
 
             <div className="overflow-hidden rounded-3xl border border-slate-100">
-              <div className="grid grid-cols-[1.2fr_repeat(4,0.8fr)] bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+              <div className="grid grid-cols-[1.2fr_repeat(5,0.8fr)] bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                 <span>Date</span>
                 <span>Dials</span>
+                <span>Contacts</span>
                 <span>Pres.</span>
                 <span>Appts.</span>
                 <span>Sold</span>
@@ -1844,9 +1868,10 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
                   const normalized = normalizeManualActivity(row);
 
                   return (
-                    <div key={`${row.id ?? row.created_date ?? index}`} className="grid grid-cols-[1.2fr_repeat(4,0.8fr)] items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600">
+                    <div key={`${row.id ?? row.created_date ?? index}`} className="grid grid-cols-[1.2fr_repeat(5,0.8fr)] items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600">
                       <span className="font-black text-slate-950">{formatManualActivityDate(row.created_date)}</span>
                       <span>{normalized.dials}</span>
+                      <span>{normalized.contacts}</span>
                       <span>{normalized.presentations}</span>
                       <span>{normalized.appointments}</span>
                       <span>{normalized.sold}</span>

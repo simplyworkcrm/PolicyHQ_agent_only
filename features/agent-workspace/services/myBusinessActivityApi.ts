@@ -22,6 +22,7 @@ export interface MyBusinessManualActivityQuery {
 export interface MyBusinessManualActivitySaveInput {
   agentId: string;
   dials?: number;
+  contacts?: number;
   presentations?: number;
   appointments?: number;
   sold?: number;
@@ -29,6 +30,7 @@ export interface MyBusinessManualActivitySaveInput {
 
 export interface ManualActivityTotals {
   dials?: number | string | null;
+  contacts?: number | string | null;
   presentations?: number | string | null;
   appointments?: number | string | null;
   sold?: number | string | null;
@@ -221,6 +223,7 @@ export const myBusinessActivityApi = {
       body: JSON.stringify({
         agent_id: input.agentId,
         dials: input.dials ?? 0,
+        contacts: input.contacts ?? 0,
         presentations: input.presentations ?? 0,
         appointments: input.appointments ?? 0,
         sold: input.sold ?? 0,
