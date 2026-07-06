@@ -85,8 +85,8 @@ const API_V2_BASE_URL = import.meta.env.DEV
   ? '/xano-api/api:SZgR1JsR'
   : 'https://api1.simplyworkcrm.com/api:SZgR1JsR';
 const PROFILE_IMAGE_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/agent-profile/profile-image';
-const START_PHONE_VERIFY_URL = '/twilio-verify/start-verify';
-const CHECK_PHONE_VERIFY_URL = '/twilio-verify/check-verify';
+const START_PHONE_VERIFY_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/twilio/start-verify';
+const CHECK_PHONE_VERIFY_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/twilio/check-verify';
 
 const unwrapApiPayload = (payload: any) => {
   if (!payload || typeof payload !== 'object') return payload;
@@ -517,15 +517,13 @@ export const SettingsPage: React.FC = () => {
     setOtpMessage(`Sending code to ${agentPhone}...`);
 
     try {
-      const body = new URLSearchParams();
-      body.set('channel', 'sms');
-      body.set('locale', 'en');
-      body.set('to', agentPhone);
-
       const response = await fetch(START_PHONE_VERIFY_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken') || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone: agentPhone }),
       });
 
       if (!response.ok) throw new Error(`Verify API error: ${response.status}`);
@@ -550,14 +548,16 @@ export const SettingsPage: React.FC = () => {
     setOtpMessage(null);
 
     try {
-      const body = new URLSearchParams();
-      body.set('to', agentPhone);
-      body.set('code', code);
-
       const response = await fetch(CHECK_PHONE_VERIFY_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken') || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone: String(agentPhone),
+          code: Number(code),
+        }),
       });
 
       if (!response.ok) throw new Error(`Verify API error: ${response.status}`);
