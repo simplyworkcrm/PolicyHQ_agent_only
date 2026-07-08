@@ -11,6 +11,7 @@ const authHeader = () => ({
 
 export interface AgentProfile {
   id: string;
+  agent_id?: string | null;
   created_at?: number | null;
   first_name: string;
   last_name: string;
@@ -28,6 +29,7 @@ export interface AgentProfile {
 
 const normalizeProfile = (data: any, agentId: string): AgentProfile => ({
   id: String(data?.id || data?.agent_id || agentId),
+  agent_id: data?.agent_id ? String(data.agent_id) : null,
   created_at: data?.created_at ?? null,
   first_name: String(data?.first_name || data?.firstName || ''),
   last_name: String(data?.last_name || data?.lastName || ''),

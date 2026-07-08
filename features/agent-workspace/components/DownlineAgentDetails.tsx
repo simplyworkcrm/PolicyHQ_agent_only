@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
+import { DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
 import { agentProfileApi, AgentProfile } from '../services/agentProfileApi';
 import { PolicyV2 } from '../services/agentPoliciesV2Api';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
@@ -29,6 +29,119 @@ const DOWNLINE_SORT_FIELDS: Record<DownlineSortKey, string> = {
   npn: 'npn',
   direct_downlines: 'direct_downlines',
   status: 'status',
+};
+
+const DOWNLINE_DETAIL_DIRECT_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/downlines/direct';
+
+const getDetailAuthHeaders = () => ({
+  Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+  'Content-Type': 'application/json',
+});
+
+const splitDetailName = (name?: string | null) => {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return {
+    first_name: parts[0] || 'Selected',
+    last_name: parts.slice(1).join(' ') || 'Agent',
+  };
+};
+
+const getDetailProfileUrl = (item: any) => {
+  const profile = item.profile || item.agent_profile || item.agentProfile || item.profile_image || item.avatar;
+  if (typeof profile === 'string') return profile;
+  return profile?.url || item.profile_url || item.profileUrl || item.image_url || item.avatar_url || null;
+};
+
+const getDetailDirectDownlineCount = (item: any) => {
+  const directDownlines = item.direct_downlines ?? item.directDownlines;
+  if (Array.isArray(directDownlines)) return directDownlines.length;
+  return Number(
+    directDownlines
+    ?? item.directDownline_count
+    ?? item.direct_downline_count
+    ?? item.direct_downlines_count
+    ?? item.downline_count
+    ?? item.downlines_count
+    ?? item.recruits
+    ?? 0
+  );
+};
+
+const normalizeDetailDownlineAgent = (item: any): DownlineAgent => {
+  const fullName = item.agent_name || item.name || item.full_name;
+  const fallback = splitDetailName(fullName);
+
+  return {
+    agent_id: String(item.agent_id || item.agentId || item.id || ''),
+    first_name: String(item.first_name || item.firstName || fallback.first_name),
+    last_name: String(item.last_name || item.lastName || fallback.last_name),
+    directDownline_count: getDetailDirectDownlineCount(item),
+    direct_upline_name: item.direct_upline_name || item.directUplineName || item.upline_name || item.uplineName || null,
+    ref_ffl_agency_name: item.ref_ffl_agency_name || item.agency_name || item.agencyName || item.agency?.name || null,
+    profile_url: getDetailProfileUrl(item),
+    phone: item.phone || item.work_phone || item.business_phone || null,
+    npn: item.npn || item.agent_npn || item.agentNpn || null,
+    status: item.status || item.agent_status || 'Active',
+  };
+};
+
+const getDetailDirectDownlineItems = (data: any): any[] => {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== 'object') return [];
+  return data.direct_downlines
+    || data.downlines
+    || data.items
+    || data.data
+    || data.records
+    || data.results
+    || [];
+};
+
+const normalizeDetailHierarchy = (agentId: string, data: any): DownlineHierarchy => {
+  const rootName = splitDetailName(data?.agent_name || data?.name || data?.full_name);
+  const directDownlines = getDetailDirectDownlineItems(data)
+    .map(normalizeDetailDownlineAgent)
+    .filter(agent => agent.agent_id);
+
+  return {
+    id: String(data?.id || data?.agent_id || data?.agentId || agentId),
+    first_name: String(data?.first_name || data?.firstName || rootName.first_name),
+    last_name: String(data?.last_name || data?.lastName || rootName.last_name),
+    direct_downlines: directDownlines,
+    itemsReceived: Number(data?.itemsReceived ?? directDownlines.length),
+    curPage: Number(data?.curPage ?? 1),
+    nextPage: data?.nextPage ?? null,
+    prevPage: data?.prevPage ?? null,
+    offset: Number(data?.offset ?? 0),
+    perPage: Number(data?.perPage ?? data?.per_page ?? directDownlines.length),
+    itemsTotal: Number(data?.itemsTotal ?? directDownlines.length),
+    pageTotal: Number(data?.pageTotal ?? 1),
+  };
+};
+
+const getDetailDirectDownlines = async (
+  agentId: string,
+  query: {
+    page: number;
+    perPage: number;
+    search: string;
+    sort?: Record<string, 'asc' | 'desc'> | null;
+  }
+): Promise<DownlineHierarchy> => {
+  const params = new URLSearchParams({
+    page: String(query.page),
+    per_page: String(query.perPage),
+    search: query.search,
+    sort: JSON.stringify(query.sort ?? null),
+  });
+
+  const response = await fetch(`${DOWNLINE_DETAIL_DIRECT_URL}/${agentId}?${params.toString()}`, {
+    method: 'GET',
+    headers: getDetailAuthHeaders(),
+  });
+
+  if (!response.ok) throw new Error(`Failed to fetch direct downlines: ${response.status}`);
+  return normalizeDetailHierarchy(agentId, await response.json());
 };
 
 interface DownlineBreadcrumb {
@@ -221,11 +334,11 @@ export const DownlineAgentDetails: React.FC = () => {
     if (!agentId || safeTab !== 'downlines') return;
     let isMounted = true;
     setDownlinesLoading(true);
-    agentDownlineApi.getHierarchy(agentId, {
+    setHierarchy(null);
+    getDetailDirectDownlines(agentId, {
       page: downlinePage,
       perPage: downlinePerPage,
       search: debouncedDownlineSearch,
-      filter: null,
       sort: downlineSortConfig ? { [DOWNLINE_SORT_FIELDS[downlineSortConfig.key]]: downlineSortConfig.direction } : null,
     })
       .then(data => {

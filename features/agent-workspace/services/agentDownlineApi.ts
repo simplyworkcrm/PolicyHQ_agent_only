@@ -147,4 +147,5 @@ export const agentDownlineApi = {
     if (!response.ok) throw new ApiError('Failed to fetch direct downlines', response.status);
     return normalizeHierarchy(agentId, await response.json());
   },
+
 };
