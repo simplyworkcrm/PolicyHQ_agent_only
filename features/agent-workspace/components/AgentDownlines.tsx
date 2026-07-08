@@ -14,11 +14,15 @@ import {
   Building2,
   Phone,
   Hash,
-  ArrowUpDown
+  ArrowUpDown,
+  ReceiptText,
+  AlertCircle,
+  DollarSign
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
+import { agencyExpenseManagementApi, AgencyExpenseLogRow, AgencyExpenseLogSummary, AgencyExpenseOverviewResponse, AgencyExpenseRiskAgent } from '../services/agencyExpenseManagementApi';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { BusinessOverviewDashboard } from './BusinessOverviewDashboard';
 import { Policy } from '../../../shared/types/index';
@@ -26,16 +30,40 @@ import { Policy } from '../../../shared/types/index';
 type DownlineSortKey = 'first_name' | 'direct_upline_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
 type DownlineSortConfig = { key: DownlineSortKey; direction: 'asc' | 'desc' };
 
+interface AgencyDebtRow {
+  id?: string | number;
+  created_at?: string | number | null;
+  agent_id?: string | null;
+  amount?: number | string | null;
+  isResolved?: boolean | null;
+  agentName?: string | null;
+  agent_name?: string | null;
+  carrier_name?: string | null;
+  profile?: unknown;
+  notes?: string | null;
+  [key: string]: unknown;
+}
+
+interface AgencyDebtsSummary {
+  total_debts?: number | string | null;
+  debts_count?: number | string | null;
+  debt_count?: number | string | null;
+  [key: string]: unknown;
+}
+
 interface DateRange {
     start: number;
     end: number;
     label: string;
-    timeframe: 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+    timeframe: 'all' | 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
 }
+
+const AGENCY_EXPENSE_LOG_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/expense-management/expense-log';
+const AGENCY_DEBTS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/expense-management/debts';
 
 // --- HELPERS & UTILITIES ---
 
-const getDateRange = (type: 'today' | 'weekly' | 'monthly' | 'yearly'): DateRange => {
+const getDateRange = (type: 'all' | 'today' | 'weekly' | 'monthly' | 'yearly'): DateRange => {
     const now = new Date();
     const start = new Date(now);
     const end = new Date(now);
@@ -43,6 +71,7 @@ const getDateRange = (type: 'today' | 'weekly' | 'monthly' | 'yearly'): DateRang
     start.setHours(0,0,0,0);
     end.setHours(23,59,59,999);
 
+    if (type === 'all') return { start: 0, end: end.getTime(), label: 'All Time', timeframe: 'all' };
     if (type === 'today') return { start: start.getTime(), end: end.getTime(), label: 'Today', timeframe: 'today' };
     
     if (type === 'weekly') {
@@ -110,6 +139,124 @@ const DOWNLINE_SORT_FIELDS: Record<DownlineSortKey, string> = {
   status: 'status',
 };
 
+const moneyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const toNumber = (value: unknown) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') return Number(value.replace(/[^0-9.-]/g, '')) || 0;
+  return 0;
+};
+
+const formatMoney = (value: unknown) => moneyFormatter.format(toNumber(value));
+
+const formatRiskGap = (gap: number) => moneyFormatter.format(gap);
+
+const formatExpenseDate = (value?: string | null) => {
+  if (!value) return 'N/A';
+  const dateKey = value.slice(0, 10);
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = year && month && day ? new Date(year, month - 1, day) : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+};
+
+const formatTimestampDate = (value?: string | number | null) => {
+  if (value === null || value === undefined || value === '') return 'N/A';
+  const numeric = typeof value === 'number' ? value : Number(value);
+  const date = Number.isFinite(numeric) ? new Date(numeric) : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+};
+
+const safeText = (value: unknown, fallback = '-') => {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return fallback;
+};
+
+const getRowAgentName = (row: AgencyExpenseLogRow | AgencyDebtRow) => safeText(
+  row.agent_name ?? row.agentName ?? row.name ?? row.full_name,
+  'Agency agent'
+);
+
+const getRowProfileUrl = (row: AgencyExpenseLogRow | AgencyDebtRow) => {
+  const profile = row.profile ?? row.agent_profile ?? row.agentProfile ?? row.profile_url ?? row.profileUrl ?? row.image_url ?? row.avatar_url;
+  if (typeof profile === 'string') return profile;
+  if (profile && typeof profile === 'object') {
+    const record = profile as Record<string, unknown>;
+    return safeText(record.url ?? record.src ?? record.profile ?? record.path, '');
+  }
+  return '';
+};
+
+const getExpenseAgentName = getRowAgentName;
+const getExpenseProfileUrl = getRowProfileUrl;
+
+const getNameInitials = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'AG';
+  return `${parts[0]?.[0] || ''}${parts[1]?.[0] || ''}`.toUpperCase() || 'AG';
+};
+
+const fetchAgencyExpenseLog = async ({
+  agentId,
+  timeframe,
+  startDate,
+  endDate,
+}: {
+  agentId: string;
+  timeframe: DateRange['timeframe'] | null;
+  startDate: string | null;
+  endDate: string | null;
+}) => {
+  const params = new URLSearchParams();
+
+  params.set('agent_id', agentId);
+  if (timeframe && timeframe !== 'all') params.set('timeframe', timeframe);
+  if (timeframe === 'custom') {
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+  }
+
+  const response = await fetch(`${AGENCY_EXPENSE_LOG_URL}?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
+const fetchAgencyDebts = async (agentId: string) => {
+  const params = new URLSearchParams();
+  params.set('agent_id', agentId);
+
+  const response = await fetch(`${AGENCY_DEBTS_URL}?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  return response.json();
+};
+
 // --- COMPONENTS ---
 
 const DateRangeSelector: React.FC<{
@@ -134,7 +281,7 @@ const DateRangeSelector: React.FC<{
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const handlePresetClick = (type: 'today' | 'weekly' | 'monthly' | 'yearly') => {
+    const handlePresetClick = (type: 'all' | 'today' | 'weekly' | 'monthly' | 'yearly') => {
         onChange(getDateRange(type));
         setIsOpen(false);
     };
@@ -215,10 +362,10 @@ const DateRangeSelector: React.FC<{
                 <div className="absolute top-full right-0 mt-3 bg-white rounded-[2rem] shadow-2xl shadow-slate-200/50 border border-slate-100 p-2 min-w-[320px] z-50 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
                     {view === 'presets' ? (
                         <div className="flex flex-col gap-1 p-2">
-                            {['Today', 'Weekly', 'Monthly', 'Yearly'].map((item) => (
+                            {['All Time', 'Today', 'Weekly', 'Monthly', 'Yearly'].map((item) => (
                                 <button
                                     key={item}
-                                    onClick={() => handlePresetClick(item.toLowerCase() as any)}
+                                    onClick={() => handlePresetClick(item === 'All Time' ? 'all' : item.toLowerCase() as any)}
                                     className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all flex items-center justify-between ${value.label === item ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
                                 >
                                     {item}
@@ -290,6 +437,499 @@ const DownlineSortableHeader = ({
   );
 };
 
+const AgencyExpenseManagement: React.FC<{
+  selectedAgentId: string;
+  selectedAgentLabel: string;
+  dateRange: DateRange;
+  onDateRangeChange: (range: DateRange) => void;
+}> = ({ selectedAgentId, selectedAgentLabel, dateRange, onDateRangeChange }) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'expenses' | 'debts'>('overview');
+  const [overviewData, setOverviewData] = useState<AgencyExpenseOverviewResponse['overview'] | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [expenseRows, setExpenseRows] = useState<AgencyExpenseLogRow[]>([]);
+  const [expenseSummary, setExpenseSummary] = useState<AgencyExpenseLogSummary>({});
+  const [expenseLoading, setExpenseLoading] = useState(false);
+  const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [debtRows, setDebtRows] = useState<AgencyDebtRow[]>([]);
+  const [debtSummary, setDebtSummary] = useState<AgencyDebtsSummary>({});
+  const [debtLoading, setDebtLoading] = useState(false);
+  const [debtError, setDebtError] = useState<string | null>(null);
+  const [showAllExpenseRisk, setShowAllExpenseRisk] = useState(false);
+  const [showAllDebtRisk, setShowAllDebtRisk] = useState(false);
+
+  const tabs = [
+    { key: 'overview' as const, label: 'Overview', icon: FileText },
+    { key: 'expenses' as const, label: 'Expense Logs', icon: ReceiptText },
+    { key: 'debts' as const, label: 'Debts', icon: AlertCircle },
+  ];
+
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    let isMounted = true;
+    setOverviewLoading(true);
+    setOverviewError(null);
+
+    agencyExpenseManagementApi.getOverview({
+      agentId: selectedAgentId,
+      timeframe: dateRange.timeframe === 'all' ? null : dateRange.timeframe,
+      startDate: dateRange.timeframe === 'custom' ? toRequestDate(dateRange.start) : null,
+      endDate: dateRange.timeframe === 'custom' ? toRequestDate(dateRange.end) : null,
+      debtStatus: 'all',
+    })
+      .then(response => {
+        if (isMounted) setOverviewData(response.overview || null);
+      })
+      .catch(error => {
+        if (isMounted) {
+          setOverviewError(error instanceof Error ? error.message : 'Unable to load expense overview.');
+          setOverviewData(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) setOverviewLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dateRange.end, dateRange.start, dateRange.timeframe, selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    let isMounted = true;
+    setDebtLoading(true);
+    setDebtError(null);
+
+    fetchAgencyDebts(selectedAgentId)
+      .then(response => {
+        if (!isMounted) return;
+        const debtLog = response.expense_log;
+        setDebtRows(Array.isArray(debtLog?.rundown) ? debtLog.rundown : []);
+        setDebtSummary(debtLog?.summary && typeof debtLog.summary === 'object' ? debtLog.summary : {});
+      })
+      .catch(error => {
+        if (!isMounted) return;
+        setDebtRows([]);
+        setDebtSummary({});
+        setDebtError(error instanceof Error ? error.message : 'Unable to load debts.');
+      })
+      .finally(() => {
+        if (isMounted) setDebtLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    let isMounted = true;
+    setExpenseLoading(true);
+    setExpenseError(null);
+
+    fetchAgencyExpenseLog({
+      agentId: selectedAgentId,
+      timeframe: dateRange.timeframe === 'all' ? null : dateRange.timeframe,
+      startDate: dateRange.timeframe === 'custom' ? toRequestDate(dateRange.start) : null,
+      endDate: dateRange.timeframe === 'custom' ? toRequestDate(dateRange.end) : null,
+    })
+      .then(response => {
+        if (!isMounted) return;
+        const expenseLog = response.expense_log;
+        setExpenseRows(Array.isArray(expenseLog?.rundown) ? expenseLog.rundown : []);
+        setExpenseSummary(expenseLog?.summary && typeof expenseLog.summary === 'object' ? expenseLog.summary : {});
+      })
+      .catch(error => {
+        if (!isMounted) return;
+        setExpenseRows([]);
+        setExpenseSummary({});
+        setExpenseError(error instanceof Error ? error.message : 'Unable to load expense logs.');
+      })
+      .finally(() => {
+        if (isMounted) setExpenseLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dateRange.end, dateRange.start, dateRange.timeframe, selectedAgentId]);
+
+  const summary = overviewData?.summary || {};
+  const agentRisk = Array.isArray(overviewData?.agent_risk) ? overviewData.agent_risk : [];
+  const debtsByCarrier = Array.isArray(overviewData?.debts_by_carrier) ? overviewData.debts_by_carrier : [];
+  const hasOverviewData = Boolean(
+    toNumber(summary.total_expenses)
+    || toNumber(summary.total_debts)
+    || toNumber(summary.total_production)
+    || agentRisk.length
+    || debtsByCarrier.length
+  );
+
+  const buildRiskRows = (amountKey: 'expenses' | 'debts') => (
+    [...agentRisk]
+      .map((agent: AgencyExpenseRiskAgent) => {
+        const rawAmount = toNumber(agent[amountKey]);
+        const amount = amountKey === 'debts' ? Math.abs(rawAmount) : rawAmount;
+        const production = toNumber(agent.production);
+        const riskGap = production - amount;
+        return {
+          agentId: String(agent.agent_id || ''),
+          agentName: String(agent.agent_name || 'Unknown agent'),
+          amount,
+          production,
+          riskGap,
+        };
+      })
+      .filter(row => row.riskGap < 0)
+      .sort((a, b) => {
+        const gapDiff = a.riskGap - b.riskGap;
+        if (gapDiff === 0) return b.amount - a.amount;
+        return gapDiff;
+      })
+  );
+
+  const expenseRiskRows = buildRiskRows('expenses');
+  const debtRiskRows = buildRiskRows('debts');
+
+  const RiskList = ({
+    title,
+    rows,
+    amountLabel,
+    expanded,
+    onToggleExpanded,
+  }: {
+    title: string;
+    rows: ReturnType<typeof buildRiskRows>;
+    amountLabel: string;
+    expanded: boolean;
+    onToggleExpanded: () => void;
+  }) => {
+    const visibleRows = expanded ? rows : rows.slice(0, 5);
+    const canExpand = rows.length > 5;
+
+    return (
+      <div className="rounded-3xl border border-slate-100 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">At Risk Agents</p>
+            <h4 className="text-lg font-black text-slate-950">{title}</h4>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">{rows.length} negative</span>
+        </div>
+        <div className="space-y-3">
+          {visibleRows.length > 0 ? visibleRows.map((row, index) => (
+            <div key={`${title}-${row.agentId || row.agentName}-${index}`} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-600 shadow-sm">{index + 1}</span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-950">{row.agentName}</p>
+                <p className="text-[11px] font-semibold text-slate-500">{amountLabel}: {formatMoney(row.amount)} - Production: {formatMoney(row.production)}</p>
+              </div>
+              <span className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-black text-red-600">
+                {formatRiskGap(row.riskGap)}
+              </span>
+            </div>
+          )) : (
+            <div className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-xs font-bold text-slate-400">No negative gaps returned for this range.</div>
+          )}
+          {canExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpanded}
+              className="flex w-full items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+            >
+              {expanded ? 'Show top 5' : `Show rundown (${rows.length})`}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <section className="overflow-visible rounded-[2.5rem] border border-slate-100 bg-white shadow-sm">
+      <div className="border-b border-slate-100 p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-brand-400 shadow-xl shadow-slate-900/10">
+              <ReceiptText className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Expense Management</p>
+              <h3 className="text-2xl font-black tracking-tight text-slate-950">Agency expense center</h3>
+              <p className="text-sm font-semibold text-slate-500">Track expenses and debt exposure for {selectedAgentLabel}.</p>
+            </div>
+          </div>
+          <DateRangeSelector value={dateRange} onChange={onDateRangeChange} />
+        </div>
+      </div>
+
+      <div className="p-6">
+        <div className="mb-5 inline-flex rounded-2xl border border-slate-100 bg-slate-50 p-1">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-black transition-all ${
+                  active
+                    ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10'
+                    : 'text-slate-500 hover:bg-white hover:text-slate-900'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === 'overview' ? (
+          <div className="space-y-5">
+            {overviewError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-xs font-black text-red-700">{overviewError}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {[
+                ['Total Expenses', formatMoney(summary.total_expenses), `${Math.round(toNumber(summary.expense_count)).toLocaleString()} expense logs`],
+                ['Total Debts', formatMoney(summary.total_debts), `${Math.round(toNumber(summary.debt_count)).toLocaleString()} debt records`],
+                ['Total Production', formatMoney(summary.total_production), `${selectedAgentLabel} agency scope`],
+              ].map(([label, value, helper]) => (
+                <div key={label} className="rounded-3xl border border-slate-100 bg-slate-50/60 p-5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
+                  <p className="mt-3 truncate text-2xl font-black text-slate-950">{overviewLoading ? '...' : value}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{helper}</p>
+                </div>
+              ))}
+            </div>
+
+            {!overviewLoading && !overviewError && !hasOverviewData && (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-6 text-center">
+                <p className="text-sm font-black text-slate-900">No overview data returned for this range.</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <RiskList
+                title="Top Expense Risk Agents"
+                rows={expenseRiskRows}
+                amountLabel="Expenses"
+                expanded={showAllExpenseRisk}
+                onToggleExpanded={() => setShowAllExpenseRisk(value => !value)}
+              />
+              <RiskList
+                title="Top Debt Risk Agents"
+                rows={debtRiskRows}
+                amountLabel="Debts"
+                expanded={showAllDebtRisk}
+                onToggleExpanded={() => setShowAllDebtRisk(value => !value)}
+              />
+            </div>
+
+            <div className="rounded-3xl border border-slate-100 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Carrier Exposure</p>
+                  <h4 className="text-lg font-black text-slate-950">Total Debts by Carrier</h4>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">{debtsByCarrier.length.toLocaleString()} carriers</span>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-slate-100">
+                <div className="grid grid-cols-[1fr_auto_auto] gap-4 bg-slate-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <span>Carrier</span>
+                  <span className="text-right">Debts</span>
+                  <span className="text-right">Records</span>
+                </div>
+                {debtsByCarrier.length > 0 ? debtsByCarrier.map((carrier, index) => (
+                  <div key={`${carrier.carrier || 'carrier'}-${index}`} className="grid grid-cols-[1fr_auto_auto] gap-4 border-t border-slate-50 px-4 py-3 text-sm">
+                    <span className="font-black text-slate-950">{carrier.carrier || 'Unknown carrier'}</span>
+                    <span className="text-right font-black text-slate-900">{formatMoney(carrier.total_debts)}</span>
+                    <span className="text-right font-bold text-slate-500">{Math.round(toNumber(carrier.debt_count)).toLocaleString()}</span>
+                  </div>
+                )) : (
+                  <div className="px-4 py-8 text-center text-xs font-bold text-slate-400">No carrier debt data returned for this range.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'expenses' ? (
+          <div className="space-y-5">
+            {expenseError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-xs font-black text-red-700">{expenseError}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {[
+                ['Total Cost', formatMoney(expenseSummary.total_cost), `${Math.round(toNumber(expenseSummary.expense_count)).toLocaleString()} expense logs`],
+                ['Expense Count', Math.round(toNumber(expenseSummary.expense_count)).toLocaleString(), `${selectedAgentLabel} agency scope`],
+                ['Average Cost', formatMoney(toNumber(expenseSummary.expense_count) > 0 ? toNumber(expenseSummary.total_cost) / toNumber(expenseSummary.expense_count) : 0), dateRange.label],
+              ].map(([label, value, helper]) => (
+                <div key={label} className="rounded-3xl border border-slate-100 bg-slate-50/60 p-5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
+                  <p className="mt-3 truncate text-2xl font-black text-slate-950">{expenseLoading ? '...' : value}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{helper}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="overflow-hidden rounded-3xl border border-slate-100">
+              <div className="grid min-w-[760px] grid-cols-[1fr_1.1fr_1.4fr_1fr_2fr] bg-slate-50 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <span>Date</span>
+                <span>Agent</span>
+                <span>Expense</span>
+                <span className="text-right">Cost</span>
+                <span>Notes</span>
+              </div>
+              <div className="overflow-auto">
+                {expenseLoading ? (
+                  <div className="flex min-h-48 items-center justify-center px-6 py-12 text-center">
+                    <div>
+                      <Loader2 className="mx-auto mb-4 h-6 w-6 animate-spin text-slate-400" />
+                      <p className="text-sm font-black text-slate-900">Loading expense logs...</p>
+                    </div>
+                  </div>
+                ) : expenseRows.length > 0 ? (
+                  expenseRows.map((row, index) => {
+                    const agentName = getExpenseAgentName(row);
+                    const profileUrl = getExpenseProfileUrl(row);
+
+                    return (
+                      <div key={`${safeText(row.id || row.expense_date, 'expense')}-${index}`} className="grid min-w-[760px] grid-cols-[1fr_1.1fr_1.4fr_1fr_2fr] items-center gap-4 border-t border-slate-50 px-4 py-4 text-sm">
+                        <span className="font-black text-slate-950">{formatExpenseDate(row.expense_date)}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          {profileUrl ? (
+                            <img src={profileUrl} alt="" className="h-8 w-8 shrink-0 rounded-xl object-cover ring-1 ring-slate-100" />
+                          ) : (
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-[10px] font-black text-slate-500">
+                              {getNameInitials(agentName)}
+                            </span>
+                          )}
+                          <span className="truncate font-bold text-slate-700">{agentName}</span>
+                        </span>
+                        <span className="truncate font-black text-slate-900">{safeText(row.expense)}</span>
+                        <span className="text-right font-black text-slate-900">{formatMoney(row.cost)}</span>
+                        <span className="truncate font-semibold text-slate-500">{safeText(row.notes)}</span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex min-h-48 items-center justify-center px-6 py-12 text-center">
+                    <div>
+                      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
+                        <DollarSign className="h-5 w-5" />
+                      </div>
+                      <p className="text-sm font-black text-slate-900">No expense logs loaded yet.</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">Expense rows will appear here once the agency expense API returns data.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {debtError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-xs font-black text-red-700">{debtError}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {[
+                ['Total Debts', formatMoney(Math.abs(toNumber(debtSummary.total_debts))), `${Math.round(toNumber(debtSummary.debts_count ?? debtSummary.debt_count)).toLocaleString()} debt records`],
+                ['Debt Count', Math.round(toNumber(debtSummary.debts_count ?? debtSummary.debt_count)).toLocaleString(), `${selectedAgentLabel} agency scope`],
+                ['Unresolved', debtRows.filter(row => !row.isResolved).length.toLocaleString(), 'Current pulled report'],
+              ].map(([label, value, helper]) => (
+                <div key={label} className="rounded-3xl border border-slate-100 bg-slate-50/60 p-5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
+                  <p className="mt-3 truncate text-2xl font-black text-slate-950">{debtLoading ? '...' : value}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{helper}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-xs font-black text-amber-900">Debts refresh every data pulled report.</p>
+              <p className="mt-1 text-[11px] font-semibold text-amber-700">For past data, please reach out to dev.</p>
+              <p className="mt-1 text-[11px] font-semibold text-amber-700">Please resolve debts within your agency agents to avoid rolled up debts.</p>
+            </div>
+            <div className="overflow-hidden rounded-3xl border border-slate-100">
+              <div className="grid min-w-[900px] grid-cols-[1.5fr_1.1fr_1fr_1fr_1fr_1.4fr] bg-slate-50 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <span>Agent</span>
+                <span>Carrier</span>
+                <span className="text-right">Debt</span>
+                <span>Status</span>
+                <span>Created</span>
+                <span>Notes</span>
+              </div>
+              <div className="overflow-auto">
+                {debtLoading ? (
+                  <div className="flex min-h-48 items-center justify-center px-6 py-12 text-center">
+                    <div>
+                      <Loader2 className="mx-auto mb-4 h-6 w-6 animate-spin text-slate-400" />
+                      <p className="text-sm font-black text-slate-900">Loading debt records...</p>
+                    </div>
+                  </div>
+                ) : debtRows.length > 0 ? (
+                  debtRows.map((row, index) => {
+                    const agentName = getRowAgentName(row);
+                    const profileUrl = getRowProfileUrl(row);
+                    const resolved = Boolean(row.isResolved);
+
+                    return (
+                      <div key={`${safeText(row.id || row.created_at, 'debt')}-${index}`} className="grid min-w-[900px] grid-cols-[1.5fr_1.1fr_1fr_1fr_1fr_1.4fr] items-center gap-4 border-t border-slate-50 px-4 py-4 text-sm">
+                        <span className="flex min-w-0 items-center gap-2">
+                          {profileUrl ? (
+                            <img src={profileUrl} alt="" className="h-8 w-8 shrink-0 rounded-xl object-cover ring-1 ring-slate-100" />
+                          ) : (
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-[10px] font-black text-slate-500">
+                              {getNameInitials(agentName)}
+                            </span>
+                          )}
+                          <span className="truncate font-bold text-slate-700">{agentName}</span>
+                        </span>
+                        <span className="truncate font-black text-slate-900">{safeText(row.carrier_name, 'Unknown carrier')}</span>
+                        <span className="text-right font-black text-slate-900">{formatMoney(Math.abs(toNumber(row.amount)))}</span>
+                        <span className={`w-fit rounded-xl px-3 py-1.5 text-[10px] font-black ${resolved ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                          {resolved ? 'Resolved' : 'Unresolved'}
+                        </span>
+                        <span className="font-bold text-slate-600">{formatTimestampDate(row.created_at)}</span>
+                        <span className="truncate font-semibold text-slate-500">{safeText(row.notes)}</span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex min-h-48 items-center justify-center px-6 py-12 text-center">
+                    <div>
+                      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+                        <AlertCircle className="h-5 w-5" />
+                      </div>
+                      <p className="text-sm font-black text-slate-900">No debt records loaded yet.</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">Debt rows will appear here once the agency debt API returns data.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
 export const AgentDownlines: React.FC = () => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName, hasAgentProfile } = useAgentContext();
   const navigate = useNavigate();
@@ -300,7 +940,7 @@ export const AgentDownlines: React.FC = () => {
   const [loadingSelected, setLoadingSelected] = useState(false);
   
   // Tabs & Views
-  const [viewMode, setViewMode] = useState<'overview' | 'team' | 'policies'>('overview');
+  const [viewMode, setViewMode] = useState<'overview' | 'team' | 'policies' | 'expenses'>('overview');
 
   // Policy Table State
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -405,11 +1045,13 @@ export const AgentDownlines: React.FC = () => {
           </div>
           <div className="min-w-0">
             <h2 className="text-3xl font-black tracking-tight text-slate-900">
-              {viewMode === 'policies' ? 'Team Production' : viewMode === 'overview' ? 'My Agency' : 'Downlines'}
+              {viewMode === 'policies' ? 'Team Production' : viewMode === 'expenses' ? 'Expense Management' : viewMode === 'overview' ? 'My Agency' : 'Downlines'}
             </h2>
             <p className="text-sm font-bold text-slate-500">
               {viewMode === 'policies'
                 ? `Aggregated policies for ${selectedAgentLabel} and their downline tree.`
+                : viewMode === 'expenses'
+                  ? `Review expense logs and debts for ${selectedAgentLabel}.`
                 : viewMode === 'overview'
                   ? 'Review agency analytics, state coverage, sources, and policy status trends.'
                   : 'Review direct team access and aggregated production.'}
@@ -434,6 +1076,12 @@ export const AgentDownlines: React.FC = () => {
             className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'policies' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
           >
             Production
+          </button>
+          <button
+            onClick={() => setViewMode('expenses')}
+            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'expenses' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
+          >
+            Expense Management
           </button>
         </div>
       </div>
@@ -505,6 +1153,13 @@ export const AgentDownlines: React.FC = () => {
           hideHeader
           showDateRangeWhenHeaderHidden
           initialTimeframe="monthly"
+        />
+      ) : viewMode === 'expenses' ? (
+        <AgencyExpenseManagement
+          selectedAgentId={selectedAgentId}
+          selectedAgentLabel={selectedAgentLabel}
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
         />
       ) : (
       <div className="flex-1 min-w-0 bg-white border border-slate-100 shadow-sm overflow-visible relative min-h-[600px] flex flex-col rounded-[2.5rem]">
