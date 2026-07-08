@@ -24,11 +24,12 @@ import {
   LayoutDashboard,
   Moon,
   Sun,
-  Share2
+  Share2,
+  Search
 } from 'lucide-react';
 import { agentleaderboardRealtimeApi, ArenaEntry, SaleRecord, AgentDetailsResponse, TrainerDetailsResponse } from '../services/agentleaderboardRealtimeApi';
 import { useRealtime } from '../../../context/RealtimeContext';
-import { LeaderboardControls, LeaderboardMode } from './LeaderboardControls';
+import { FilterDropdown, LeaderboardControls, LeaderboardMode } from './LeaderboardControls';
 import { AgentComparisonView } from './AgentComparisonView';
 
 const formatShort = (val: number) => {
@@ -803,6 +804,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
   const [timeframe, setTimeframe] = useState<LeaderboardTimeframe>(initTimeframe);
   const [dateRange, setDateRange] = useState({ startDate: initStartDate, endDate: initEndDate });
   const [selectedTeamsFilter, setSelectedTeamsFilter] = useState<string[]>(teamId ? [teamId] : []);
+  const [selectedTeamName, setSelectedTeamName] = useState<string | undefined>(undefined);
   const [selectedAgentsFilter, setSelectedAgentsFilter] = useState<string[]>([]);
   const [selectedSourceFilter, setSelectedSourceFilter] = useState<string | undefined>(sourceId);
   const [selectedSourceName, setSelectedSourceName] = useState<string | undefined>(sourceNameParam);
@@ -885,7 +887,37 @@ export const AgentleaderboardRealtime: React.FC = () => {
   const [availableTeams, setAvailableTeams] = useState<{ id: string; name: string }[]>([]);
   const [availableSources, setAvailableSources] = useState<{ id: string; name: string }[]>([]);
 
+  const selectedTeamId = selectedTeamsFilter[0];
+  const isTeamDrilldown = leaderboardMode === 'team' && Boolean(selectedTeamId);
+  const isSourceDrilldown = leaderboardMode === 'source' && Boolean(selectedSourceFilter);
+  const activeTeamName = selectedTeamName || availableTeams.find(team => team.id === selectedTeamId)?.name;
+  const activeSourceName = selectedSourceName || availableSources.find(source => source.id === selectedSourceFilter)?.name;
+  const leaderboardTitle = isTeamDrilldown
+    ? `${activeTeamName || 'Team'} Agents - TEAM (${timeframe.toUpperCase()})`
+    : isSourceDrilldown
+      ? `${activeSourceName || 'Source'} Agents - SOURCE (${timeframe.toUpperCase()})`
+    : `Global Rankings - ${leaderboardMode.toUpperCase()} (${timeframe.toUpperCase()})`;
 
+  const handleLeaderboardModeChange = useCallback((mode: LeaderboardMode) => {
+    if (leaderboardMode === 'team' && mode === 'agent') {
+      setSelectedTeamsFilter([]);
+      setSelectedTeamName(undefined);
+    }
+    if (leaderboardMode === 'source' && mode === 'agent') {
+      setSelectedSourceFilter(undefined);
+      setSelectedSourceName(undefined);
+    }
+    if (mode !== 'agent') {
+      setSelectedAgentsFilter([]);
+    }
+    if (mode !== 'team') {
+      setSelectedTeamName(undefined);
+    }
+    if (mode !== 'source') {
+      setSelectedSourceName(undefined);
+    }
+    setLeaderboardMode(mode);
+  }, [leaderboardMode]);
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -951,25 +983,63 @@ export const AgentleaderboardRealtime: React.FC = () => {
           agent_profile: a.agent_profile
         }));
       } else if (leaderboardMode === 'team') {
-        const teamsRaw = await agentleaderboardRealtimeApi.getTeamLeaderboard(basePayload);
-        const teamsData = Array.isArray(teamsRaw) ? teamsRaw : (teamsRaw as any)?.rundown ?? [];
-        finalUnifiedData = teamsData.map((t: any) => ({
-          agent_id: t.team_id,
-          agent_name: t.team_name,
-          total_annualPremium: t.total_annualPremium,
-          records: t.records,
-          agency: 'Team'
-        }));
+        if (isTeamDrilldown && selectedTeamId) {
+          const agentsRaw = await agentleaderboardRealtimeApi.getAgentLeaderboard({
+            ...basePayload,
+            teamId: selectedTeamId,
+            sourceId: selectedSourceFilter || null,
+          });
+          const agentsData = Array.isArray(agentsRaw) ? agentsRaw : (agentsRaw as any)?.rundown ?? [];
+          finalUnifiedData = agentsData.map((a: any) => ({
+            agent_id: a.agent_id,
+            agent_name: a.agent_name,
+            total_annualPremium: a.total_annualPremium,
+            records: a.records,
+            agency: a.agency || activeTeamName || '',
+            agent_profile: a.agent_profile
+          }));
+        } else {
+          const teamsRaw = await agentleaderboardRealtimeApi.getTeamLeaderboard(basePayload);
+          const teamsData = Array.isArray(teamsRaw) ? teamsRaw : (teamsRaw as any)?.rundown ?? [];
+          const mappedTeams = teamsData.map((t: any) => ({
+            agent_id: t.team_id,
+            agent_name: t.team_name,
+            total_annualPremium: t.total_annualPremium,
+            records: t.records,
+            agency: 'Team'
+          }));
+          setAvailableTeams(mappedTeams.map(team => ({ id: team.agent_id, name: team.agent_name })));
+          finalUnifiedData = mappedTeams;
+        }
       } else if (leaderboardMode === 'source') {
-        const sourceRaw = await agentleaderboardRealtimeApi.getSourceLeaderboard(basePayload);
-        const sourceData = Array.isArray(sourceRaw) ? sourceRaw : (sourceRaw as any)?.rundown ?? [];
-        finalUnifiedData = sourceData.map((s: any) => ({
-          agent_id: s.source_id,
-          agent_name: s.source_name,
-          total_annualPremium: s.total_annualPremium,
-          records: s.records,
-          agency: 'Source'
-        }));
+        if (isSourceDrilldown && selectedSourceFilter) {
+          const agentsRaw = await agentleaderboardRealtimeApi.getAgentLeaderboard({
+            ...basePayload,
+            teamId: null,
+            sourceId: selectedSourceFilter,
+          });
+          const agentsData = Array.isArray(agentsRaw) ? agentsRaw : (agentsRaw as any)?.rundown ?? [];
+          finalUnifiedData = agentsData.map((a: any) => ({
+            agent_id: a.agent_id,
+            agent_name: a.agent_name,
+            total_annualPremium: a.total_annualPremium,
+            records: a.records,
+            agency: a.agency || activeSourceName || '',
+            agent_profile: a.agent_profile
+          }));
+        } else {
+          const sourceRaw = await agentleaderboardRealtimeApi.getSourceLeaderboard(basePayload);
+          const sourceData = Array.isArray(sourceRaw) ? sourceRaw : (sourceRaw as any)?.rundown ?? [];
+          const mappedSources = sourceData.map((s: any) => ({
+            agent_id: s.source_id,
+            agent_name: s.source_name,
+            total_annualPremium: s.total_annualPremium,
+            records: s.records,
+            agency: 'Source'
+          }));
+          setAvailableSources(mappedSources.map(source => ({ id: source.agent_id, name: source.agent_name })));
+          finalUnifiedData = mappedSources;
+        }
       } else if (leaderboardMode === 'trainer') {
         const trainerRaw = await agentleaderboardRealtimeApi.getTrainerLeaderboard({
           ...basePayload,
@@ -1003,7 +1073,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
       if (isInitial) setLoading(false);
       setRefreshing(false);
     }
-  }, [sourceId, teamId, timeframe, dateRange, leaderboardMode, selectedTeamsFilter, selectedAgentsFilter, selectedSourceFilter]);
+  }, [sourceId, teamId, timeframe, dateRange, leaderboardMode, selectedTeamsFilter, selectedAgentsFilter, selectedSourceFilter, isTeamDrilldown, selectedTeamId, activeTeamName, isSourceDrilldown, activeSourceName]);
 
   useEffect(() => { refreshArena(true); }, [refreshArena]);
   useEffect(() => { if (latestSale) refreshArena(); }, [latestSale, refreshArena]);
@@ -1084,7 +1154,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
             <LeaderboardControls 
               isNightMode={isNightMode}
               mode={leaderboardMode}
-              setMode={setLeaderboardMode}
+              setMode={handleLeaderboardModeChange}
               timeframe={timeframe}
               setTimeframe={setTimeframe}
               dateRange={dateRange}
@@ -1105,6 +1175,126 @@ export const AgentleaderboardRealtime: React.FC = () => {
             />
             
             <div className="flex-1 min-h-0">
+              {leaderboardMode === 'agent' && (
+                <div className={`mb-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 ${
+                  isNightMode ? 'bg-slate-900/70 border-white/10 text-white' : 'bg-white border-slate-100 text-slate-900'
+                }`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className={`text-[9px] font-black uppercase tracking-[0.22em] ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Agent Filters</p>
+                      <p className="truncate text-sm font-black">Compare and filter agents</p>
+                    </div>
+                    {(selectedAgentsFilter.length > 0 || selectedAgencyFilter.length > 0 || selectedSourceFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAgentsFilter([]);
+                          setSelectedAgencyFilter([]);
+                          setSelectedSourceFilter(undefined);
+                          setSelectedSourceName(undefined);
+                        }}
+                        className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                          isNightMode
+                            ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
+                            : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
+                        }`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="w-44">
+                      <FilterDropdown
+                        isNightMode={isNightMode}
+                        label="Compare Agents"
+                        icon={Search}
+                        options={availableAgents}
+                        selectedIds={selectedAgentsFilter}
+                        onChange={setSelectedAgentsFilter}
+                        placeholder="Search agents..."
+                      />
+                    </div>
+
+                    {availableAgencies.length > 0 && (
+                      <div className="w-40">
+                        <FilterDropdown
+                          isNightMode={isNightMode}
+                          label="Agency"
+                          icon={Building2}
+                          options={availableAgencies}
+                          selectedIds={selectedAgencyFilter || []}
+                          onChange={setSelectedAgencyFilter}
+                          emptyMeansAll
+                          placeholder="Search agencies..."
+                        />
+                      </div>
+                    )}
+
+                    {selectedSourceFilter && (
+                      <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[9px] font-bold uppercase tracking-widest ${
+                        isNightMode ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/20' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                      }`}>
+                        <span>Source: {selectedSourceName || selectedSourceFilter}</span>
+                        <button onClick={() => { setSelectedSourceFilter(undefined); setSelectedSourceName(undefined); }} className="hover:text-indigo-800"><X className="w-3 h-3" /></button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {isTeamDrilldown && (
+                <div className={`mb-4 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
+                  isNightMode ? 'bg-slate-900/70 border-white/10 text-white' : 'bg-white border-slate-100 text-slate-900'
+                }`}>
+                  <div className="min-w-0">
+                    <p className={`text-[9px] font-black uppercase tracking-[0.22em] ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Team View</p>
+                    <p className="truncate text-sm font-black">{activeTeamName || 'Selected Team'} agents</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTeamsFilter([]);
+                      setSelectedTeamName(undefined);
+                      setSelectedAgentsFilter([]);
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                      isNightMode
+                        ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    All Teams
+                  </button>
+                </div>
+              )}
+              {isSourceDrilldown && (
+                <div className={`mb-4 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
+                  isNightMode ? 'bg-slate-900/70 border-white/10 text-white' : 'bg-white border-slate-100 text-slate-900'
+                }`}>
+                  <div className="min-w-0">
+                    <p className={`text-[9px] font-black uppercase tracking-[0.22em] ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Source View</p>
+                    <p className="truncate text-sm font-black">{activeSourceName || 'Selected Source'} agents</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSourceFilter(undefined);
+                      setSelectedSourceName(undefined);
+                      setSelectedAgentsFilter([]);
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
+                      isNightMode
+                        ? 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    All Sources
+                  </button>
+                </div>
+              )}
               {selectedAgentsFilter.length > 1 ? (
                 <AgentComparisonView 
                   agents={displayData.filter(a => selectedAgentsFilter.includes(a.agent_id))} 
@@ -1117,7 +1307,7 @@ export const AgentleaderboardRealtime: React.FC = () => {
                 />
               ) : (
                 <LeaderboardList 
-                  title={`Global Rankings - ${leaderboardMode.toUpperCase()} (${timeframe.toUpperCase()})`} 
+                  title={leaderboardTitle} 
                   icon={<Trophy className="w-4 h-4 fill-indigo-500" />} 
                   data={selectedAgentsFilter.length === 1 ? displayData.filter(a => a.agent_id === selectedAgentsFilter[0]) : displayData} 
                   loading={loading} 
@@ -1126,13 +1316,23 @@ export const AgentleaderboardRealtime: React.FC = () => {
                   isMultiColumn={true} 
                   onSelectAgent={(id) => {
                      if (leaderboardMode === 'team') {
+                        if (isTeamDrilldown) {
+                          setSelectedAgentId(id);
+                          return;
+                        }
+                        const teamName = unifiedData.find(d => d.agent_id === id)?.agent_name;
+                        setSelectedTeamName(teamName);
                         setSelectedTeamsFilter([id]);
-                        setLeaderboardMode('agent');
+                        setSelectedAgentsFilter([]);
                      } else if (leaderboardMode === 'source') {
+                        if (isSourceDrilldown) {
+                          setSelectedAgentId(id);
+                          return;
+                        }
                         const sourceName = unifiedData.find(d => d.agent_id === id)?.agent_name;
                         setSelectedSourceFilter(id);
                         setSelectedSourceName(sourceName);
-                        setLeaderboardMode('agent');
+                        setSelectedAgentsFilter([]);
                      } else if (leaderboardMode === 'trainer') {
                         navigate(`/leaderboard/trainer/${id}?${buildArenaQuery('trainer')}`);
                      } else {

@@ -3,7 +3,7 @@ import { Users, UsersRound, Share2, Calendar, Search, Building2, X, Target, Chev
 
 export type LeaderboardMode = 'agent' | 'team' | 'source' | 'trainer';
 
-const FilterDropdown = ({
+export const FilterDropdown = ({
   isNightMode,
   label,
   icon: Icon,
@@ -161,12 +161,14 @@ const DateRangePopup = ({
   isNightMode,
   startDate,
   endDate,
-  onChange
+  onChange,
+  inline = false
 }: {
   isNightMode: boolean;
   startDate: string;
   endDate: string;
   onChange: (range: { startDate: string; endDate: string }) => void;
+  inline?: boolean;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hoverDate, setHoverDate] = useState<string | null>(null);
@@ -275,6 +277,51 @@ const DateRangePopup = ({
   };
 
   const hasRange = startDate && endDate;
+
+  if (inline) {
+    return (
+      <div className="relative" ref={popupRef}>
+        <div className="flex items-center justify-between mb-4">
+          <button onClick={prevMonth} className={`p-1.5 rounded-lg transition-colors ${isNightMode ? 'hover:bg-white/10 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-lg ${
+            isNightMode ? 'bg-white/5 text-slate-400' : 'bg-slate-50 text-slate-500'
+          }`}>
+            {selecting === 'start' ? 'Pick start date' : 'Now pick end date'}
+          </span>
+          <button onClick={fwdMonth} className={`p-1.5 rounded-lg transition-colors ${isNightMode ? 'hover:bg-white/10 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="flex gap-6">
+          {renderMonth(viewMonth.year, viewMonth.month)}
+          <div className={`w-px self-stretch ${isNightMode ? 'bg-white/5' : 'bg-slate-100'}`} />
+          {renderMonth(nextMonth.year, nextMonth.month)}
+        </div>
+
+        {(localStart || localEnd) && (
+          <div className={`mt-4 pt-3 border-t flex items-center justify-between gap-4 ${isNightMode ? 'border-white/5' : 'border-slate-50'}`}>
+            <div className="flex items-center gap-2">
+              <span className={`text-[9px] px-2 py-1 rounded-lg font-black ${
+                isNightMode ? 'bg-white/5 text-brand-400' : 'bg-brand-50 text-brand-600'
+              }`}>{localStart ? fmt(localStart) : '-'}</span>
+              <ChevronRight className={`w-3 h-3 ${isNightMode ? 'text-slate-600' : 'text-slate-300'}`} />
+              <span className={`text-[9px] px-2 py-1 rounded-lg font-black ${
+                localEnd
+                  ? (isNightMode ? 'bg-white/5 text-brand-400' : 'bg-brand-50 text-brand-600')
+                  : (isNightMode ? 'bg-white/5 text-slate-600 animate-pulse' : 'bg-slate-50 text-slate-400 animate-pulse')
+              }`}>{localEnd ? fmt(localEnd) : '...'}</span>
+            </div>
+            {localStart && !localEnd && (
+              <span className={`text-[8px] font-black uppercase tracking-widest animate-pulse ${isNightMode ? 'text-brand-500' : 'text-brand-400'}`}>Select end</span>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="relative" ref={popupRef}>
@@ -395,6 +442,19 @@ export const LeaderboardControls: React.FC<LeaderboardControlsProps> = ({
   selectedAgencyFilter,
   setSelectedAgencyFilter
 }) => {
+  const [timeframeOpen, setTimeframeOpen] = useState(false);
+  const timeframeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (timeframeRef.current && !timeframeRef.current.contains(event.target as Node)) {
+        setTimeframeOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const toggleTeam = (id: string) => {
     if (selectedTeamsFilter.includes(id)) {
       setSelectedTeamsFilter(selectedTeamsFilter.filter(t => t !== id));
@@ -410,6 +470,16 @@ export const LeaderboardControls: React.FC<LeaderboardControlsProps> = ({
       setSelectedAgentsFilter([...selectedAgentsFilter, id]);
     }
   };
+
+  const timeframeOptions = [
+    { value: 'today', label: 'Today' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'yearly', label: 'Yearly' },
+    { value: 'custom', label: 'Custom' },
+  ];
+
+  const selectedTimeframe = timeframeOptions.find(option => option.value === timeframe) || timeframeOptions[0];
 
   return (
     <div className={`relative z-[50] p-4 rounded-3xl shadow-sm mb-6 transition-colors border ${
@@ -444,72 +514,67 @@ export const LeaderboardControls: React.FC<LeaderboardControlsProps> = ({
             ))}
           </div>
 
-          {mode === 'agent' && (
-            <div className="w-44">
-              <FilterDropdown
-                isNightMode={isNightMode}
-                label="Compare Agents"
-                icon={Search}
-                options={availableAgents}
-                selectedIds={selectedAgentsFilter}
-                onChange={setSelectedAgentsFilter}
-                placeholder="Search agents..."
-              />
-            </div>
-          )}
-
-          {mode === 'agent' && availableAgencies.length > 0 && (
-            <div className="w-40">
-              <FilterDropdown
-                isNightMode={isNightMode}
-                label="Agency"
-                icon={Building2}
-                options={availableAgencies}
-                selectedIds={selectedAgencyFilter || []}
-                onChange={ids => setSelectedAgencyFilter?.(ids)}
-                emptyMeansAll
-                placeholder="Search agencies..."
-              />
-            </div>
-          )}
-          
-          {selectedSourceFilter && mode === 'agent' && (
-             <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[9px] font-bold uppercase tracking-widest ${
-               isNightMode ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/20' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
-             }`}>
-                <span>Source: {selectedSourceName || selectedSourceFilter}</span>
-                <button onClick={() => setSelectedSourceFilter?.(undefined)} className="hover:text-indigo-800"><X className="w-3 h-3" /></button>
-             </div>
-          )}
         </div>
 
         <div className="flex items-center gap-2">
-           <div className={`flex items-center p-1 rounded-lg border ${isNightMode ? 'bg-black/50 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-              {['today', 'weekly', 'monthly', 'yearly', 'custom'].map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTimeframe(t as any)}
-                  className={`px-3 py-1.5 rounded-[10px] text-[10px] font-bold uppercase tracking-wider transition-all ${
-                    timeframe === t
-                      ? (isNightMode ? 'bg-slate-700 text-white' : 'bg-white text-slate-900 shadow-sm')
-                      : (isNightMode ? 'text-slate-500 hover:text-slate-400' : 'text-slate-400 hover:text-slate-600')
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
+           <div className="relative" ref={timeframeRef}>
+             <button
+               type="button"
+               onClick={() => setTimeframeOpen(value => !value)}
+               className={`h-10 min-w-32 px-4 rounded-full border shadow-sm flex items-center justify-between gap-3 text-xs font-black transition-all ${
+                 isNightMode
+                   ? 'bg-slate-900 border-white/10 text-white hover:bg-slate-800'
+                   : 'bg-white border-slate-100 text-slate-800 hover:border-slate-200'
+               }`}
+             >
+               <Calendar className="w-3.5 h-3.5 text-brand-500" />
+               <span className="flex-1 text-left">{selectedTimeframe.label}</span>
+               <ChevronDown className={`w-3.5 h-3.5 transition-transform ${timeframeOpen ? 'rotate-180' : ''} ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`} />
+             </button>
+
+             {timeframeOpen && (
+               <div className={`absolute right-0 top-full mt-3 z-[520] ${timeframe === 'custom' ? 'w-[26rem]' : 'w-72'} rounded-[1.35rem] border shadow-2xl overflow-hidden p-2 ${
+                 isNightMode ? 'bg-slate-900 border-white/10 text-white shadow-black/40' : 'bg-white border-slate-100 text-slate-900 shadow-slate-300/50'
+               }`}>
+                 {timeframeOptions.map(option => {
+                   const active = timeframe === option.value;
+                   return (
+                     <button
+                       key={option.value}
+                       type="button"
+                       onClick={() => {
+                         setTimeframe(option.value as any);
+                         if (option.value !== 'custom') setTimeframeOpen(false);
+                       }}
+                       className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-black transition-all ${
+                         active
+                           ? (isNightMode ? 'bg-white text-slate-950' : 'bg-slate-900 text-white')
+                           : (isNightMode ? 'text-slate-400 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800')
+                       }`}
+                     >
+                       <span>{option.label}</span>
+                       {active && <Check className="w-4 h-4 text-brand-500" />}
+                     </button>
+                   );
+                 })}
+
+                 {timeframe === 'custom' && (
+                   <div className={`mt-2 border-t pt-2 ${isNightMode ? 'border-white/10' : 'border-slate-100'}`}>
+                     <DateRangePopup
+                       isNightMode={isNightMode}
+                       startDate={dateRange.startDate}
+                       endDate={dateRange.endDate}
+                        onChange={range => {
+                          setDateRange(range);
+                          setTimeframeOpen(false);
+                        }}
+                        inline
+                      />
+                   </div>
+                 )}
+               </div>
+             )}
            </div>
-           
-           {timeframe === 'custom' && (
-             <div className="ml-2">
-               <DateRangePopup
-                 isNightMode={isNightMode}
-                 startDate={dateRange.startDate}
-                 endDate={dateRange.endDate}
-                 onChange={range => setDateRange(range)}
-               />
-             </div>
-           )}
         </div>
       </div>
     </div>
