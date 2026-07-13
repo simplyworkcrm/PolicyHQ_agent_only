@@ -17,12 +17,13 @@ import {
   ArrowUpDown,
   ReceiptText,
   AlertCircle,
-  DollarSign
+  DollarSign,
+  X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
-import { agencyExpenseManagementApi, AgencyExpenseLogRow, AgencyExpenseLogSummary, AgencyExpenseOverviewResponse, AgencyExpenseRiskAgent } from '../services/agencyExpenseManagementApi';
+import { agencyExpenseManagementApi, AgencyExpenseLogRow, AgencyExpenseLogSummary, AgencyExpenseOverviewResponse, AgencyExpenseRiskAgent, AgencyExpenseRiskAgency } from '../services/agencyExpenseManagementApi';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { BusinessOverviewDashboard } from './BusinessOverviewDashboard';
 import { Policy } from '../../../shared/types/index';
@@ -49,6 +50,20 @@ interface AgencyDebtsSummary {
   debts_count?: number | string | null;
   debt_count?: number | string | null;
   [key: string]: unknown;
+}
+
+interface RiskDockState {
+  title: string;
+  eyebrow: string;
+  amountLabel: string;
+  rows: Array<{
+    id: string;
+    name: string;
+    helper?: string;
+    amount: number;
+    production: number;
+    riskGap: number;
+  }>;
 }
 
 interface DateRange {
@@ -447,6 +462,9 @@ const AgencyExpenseManagement: React.FC<{
   const [overviewData, setOverviewData] = useState<AgencyExpenseOverviewResponse['overview'] | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [agencyRiskData, setAgencyRiskData] = useState<AgencyExpenseRiskAgency[]>([]);
+  const [agencyRiskLoading, setAgencyRiskLoading] = useState(false);
+  const [agencyRiskError, setAgencyRiskError] = useState<string | null>(null);
   const [expenseRows, setExpenseRows] = useState<AgencyExpenseLogRow[]>([]);
   const [expenseSummary, setExpenseSummary] = useState<AgencyExpenseLogSummary>({});
   const [expenseLoading, setExpenseLoading] = useState(false);
@@ -455,8 +473,8 @@ const AgencyExpenseManagement: React.FC<{
   const [debtSummary, setDebtSummary] = useState<AgencyDebtsSummary>({});
   const [debtLoading, setDebtLoading] = useState(false);
   const [debtError, setDebtError] = useState<string | null>(null);
-  const [showAllExpenseRisk, setShowAllExpenseRisk] = useState(false);
-  const [showAllDebtRisk, setShowAllDebtRisk] = useState(false);
+  const [riskScope, setRiskScope] = useState<'agents' | 'agencies'>('agents');
+  const [riskDock, setRiskDock] = useState<RiskDockState | null>(null);
 
   const tabs = [
     { key: 'overview' as const, label: 'Overview', icon: FileText },
@@ -489,6 +507,36 @@ const AgencyExpenseManagement: React.FC<{
       })
       .finally(() => {
         if (isMounted) setOverviewLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [dateRange.end, dateRange.start, dateRange.timeframe, selectedAgentId]);
+
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    let isMounted = true;
+    setAgencyRiskLoading(true);
+    setAgencyRiskError(null);
+
+    agencyExpenseManagementApi.getAgencyRisk({
+      agentId: selectedAgentId,
+      timeframe: dateRange.timeframe === 'all' ? null : dateRange.timeframe,
+      startDate: dateRange.timeframe === 'custom' ? toRequestDate(dateRange.start) : null,
+      endDate: dateRange.timeframe === 'custom' ? toRequestDate(dateRange.end) : null,
+    })
+      .then(response => {
+        if (isMounted) setAgencyRiskData(response);
+      })
+      .catch(error => {
+        if (!isMounted) return;
+        setAgencyRiskData([]);
+        setAgencyRiskError(error instanceof Error ? error.message : 'Unable to load agency risk data.');
+      })
+      .finally(() => {
+        if (isMounted) setAgencyRiskLoading(false);
       });
 
     return () => {
@@ -596,20 +644,44 @@ const AgencyExpenseManagement: React.FC<{
   const expenseRiskRows = buildRiskRows('expenses');
   const debtRiskRows = buildRiskRows('debts');
 
+  const buildAgencyRiskRows = (amountKey: 'expenses' | 'debts') => (
+    [...agencyRiskData]
+      .map((agency: AgencyExpenseRiskAgency) => {
+        const rawAmount = toNumber(agency[amountKey]);
+        const amount = amountKey === 'debts' ? Math.abs(rawAmount) : rawAmount;
+        const production = toNumber(agency.production);
+        return {
+          agencyId: String(agency.agency_id || ''),
+          agencyName: String(agency.agency_name || 'Unknown agency'),
+          agencyManager: String(agency.agency_manager || 'Manager not set'),
+          amount,
+          production,
+          riskGap: production - amount,
+        };
+      })
+      .filter(row => row.riskGap < 0)
+      .sort((a, b) => {
+        const gapDiff = a.riskGap - b.riskGap;
+        if (gapDiff === 0) return b.amount - a.amount;
+        return gapDiff;
+      })
+  );
+
+  const agencyExpenseRiskRows = buildAgencyRiskRows('expenses');
+  const agencyDebtRiskRows = buildAgencyRiskRows('debts');
+
   const RiskList = ({
     title,
     rows,
     amountLabel,
-    expanded,
-    onToggleExpanded,
+    onOpenRundown,
   }: {
     title: string;
     rows: ReturnType<typeof buildRiskRows>;
     amountLabel: string;
-    expanded: boolean;
-    onToggleExpanded: () => void;
+    onOpenRundown: () => void;
   }) => {
-    const visibleRows = expanded ? rows : rows.slice(0, 5);
+    const visibleRows = rows.slice(0, 5);
     const canExpand = rows.length > 5;
 
     return (
@@ -639,10 +711,64 @@ const AgencyExpenseManagement: React.FC<{
           {canExpand && (
             <button
               type="button"
-              onClick={onToggleExpanded}
+              onClick={onOpenRundown}
               className="flex w-full items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
             >
-              {expanded ? 'Show top 5' : `Show rundown (${rows.length})`}
+              {`Show rundown (${rows.length})`}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const AgencyRiskList = ({
+    title,
+    rows,
+    amountLabel,
+    onOpenRundown,
+  }: {
+    title: string;
+    rows: ReturnType<typeof buildAgencyRiskRows>;
+    amountLabel: string;
+    onOpenRundown: () => void;
+  }) => {
+    const visibleRows = rows.slice(0, 5);
+    const canExpand = rows.length > 5;
+
+    return (
+      <div className="rounded-3xl border border-slate-100 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">At Risk Agencies</p>
+            <h4 className="text-lg font-black text-slate-950">{title}</h4>
+          </div>
+          <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">{rows.length} negative</span>
+        </div>
+        <div className="space-y-3">
+          {agencyRiskLoading ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-xs font-bold text-slate-400">Loading agency risk...</div>
+          ) : visibleRows.length > 0 ? visibleRows.map((row, index) => (
+            <div key={`${title}-${row.agencyId || row.agencyName}-${index}`} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-600 shadow-sm">{index + 1}</span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-950">{row.agencyName}</p>
+                <p className="truncate text-[11px] font-semibold text-slate-500">{row.agencyManager} · {amountLabel}: {formatMoney(row.amount)} · Production: {formatMoney(row.production)}</p>
+              </div>
+              <span className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-black text-red-600">
+                {formatRiskGap(row.riskGap)}
+              </span>
+            </div>
+          )) : (
+            <div className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-xs font-bold text-slate-400">No agencies have a negative gap for this range.</div>
+          )}
+          {canExpand && (
+            <button
+              type="button"
+              onClick={onOpenRundown}
+              className="flex w-full items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+            >
+              {`Show rundown (${rows.length})`}
             </button>
           )}
         </div>
@@ -719,21 +845,123 @@ const AgencyExpenseManagement: React.FC<{
               </div>
             )}
 
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Risk Rundown</p>
+                <h4 className="text-lg font-black text-slate-950">Production gap by scope</h4>
+              </div>
+              <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setRiskScope('agents')}
+                  className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black transition-all ${
+                    riskScope === 'agents'
+                      ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10'
+                      : 'text-slate-500 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  <Users className="h-4 w-4" />
+                  By Agent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRiskScope('agencies')}
+                  className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black transition-all ${
+                    riskScope === 'agencies'
+                      ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10'
+                      : 'text-slate-500 hover:bg-white hover:text-slate-900'
+                  }`}
+                >
+                  <Building2 className="h-4 w-4" />
+                  By Agency
+                </button>
+              </div>
+            </div>
+
+            {riskScope === 'agencies' && agencyRiskError && (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-xs font-black text-red-700">Agency risk unavailable: {agencyRiskError}</p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <RiskList
-                title="Top Expense Risk Agents"
-                rows={expenseRiskRows}
-                amountLabel="Expenses"
-                expanded={showAllExpenseRisk}
-                onToggleExpanded={() => setShowAllExpenseRisk(value => !value)}
-              />
-              <RiskList
-                title="Top Debt Risk Agents"
-                rows={debtRiskRows}
-                amountLabel="Debts"
-                expanded={showAllDebtRisk}
-                onToggleExpanded={() => setShowAllDebtRisk(value => !value)}
-              />
+              {riskScope === 'agents' ? (
+                <>
+                  <RiskList
+                    title="Top Expense Risk Agents"
+                    rows={expenseRiskRows}
+                    amountLabel="Expenses"
+                    onOpenRundown={() => setRiskDock({
+                      title: 'Expense Risk Agents',
+                      eyebrow: 'At Risk Agents',
+                      amountLabel: 'Expenses',
+                      rows: expenseRiskRows.map(row => ({
+                        id: row.agentId || row.agentName,
+                        name: row.agentName,
+                        amount: row.amount,
+                        production: row.production,
+                        riskGap: row.riskGap,
+                      })),
+                    })}
+                  />
+                  <RiskList
+                    title="Top Debt Risk Agents"
+                    rows={debtRiskRows}
+                    amountLabel="Debts"
+                    onOpenRundown={() => setRiskDock({
+                      title: 'Debt Risk Agents',
+                      eyebrow: 'At Risk Agents',
+                      amountLabel: 'Debts',
+                      rows: debtRiskRows.map(row => ({
+                        id: row.agentId || row.agentName,
+                        name: row.agentName,
+                        amount: row.amount,
+                        production: row.production,
+                        riskGap: row.riskGap,
+                      })),
+                    })}
+                  />
+                </>
+              ) : (
+                <>
+                  <AgencyRiskList
+                    title="Top Expense Risk Agencies"
+                    rows={agencyExpenseRiskRows}
+                    amountLabel="Expenses"
+                    onOpenRundown={() => setRiskDock({
+                      title: 'Expense Risk Agencies',
+                      eyebrow: 'At Risk Agencies',
+                      amountLabel: 'Expenses',
+                      rows: agencyExpenseRiskRows.map(row => ({
+                        id: row.agencyId || row.agencyName,
+                        name: row.agencyName,
+                        helper: row.agencyManager,
+                        amount: row.amount,
+                        production: row.production,
+                        riskGap: row.riskGap,
+                      })),
+                    })}
+                  />
+                  <AgencyRiskList
+                    title="Top Debt Risk Agencies"
+                    rows={agencyDebtRiskRows}
+                    amountLabel="Debts"
+                    onOpenRundown={() => setRiskDock({
+                      title: 'Debt Risk Agencies',
+                      eyebrow: 'At Risk Agencies',
+                      amountLabel: 'Debts',
+                      rows: agencyDebtRiskRows.map(row => ({
+                        id: row.agencyId || row.agencyName,
+                        name: row.agencyName,
+                        helper: row.agencyManager,
+                        amount: row.amount,
+                        production: row.production,
+                        riskGap: row.riskGap,
+                      })),
+                    })}
+                  />
+                </>
+              )}
             </div>
 
             <div className="rounded-3xl border border-slate-100 bg-white p-5">
@@ -926,6 +1154,58 @@ const AgencyExpenseManagement: React.FC<{
           </div>
         )}
       </div>
+
+      {riskDock && (
+        <div className="fixed inset-0 z-[100]">
+          <button
+            type="button"
+            aria-label="Close risk rundown"
+            onClick={() => setRiskDock(null)}
+            className="absolute inset-0 bg-slate-950/35 backdrop-blur-[2px]"
+          />
+          <aside className="relative ml-auto flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl animate-in slide-in-from-right duration-300">
+            <div className="flex items-start justify-between gap-4 bg-slate-950 px-6 py-5 text-white">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-brand-400">{riskDock.eyebrow}</p>
+                <h3 className="mt-1 text-xl font-black">{riskDock.title}</h3>
+                <p className="mt-1 text-xs font-semibold text-slate-400">Ranked by the highest negative production gap.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close risk rundown"
+                onClick={() => setRiskDock(null)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-white transition-colors hover:bg-white/20"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Full Rundown</p>
+                <p className="text-sm font-black text-slate-950">Negative gaps only</p>
+              </div>
+              <span className="rounded-full bg-red-50 px-3 py-1 text-[10px] font-black text-red-600">{riskDock.rows.length} records</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              <div className="space-y-3">
+                {riskDock.rows.map((row, index) => (
+                  <div key={`${riskDock.title}-${row.id}-${index}`} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-xs font-black text-slate-600 shadow-sm">{index + 1}</span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-slate-950">{row.name}</p>
+                      {row.helper && <p className="truncate text-[11px] font-bold text-slate-400">{row.helper}</p>}
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{riskDock.amountLabel}: {formatMoney(row.amount)} · Production: {formatMoney(row.production)}</p>
+                    </div>
+                    <span className="rounded-xl bg-red-100 px-3 py-1.5 text-xs font-black text-red-700">{formatRiskGap(row.riskGap)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
     </section>
   );
 };

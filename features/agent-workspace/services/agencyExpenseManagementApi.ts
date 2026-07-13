@@ -1,4 +1,5 @@
 const AGENCY_EXPENSE_OVERVIEW_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/expense-management/overview';
+const AGENCY_EXPENSE_AGENCIES_URL = `${AGENCY_EXPENSE_OVERVIEW_URL}/agencies`;
 const AGENCY_EXPENSE_LOG_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/expense-management/expense-log';
 
 const getAuthToken = () => localStorage.getItem('authToken');
@@ -51,6 +52,16 @@ export interface AgencyExpenseLogResponse {
 export interface AgencyExpenseRiskAgent {
   agent_id?: string | null;
   agent_name?: string | null;
+  expenses?: number | string | null;
+  debts?: number | string | null;
+  production?: number | string | null;
+  [key: string]: unknown;
+}
+
+export interface AgencyExpenseRiskAgency {
+  agency_id?: string | null;
+  agency_name?: string | null;
+  agency_manager?: string | null;
   expenses?: number | string | null;
   debts?: number | string | null;
   production?: number | string | null;
@@ -118,6 +129,20 @@ export const agencyExpenseManagementApi = {
     }
 
     return response.json();
+  },
+
+  async getAgencyRisk(query: AgencyExpenseLogQuery): Promise<AgencyExpenseRiskAgency[]> {
+    const response = await fetch(`${AGENCY_EXPENSE_AGENCIES_URL}?${buildExpenseLogQuery(query)}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return Array.isArray(payload) ? payload : [];
   },
 
   async getExpenseLog(query: AgencyExpenseLogQuery): Promise<AgencyExpenseLogResponse> {
