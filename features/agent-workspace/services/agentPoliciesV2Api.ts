@@ -2,6 +2,8 @@ const POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/policies';
 const TEAM_POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/team/policies';
 const MISSING_POLICY_NUMBER_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/policies/need-attention/missing';
 const DUPLICATE_POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/policies/need-attention/duplicate';
+const AGENCY_MISSING_POLICY_NUMBER_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/policies/need-attention/missing';
+const AGENCY_DUPLICATE_POLICIES_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/policies/need-attention/duplicate';
 const UTILITY_API_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/utility';
 
 const getAuthToken = () => localStorage.getItem('authToken');
@@ -233,57 +235,80 @@ const normalizeNeedAttentionRows = (rows: RawPolicyV2[]): PolicyV2[] => normaliz
   items: rows,
 }).items;
 
+const fetchMissingPolicyNumberPolicies = async (
+  url: string,
+  query: PoliciesV2Query,
+  agentId: string | string[],
+): Promise<PoliciesV2Response> => {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({
+      agent_id: agentId,
+      page: query.page,
+      per_page: query.perPage,
+      search: query.search || null,
+      sort: query.sort ?? {},
+      filter: query.filter ?? { expression: [] },
+      timeframe: query.timeframe,
+      start_date: query.startDate,
+      end_date: query.endDate,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const payload = await response.json() as RawPoliciesV2Response;
+  const normalized = normalizePoliciesResponse(payload);
+  delete normalized.policy_stats;
+  return normalized;
+};
+
+const fetchDuplicatePolicies = async (
+  url: string,
+  query: { agentId: string; search: string },
+): Promise<DuplicatePoliciesResponse> => {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: authHeader(),
+    body: JSON.stringify({
+      agent_id: query.agentId,
+      search: query.search,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const payload = await response.json() as {
+    duplicate_groups?: number;
+    rundown?: Array<{ policy_number?: string | null; rundown?: RawPolicyV2[] }>;
+  };
+  const rundown = (payload.rundown || []).map(group => ({
+    policyNumber: String(group.policy_number || 'Unknown policy number'),
+    policies: normalizeNeedAttentionRows(group.rundown || []),
+  }));
+
+  return {
+    duplicateGroups: Number(payload.duplicate_groups ?? rundown.length),
+    rundown,
+  };
+};
+
 export const agentPoliciesV2Api = {
   async getMissingPolicyNumberPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {
-    const response = await fetch(MISSING_POLICY_NUMBER_API_URL, {
-      method: 'POST',
-      headers: authHeader(),
-      body: JSON.stringify({
-        agent_id: query.agentIds,
-        page: query.page,
-        per_page: query.perPage,
-        search: query.search || null,
-        sort: query.sort ?? {},
-        filter: query.filter ?? { expression: [] },
-        timeframe: query.timeframe,
-        start_date: query.startDate,
-        end_date: query.endDate,
-      }),
-    });
+    return fetchMissingPolicyNumberPolicies(MISSING_POLICY_NUMBER_API_URL, query, query.agentIds);
+  },
 
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-
-    const payload = await response.json() as RawPoliciesV2Response;
-    const normalized = normalizePoliciesResponse(payload);
-    delete normalized.policy_stats;
-    return normalized;
+  async getAgencyMissingPolicyNumberPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {
+    return fetchMissingPolicyNumberPolicies(AGENCY_MISSING_POLICY_NUMBER_API_URL, query, query.agentIds[0]);
   },
 
   async getDuplicatePolicies(query: { agentId: string; search: string }): Promise<DuplicatePoliciesResponse> {
-    const response = await fetch(DUPLICATE_POLICIES_API_URL, {
-      method: 'POST',
-      headers: authHeader(),
-      body: JSON.stringify({
-        agent_id: query.agentId,
-        search: query.search,
-      }),
-    });
+    return fetchDuplicatePolicies(DUPLICATE_POLICIES_API_URL, query);
+  },
 
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-
-    const payload = await response.json() as {
-      duplicate_groups?: number;
-      rundown?: Array<{ policy_number?: string | null; rundown?: RawPolicyV2[] }>;
-    };
-    const rundown = (payload.rundown || []).map(group => ({
-      policyNumber: String(group.policy_number || 'Unknown policy number'),
-      policies: normalizeNeedAttentionRows(group.rundown || []),
-    }));
-
-    return {
-      duplicateGroups: Number(payload.duplicate_groups ?? rundown.length),
-      rundown,
-    };
+  async getAgencyDuplicatePolicies(query: { agentId: string; search: string }): Promise<DuplicatePoliciesResponse> {
+    return fetchDuplicatePolicies(AGENCY_DUPLICATE_POLICIES_API_URL, query);
   },
 
   async getPolicies(query: PoliciesV2Query): Promise<PoliciesV2Response> {

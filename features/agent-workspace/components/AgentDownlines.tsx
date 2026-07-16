@@ -1433,6 +1433,8 @@ export const AgentDownlines: React.FC = () => {
           hideHeader
           showDateRangeWhenHeaderHidden
           initialTimeframe="monthly"
+          enableNeedAttention
+          needAttentionScope="agency"
         />
       ) : viewMode === 'expenses' ? (
         <AgencyExpenseManagement

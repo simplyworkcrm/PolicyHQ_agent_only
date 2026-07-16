@@ -979,6 +979,7 @@ interface AgentPoliciesV2Props {
   showDateRangeWhenHeaderHidden?: boolean;
   initialTimeframe?: PoliciesTimeframe;
   enableNeedAttention?: boolean;
+  needAttentionScope?: 'business' | 'agency';
 }
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
@@ -992,6 +993,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   showDateRangeWhenHeaderHidden = false,
   initialTimeframe = 'all',
   enableNeedAttention = false,
+  needAttentionScope = 'business',
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -1140,7 +1142,10 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       setAttentionError(null);
       try {
         if (policyAttentionView === 'missing') {
-          const result = await agentPoliciesV2Api.getMissingPolicyNumberPolicies({
+          const loadMissingPolicies = needAttentionScope === 'agency'
+            ? agentPoliciesV2Api.getAgencyMissingPolicyNumberPolicies
+            : agentPoliciesV2Api.getMissingPolicyNumberPolicies;
+          const result = await loadMissingPolicies({
             agentIds: effectiveAgentIds,
             page,
             perPage,
@@ -1153,7 +1158,10 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
           });
           if (!cancelled) setMissingAttentionData(result);
         } else {
-          const result = await agentPoliciesV2Api.getDuplicatePolicies({
+          const loadDuplicatePolicies = needAttentionScope === 'agency'
+            ? agentPoliciesV2Api.getAgencyDuplicatePolicies
+            : agentPoliciesV2Api.getDuplicatePolicies;
+          const result = await loadDuplicatePolicies({
             agentId: effectiveAgentIds[0],
             search: searchTerm,
           });
@@ -1178,6 +1186,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     return () => { cancelled = true; };
   }, [
     enableNeedAttention,
+    needAttentionScope,
     policyWorkspaceView,
     policyAttentionView,
     effectiveAgentIds,
