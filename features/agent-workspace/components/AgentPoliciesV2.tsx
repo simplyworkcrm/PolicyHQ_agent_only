@@ -423,6 +423,14 @@ const SORT_FIELD_TO_API: Partial<Record<PolicySortField, string>> = {
 };
 
 type PolicySortConfig = { key: PolicySortField; direction: SortDirection };
+type PolicyWorkspaceView = 'all' | 'attention';
+type PolicyAttentionView = 'missing' | 'duplicates';
+type DuplicatePolicyGroup = {
+  key: string;
+  label: string;
+  kind: 'policy-number' | 'possible-match';
+  policies: PolicyV2[];
+};
 
 const ALLOWED_POLICY_SORT_KEYS: PolicySortField[] = [
   'client',
@@ -970,6 +978,7 @@ interface AgentPoliciesV2Props {
   hideHeader?: boolean;
   showDateRangeWhenHeaderHidden?: boolean;
   initialTimeframe?: PoliciesTimeframe;
+  enableNeedAttention?: boolean;
 }
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
@@ -982,6 +991,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   hideHeader = false,
   showDateRangeWhenHeaderHidden = false,
   initialTimeframe = 'all',
+  enableNeedAttention = false,
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -1010,6 +1020,14 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyV2 | null>(null);
+  const [policyWorkspaceView, setPolicyWorkspaceView] = useState<PolicyWorkspaceView>('all');
+  const [policyAttentionView, setPolicyAttentionView] = useState<PolicyAttentionView>('missing');
+  const [missingAttentionData, setMissingAttentionData] = useState<PoliciesV2Response | null>(null);
+  const [attentionDuplicateGroups, setAttentionDuplicateGroups] = useState<DuplicatePolicyGroup[]>([]);
+  const [attentionDuplicateGroupCount, setAttentionDuplicateGroupCount] = useState(0);
+  const [attentionLoading, setAttentionLoading] = useState(false);
+  const [attentionError, setAttentionError] = useState<string | null>(null);
+  const [attentionRefreshKey, setAttentionRefreshKey] = useState(0);
   const effectiveAgentIds = useMemo(
     () => (agentIdsOverride && agentIdsOverride.length > 0 ? agentIdsOverride : selectedAgentIds).filter(Boolean),
     [agentIdsOverride, selectedAgentIds],
@@ -1097,7 +1115,82 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     }
   }, [dataSource, effectiveAgentIds, page, perPage, searchTerm, sortConfig, filterGroups, timeframe, startDate, endDate]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (policyWorkspaceView === 'all') void load();
+  }, [load, policyWorkspaceView]);
+
+  useEffect(() => {
+    if (!enableNeedAttention || policyWorkspaceView !== 'attention') return;
+    if (effectiveAgentIds.length === 0) {
+      setMissingAttentionData(null);
+      setAttentionDuplicateGroups([]);
+      setAttentionDuplicateGroupCount(0);
+      setAttentionLoading(false);
+      setAttentionError(null);
+      return;
+    }
+    let cancelled = false;
+    const loadAttentionInventory = async () => {
+      if (policyAttentionView === 'missing' && timeframe === 'custom' && (startDate === undefined || endDate === undefined)) {
+        setMissingAttentionData(null);
+        setAttentionLoading(false);
+        return;
+      }
+      setAttentionLoading(true);
+      setAttentionError(null);
+      try {
+        if (policyAttentionView === 'missing') {
+          const result = await agentPoliciesV2Api.getMissingPolicyNumberPolicies({
+            agentIds: effectiveAgentIds,
+            page,
+            perPage,
+            search: searchTerm,
+            sort: sortConfig ? { [SORT_FIELD_TO_API[sortConfig.key] || sortConfig.key]: sortConfig.direction } : {},
+            filter: buildPolicyFilterExpression(filterGroups),
+            timeframe: timeframe === 'all' ? null : timeframe,
+            startDate: timeframe === 'custom' ? toPolicyRequestDate(startDate) : null,
+            endDate: timeframe === 'custom' ? toPolicyRequestDate(endDate) : null,
+          });
+          if (!cancelled) setMissingAttentionData(result);
+        } else {
+          const result = await agentPoliciesV2Api.getDuplicatePolicies({
+            agentId: effectiveAgentIds[0],
+            search: searchTerm,
+          });
+          if (!cancelled) {
+            setAttentionDuplicateGroupCount(result.duplicateGroups);
+            setAttentionDuplicateGroups(result.rundown.map(group => ({
+              key: `number:${group.policyNumber}`,
+              label: group.policyNumber,
+              kind: 'policy-number',
+              policies: group.policies,
+            })));
+          }
+        }
+      } catch (e) {
+        if (!cancelled) setAttentionError(e instanceof Error ? e.message : 'Failed to load policy review');
+      } finally {
+        if (!cancelled) setAttentionLoading(false);
+      }
+    };
+
+    void loadAttentionInventory();
+    return () => { cancelled = true; };
+  }, [
+    enableNeedAttention,
+    policyWorkspaceView,
+    policyAttentionView,
+    effectiveAgentIds,
+    page,
+    perPage,
+    searchTerm,
+    sortConfig,
+    filterGroups,
+    timeframe,
+    startDate,
+    endDate,
+    attentionRefreshKey,
+  ]);
 
   const handleTimeframeChange = (next: PoliciesTimeframe) => {
     setTimeframe(next);
@@ -1131,9 +1224,41 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const activeFilters = getCompleteFilterGroups(filterGroups).reduce((total, group) => total + group.rows.length, 0);
 
   const items = data?.items ?? [];
+  const missingPolicyNumberItems = missingAttentionData?.items ?? [];
+  const duplicatePolicyGroups = attentionDuplicateGroups;
+  const duplicatePolicyItems = useMemo(
+    () => duplicatePolicyGroups.flatMap(group => group.policies),
+    [duplicatePolicyGroups],
+  );
+  const duplicateReasonByPolicyId = useMemo(() => {
+    const reasons = new Map<string, DuplicatePolicyGroup>();
+    duplicatePolicyGroups.forEach(group => group.policies.forEach(policy => reasons.set(policy.policy_id, group)));
+    return reasons;
+  }, [duplicatePolicyGroups]);
+  const duplicateGroupStartByPolicyId = useMemo(() => {
+    const starts = new Map<string, DuplicatePolicyGroup>();
+    duplicatePolicyGroups.forEach(group => {
+      const firstPolicy = group.policies[0];
+      if (firstPolicy) starts.set(firstPolicy.policy_id, group);
+    });
+    return starts;
+  }, [duplicatePolicyGroups]);
+  const displayItems = policyWorkspaceView === 'attention'
+    ? policyAttentionView === 'missing'
+      ? missingPolicyNumberItems
+      : duplicatePolicyItems
+    : items;
+  const viewLoading = policyWorkspaceView === 'attention' ? attentionLoading : isLoading;
+  const viewError = policyWorkspaceView === 'attention' ? attentionError : error;
+  const isDuplicateView = policyWorkspaceView === 'attention' && policyAttentionView === 'duplicates';
+  const paginationData = policyWorkspaceView === 'all'
+    ? data
+    : policyAttentionView === 'missing'
+    ? missingAttentionData
+    : null;
   const stats = data?.policy_stats ?? null;
   const statsLoading = false;
-  const isPageSelected = items.length > 0 && items.every(policy => selectedIds.has(policy.selectionKey));
+  const isPageSelected = displayItems.length > 0 && displayItems.every(policy => selectedIds.has(policy.selectionKey));
   const isDownlineVariant = variant === 'downline';
   const isTeamSource = dataSource === 'team';
   const tableGridClass = readOnlyRows
@@ -1344,18 +1469,22 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
           <p className="text-[11px] text-slate-400 font-medium">More features coming soon — advanced filters, bulk actions, export, and more.</p>
         </div>
         <span className="hidden">Beta</span>
-        <PolicyDateRangeFilter
-          timeframe={timeframe}
-          startDate={startDate}
-          endDate={endDate}
-          onTimeframeChange={handleTimeframeChange}
-          onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
-        />
+        {(policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
+          <PolicyDateRangeFilter
+            timeframe={timeframe}
+            startDate={startDate}
+            endDate={endDate}
+            onTimeframeChange={handleTimeframeChange}
+            onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
+            label={policyWorkspaceView === 'attention' ? 'Created Date Range' : undefined}
+            description={policyWorkspaceView === 'attention' ? 'Filters by policy created date' : undefined}
+          />
+        )}
       </div>
       )}
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
-      {hideHeader && showDateRangeWhenHeaderHidden && (
+      {hideHeader && showDateRangeWhenHeaderHidden && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
         <div className="mb-5 flex justify-end">
           <PolicyDateRangeFilter
             timeframe={timeframe}
@@ -1363,13 +1492,83 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             endDate={endDate}
             onTimeframeChange={handleTimeframeChange}
             onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
+            label={policyWorkspaceView === 'attention' ? 'Created Date Range' : undefined}
+            description={policyWorkspaceView === 'attention' ? 'Filters by policy created date' : undefined}
           />
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Overview</p>
+      {enableNeedAttention && (
+      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Policy view">
+          {([
+            { value: 'all', label: 'All Policies', icon: FileText },
+            { value: 'attention', label: 'Need Attention', icon: AlertTriangle },
+          ] as const).map(option => {
+            const Icon = option.icon;
+            const active = policyWorkspaceView === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  setPolicyWorkspaceView(option.value);
+                  if (option.value === 'attention') setPolicyAttentionView('missing');
+                  setPage(1);
+                  setShowFilters(false);
+                  setSelectedPolicy(null);
+                  setSelectedIds(new Set());
+                }}
+                className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black transition-colors sm:flex-none ${
+                  active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {policyWorkspaceView === 'attention' && (
+          <div className="inline-flex w-full rounded-xl border border-slate-200 bg-white p-1 sm:w-auto" aria-label="Attention type">
+            {([
+              { value: 'missing', label: 'Missing Policy Number', count: missingAttentionData?.itemsTotal ?? missingPolicyNumberItems.length },
+              { value: 'duplicates', label: 'Duplicates', count: attentionDuplicateGroupCount },
+            ] as const).map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  setPolicyAttentionView(option.value);
+                  setPage(1);
+                  setShowFilters(false);
+                  setSelectedPolicy(null);
+                  setSelectedIds(new Set());
+                }}
+                className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition-colors sm:flex-none ${
+                  policyAttentionView === option.value
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                {option.label}
+                <span className={`min-w-6 rounded-md px-1.5 py-0.5 text-[10px] ${
+                  policyAttentionView === option.value ? 'bg-slate-950/10' : 'bg-slate-100'
+                }`}>{attentionLoading ? '...' : option.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      )}
+
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+          {policyWorkspaceView === 'all' ? 'Overview' : 'Policy Review'}
+        </p>
+      </div>
+      {policyWorkspaceView === 'all' ? (
       <div className={`grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 ${isDownlineVariant ? 'px-1' : ''}`}>
         {(() => {
           const placementRatio = stats && stats.submittedPolicies > 0
@@ -1502,6 +1701,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
           });
         })()}
       </div>
+      ) : null}
 
       {/* ── Table + Detail Panel Row ───────────────────────────────────── */}
       <div className={`flex gap-4 items-start transition-all duration-300`}>
@@ -1515,9 +1715,20 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900 tracking-tight">Policy Records</h3>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                {policyWorkspaceView === 'all'
+                  ? 'Policy Records'
+                  : policyAttentionView === 'missing'
+                  ? 'Missing Policy Numbers'
+                  : 'Duplicate Policies'}
+              </h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                {(data?.itemsTotal ?? items.length).toLocaleString()} records matching current view
+                {isDuplicateView
+                  ? `${attentionDuplicateGroupCount.toLocaleString()} groups - ${duplicatePolicyItems.length.toLocaleString()} policies`
+                  : `${(policyWorkspaceView === 'all'
+                    ? (data?.itemsTotal ?? items.length)
+                    : (missingAttentionData?.itemsTotal ?? missingPolicyNumberItems.length)
+                  ).toLocaleString()} records matching current view`}
               </p>
             </div>
           </div>
@@ -1539,7 +1750,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             </div>
 
             {/* Filter toggle — disabled, coming soon */}
-            <div className="relative group">
+            {!isDuplicateView && <div className="relative group">
               <button
                 onClick={() => setShowFilters(true)}
                 className={`flex items-center gap-3 px-5 py-4 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all ${
@@ -1556,22 +1767,29 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   </span>
                 )}
               </button>
-            </div>
+            </div>}
 
-            {(searchTerm || activeFilters > 0) && (
+            {(searchTerm || (!isDuplicateView && activeFilters > 0)) && (
               <button
-                onClick={() => { setSearchInput(''); setSearchTerm(''); clearFilters(); }}
+                onClick={() => {
+                  setSearchInput('');
+                  setSearchTerm('');
+                  if (!isDuplicateView) clearFilters();
+                }}
                 className="px-5 py-4 rounded-2xl bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs font-black uppercase tracking-widest transition-all"
               >
                 Reset View
               </button>
             )}
             <button
-              onClick={load}
-              disabled={isLoading}
+              onClick={() => {
+                if (policyWorkspaceView === 'attention') setAttentionRefreshKey(current => current + 1);
+                else void load();
+              }}
+              disabled={viewLoading}
               className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-white hover:border-slate-300 transition-all disabled:opacity-40"
             >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${viewLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -1586,8 +1804,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               onClick={() => {
                 setSelectedIds(current => {
                   const next = new Set(current);
-                  if (isPageSelected) items.forEach(policy => next.delete(policy.selectionKey));
-                  else items.forEach(policy => next.add(policy.selectionKey));
+                  if (isPageSelected) displayItems.forEach(policy => next.delete(policy.selectionKey));
+                  else displayItems.forEach(policy => next.add(policy.selectionKey));
                   return next;
                 });
               }}
@@ -1596,21 +1814,31 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               {isPageSelected && <Check className="w-3.5 h-3.5" />}
             </button>
           )}
-          <SortableTableHeader label="Client & Created" options={[{ key: 'client', label: 'Client' }, { key: 'created_at', label: 'Created' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
+          {isDuplicateView
+            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Client & Created</span>
+            : <SortableTableHeader label="Client & Created" options={[{ key: 'client', label: 'Client' }, { key: 'created_at', label: 'Created' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
           {isTeamSource && (
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Agent</span>
           )}
-          <SortableTableHeader label="Policy Number" options={[{ key: 'policy_number', label: 'Policy #' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
-          <SortableTableHeader label="Carrier / Product" options={[{ key: 'carrier_product', label: 'Product' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
-          <SortableTableHeader label="Effective Date" options={[{ key: 'initial_draft_date', label: 'Eff. Date' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />
-          <SortableTableHeader label="Premium" options={[{ key: 'annual_premium', label: 'Premium' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} className="justify-end" />
+          {isDuplicateView
+            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Number</span>
+            : <SortableTableHeader label="Policy Number" options={[{ key: 'policy_number', label: 'Policy #' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
+          {isDuplicateView
+            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Carrier / Product</span>
+            : <SortableTableHeader label="Carrier / Product" options={[{ key: 'carrier_product', label: 'Product' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
+          {isDuplicateView
+            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Effective Date</span>
+            : <SortableTableHeader label="Effective Date" options={[{ key: 'initial_draft_date', label: 'Eff. Date' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
+          {isDuplicateView
+            ? <span className="text-right text-xs font-semibold uppercase tracking-wider text-slate-400">Premium</span>
+            : <SortableTableHeader label="Premium" options={[{ key: 'annual_premium', label: 'Premium' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} className="justify-end" />}
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Status</span>
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Paid</span>
           <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Source</span>
         </div>
 
         {/* Loading */}
-        {isLoading && (
+        {viewLoading && (
           <div className="flex items-center justify-center py-24 gap-3 text-slate-400">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span className="text-sm font-medium">Loading policies…</span>
@@ -1618,41 +1846,65 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
         )}
 
         {/* Error */}
-        {error && !isLoading && (
+        {viewError && !viewLoading && (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center">
               <AlertCircle className="w-6 h-6 text-red-400" />
             </div>
             <p className="text-sm font-bold text-slate-700">Failed to load policies</p>
-            <p className="text-xs text-slate-400 max-w-xs text-center">{error}</p>
-            <button onClick={load} className="mt-1 px-4 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors">
+            <p className="text-xs text-slate-400 max-w-xs text-center">{viewError}</p>
+            <button
+              onClick={() => {
+                if (policyWorkspaceView === 'attention') setAttentionRefreshKey(current => current + 1);
+                else void load();
+              }}
+              className="mt-1 px-4 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+            >
               Retry
             </button>
           </div>
         )}
 
         {/* Empty */}
-        {!isLoading && !error && items.length === 0 && (
+        {!viewLoading && !viewError && displayItems.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
             <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center">
               <FileText className="w-6 h-6" />
             </div>
-            <p className="text-sm font-bold text-slate-600">No policies found</p>
-            {(searchTerm || activeFilters > 0) && (
+            <p className="text-sm font-bold text-slate-600">
+              {policyWorkspaceView === 'attention'
+                ? policyAttentionView === 'missing'
+                  ? 'No policies are missing a policy number'
+                  : 'No duplicate policies found'
+                : 'No policies found'}
+            </p>
+            {(policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (searchTerm || activeFilters > 0) && (
               <p className="text-xs">Try adjusting your search or filters</p>
             )}
           </div>
         )}
 
         {/* Rows */}
-        {!isLoading && !error && items.length > 0 && (
+        {!viewLoading && !viewError && displayItems.length > 0 && (
           <div>
-            {items.map((policy, idx) => {
+            {displayItems.map((policy, idx) => {
               const isSelected = selectedPolicy?.policy_id === policy.policy_id;
               const isChecked = selectedIds.has(policy.selectionKey);
+              const duplicateGroupStart = isDuplicateView ? duplicateGroupStartByPolicyId.get(policy.policy_id) : undefined;
               return (
+              <React.Fragment key={policy.selectionKey}>
+              {duplicateGroupStart && (
+                <div className="flex items-center justify-between gap-4 border-b border-amber-100 bg-amber-50 px-6 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">Duplicate policy number</p>
+                    <p className="truncate font-mono text-sm font-black text-slate-950">{duplicateGroupStart.label}</p>
+                  </div>
+                  <span className="shrink-0 rounded-lg bg-white px-2.5 py-1 text-[10px] font-black text-amber-800 shadow-sm">
+                    {duplicateGroupStart.policies.length} records
+                  </span>
+                </div>
+              )}
               <div
-                key={policy.policy_id}
                 onClick={() => {
                   if (!readOnlyRows) setSelectedPolicy(isSelected ? null : policy);
                 }}
@@ -1701,7 +1953,20 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 )}
 
                 {/* Policy # */}
-                <p className={`text-xs font-mono truncate ${isSelected ? 'text-white/70' : 'text-slate-500'}`}>{policy.policy_number ?? '—'}</p>
+                <div className="min-w-0">
+                  <p className={`text-xs font-mono truncate ${isSelected ? 'text-white/70' : 'text-slate-500'}`}>{policy.policy_number ?? '—'}</p>
+                  {policyWorkspaceView === 'attention' && (
+                    <span className={`mt-1 inline-flex max-w-full truncate rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${
+                      isSelected ? 'bg-white/10 text-white/70' : 'bg-red-50 text-red-600'
+                    }`}>
+                      {policyAttentionView === 'missing'
+                        ? 'Missing'
+                        : duplicateReasonByPolicyId.get(policy.policy_id)?.kind === 'policy-number'
+                        ? `Duplicate x${duplicateReasonByPolicyId.get(policy.policy_id)?.policies.length ?? 2}`
+                        : `Possible match x${duplicateReasonByPolicyId.get(policy.policy_id)?.policies.length ?? 2}`}
+                    </span>
+                  )}
+                </div>
 
                 {/* Carrier / Product */}
                 <div className="min-w-0">
@@ -1730,22 +1995,23 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 {/* Source */}
                 <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.source_name}</p>
               </div>
+              </React.Fragment>
               );
             })}
           </div>
         )}
 
         {/* Pagination */}
-        {!isLoading && !error && data && (
+        {paginationData && !viewLoading && !viewError && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
           <Pagination
-            cur={data.curPage}
-            next={data.nextPage}
-            prev={data.prevPage}
-            total={data.itemsTotal}
-            pageTotal={data.pageTotal}
-            received={data.itemsReceived}
+            cur={paginationData.curPage}
+            next={paginationData.nextPage}
+            prev={paginationData.prevPage}
+            total={paginationData.itemsTotal}
+            pageTotal={paginationData.pageTotal}
+            received={paginationData.itemsReceived}
             perPage={perPage}
-            offset={data.offset}
+            offset={paginationData.offset}
             onPage={p => setPage(p)}
             onPerPage={n => { setPerPage(n); setPage(1); }}
           />

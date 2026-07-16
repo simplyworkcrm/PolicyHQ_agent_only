@@ -3118,7 +3118,12 @@ const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | '
       </div>
 
       {tab === 'policies' ? (
-        <AgentPoliciesV2 agentIdsOverride={selectedBusinessAgentId ? [selectedBusinessAgentId] : []} hideHeader showDateRangeWhenHeaderHidden />
+        <AgentPoliciesV2
+          agentIdsOverride={selectedBusinessAgentId ? [selectedBusinessAgentId] : []}
+          hideHeader
+          showDateRangeWhenHeaderHidden
+          enableNeedAttention
+        />
       ) : tab === 'activity' ? (
         <MyBusinessActivityLog selectedAgentId={selectedBusinessAgentId} />
       ) : tab === 'expenses' ? (
