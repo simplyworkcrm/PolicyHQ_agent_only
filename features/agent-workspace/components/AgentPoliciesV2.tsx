@@ -1533,8 +1533,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
         {policyWorkspaceView === 'attention' && (
           <div className="inline-flex w-full rounded-xl border border-slate-200 bg-white p-1 sm:w-auto" aria-label="Attention type">
             {([
-              { value: 'missing', label: 'Missing Policy Number', count: missingAttentionData?.itemsTotal ?? missingPolicyNumberItems.length },
-              { value: 'duplicates', label: 'Duplicates', count: attentionDuplicateGroupCount },
+              { value: 'missing', label: 'Missing Policy Number' },
+              { value: 'duplicates', label: 'Duplicates' },
             ] as const).map(option => (
               <button
                 key={option.value}
@@ -1553,9 +1553,6 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 }`}
               >
                 {option.label}
-                <span className={`min-w-6 rounded-md px-1.5 py-0.5 text-[10px] ${
-                  policyAttentionView === option.value ? 'bg-slate-950/10' : 'bg-slate-100'
-                }`}>{attentionLoading ? '...' : option.count}</span>
               </button>
             ))}
           </div>
