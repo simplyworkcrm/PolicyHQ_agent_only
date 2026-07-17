@@ -1211,7 +1211,7 @@ const AgencyExpenseManagement: React.FC<{
 };
 
 export const AgentDownlines: React.FC = () => {
-  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName, hasAgentProfile } = useAgentContext();
+  const { currentAgentId, selectedAgentIds, subAgents, hasAgentProfile } = useAgentContext();
   const navigate = useNavigate();
 
   // Main View State
@@ -1220,7 +1220,7 @@ export const AgentDownlines: React.FC = () => {
   const [loadingSelected, setLoadingSelected] = useState(false);
   
   // Tabs & Views
-  const [viewMode, setViewMode] = useState<'overview' | 'team' | 'policies' | 'expenses'>('overview');
+  const [viewMode, setViewMode] = useState<'overview' | 'team' | 'policies' | 'expenses'>('policies');
 
   // Policy Table State
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -1245,7 +1245,9 @@ export const AgentDownlines: React.FC = () => {
 
   // 1. Keep the direct-downline request scoped to one selected agent.
   useEffect(() => {
-    const scopeIds = selectedAgentIds.filter(Boolean);
+    const scopeIds = [currentAgentId, ...selectedAgentIds]
+      .filter(Boolean)
+      .filter((agentId, index, all) => all.indexOf(agentId) === index);
     const nextSelectedId = scopeIds.includes(selectedAgentId) ? selectedAgentId : (scopeIds[0] || currentAgentId);
     if (nextSelectedId && nextSelectedId !== selectedAgentId) {
       setSelectedAgentId(nextSelectedId);
@@ -1300,15 +1302,14 @@ export const AgentDownlines: React.FC = () => {
     setPage(1);
   };
 
-  const agentSwitchOptions = (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
+  const agentSwitchOptions = [currentAgentId, ...selectedAgentIds]
     .filter(Boolean)
     .filter((agentId, index, all) => all.indexOf(agentId) === index)
     .map(agentId => {
       const subAgent = subAgents.find(agent => agent.agentId === agentId);
-      const isCurrentSingleView = agentId === currentAgentId && selectedAgentIds.length <= 1;
       return {
         id: agentId,
-        label: subAgent?.name || (isCurrentSingleView ? viewingAgentName : agentId),
+        label: agentId === currentAgentId ? 'My Workspace' : (subAgent?.name || agentId),
       };
     });
 
@@ -1435,6 +1436,7 @@ export const AgentDownlines: React.FC = () => {
           initialTimeframe="monthly"
           enableNeedAttention
           needAttentionScope="agency"
+          teamAgentFilterRootId={selectedAgentId}
         />
       ) : viewMode === 'expenses' ? (
         <AgencyExpenseManagement

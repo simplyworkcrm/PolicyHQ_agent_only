@@ -90,14 +90,14 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   const [isLeaderboardCollapsed, setIsLeaderboardCollapsed] = useState(false);
 
   const agentOptions = useMemo(() => (
-    (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
+    [currentAgentId, ...selectedAgentIds]
       .filter(Boolean)
       .filter((agentId, index, all) => all.indexOf(agentId) === index)
       .map(agentId => {
         const subAgent = subAgents.find(agent => agent.agentId === agentId);
         return {
           id: agentId,
-          label: subAgent?.name || (agentId === currentAgentId ? viewingAgentName : agentId),
+          label: agentId === currentAgentId ? 'My Workspace' : (subAgent?.name || agentId),
         };
       })
   ), [currentAgentId, selectedAgentIds, subAgents, viewingAgentName]);

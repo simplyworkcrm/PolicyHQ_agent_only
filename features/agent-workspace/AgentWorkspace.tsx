@@ -3123,6 +3123,7 @@ const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | '
           hideHeader
           showDateRangeWhenHeaderHidden
           enableNeedAttention
+          hideAgentFilter
         />
       ) : tab === 'activity' ? (
         <MyBusinessActivityLog selectedAgentId={selectedBusinessAgentId} />

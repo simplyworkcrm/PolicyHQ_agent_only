@@ -851,6 +851,7 @@ const QuickSearchFilterSelect: React.FC<{
 }> = ({ value, displayValue, options, placeholder, loading, onChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [visibleOptionCount, setVisibleOptionCount] = useState(50);
   const ref = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(option => option.id === value);
   const selectedLabel = displayValue || selectedOption?.label || '';
@@ -864,7 +865,18 @@ const QuickSearchFilterSelect: React.FC<{
     return () => document.removeEventListener('mousedown', handle);
   }, [isOpen]);
 
-  const filteredOptions = options.filter(option => option.label.toLowerCase().includes(search.toLowerCase())).slice(0, 50);
+  useEffect(() => {
+    setVisibleOptionCount(50);
+  }, [isOpen, search, options]);
+
+  const filteredOptions = options.filter(option => option.label.toLowerCase().includes(search.toLowerCase()));
+  const visibleOptions = filteredOptions.slice(0, visibleOptionCount);
+
+  const handleOptionsScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, clientHeight, scrollHeight } = event.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight > 24 || visibleOptionCount >= filteredOptions.length) return;
+    setVisibleOptionCount(current => Math.min(current + 50, filteredOptions.length));
+  };
 
   return (
     <div ref={ref} className="relative min-w-0">
@@ -891,8 +903,8 @@ const QuickSearchFilterSelect: React.FC<{
               />
             </div>
           </div>
-          <div className="max-h-64 overflow-y-auto p-1">
-            {filteredOptions.length > 0 ? filteredOptions.map(option => (
+          <div className="max-h-64 overflow-y-auto p-1" onScroll={handleOptionsScroll}>
+            {visibleOptions.length > 0 ? visibleOptions.map(option => (
               <button
                 key={option.id}
                 type="button"
@@ -904,6 +916,11 @@ const QuickSearchFilterSelect: React.FC<{
               </button>
             )) : (
               <div className="py-5 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">No options found</div>
+            )}
+            {visibleOptionCount < filteredOptions.length && (
+              <div className="py-2 text-center text-[9px] font-black uppercase tracking-widest text-slate-300">
+                Scroll for more
+              </div>
             )}
           </div>
         </div>
@@ -980,6 +997,8 @@ interface AgentPoliciesV2Props {
   initialTimeframe?: PoliciesTimeframe;
   enableNeedAttention?: boolean;
   needAttentionScope?: 'business' | 'agency';
+  teamAgentFilterRootId?: string;
+  hideAgentFilter?: boolean;
 }
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
@@ -994,6 +1013,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   initialTimeframe = 'all',
   enableNeedAttention = false,
   needAttentionScope = 'business',
+  teamAgentFilterRootId,
+  hideAgentFilter = false,
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -1015,7 +1036,9 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const [policyStatusOptions, setPolicyStatusOptions] = useState<PolicyFilterOption[]>([]);
   const [paidStatusOptions, setPaidStatusOptions] = useState<PolicyFilterOption[]>([]);
   const [sourceOptions, setSourceOptions] = useState<PolicyFilterOption[]>([]);
+  const [teamAgentOptions, setTeamAgentOptions] = useState<PolicyFilterOption[]>([]);
   const [filterOptionsLoading, setFilterOptionsLoading] = useState(false);
+  const [teamAgentOptionsLoading, setTeamAgentOptionsLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [timeframe, setTimeframe] = useState<PoliciesTimeframe>(initialTimeframe);
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
@@ -1036,6 +1059,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   );
 
   const agentOptions = useMemo<PolicyFilterOption[]>(() => {
+    if (teamAgentFilterRootId) return teamAgentOptions;
     const options = effectiveAgentIds.map(agentId => {
       const subAgent = subAgents.find(agent => agent.agentId === agentId);
       return {
@@ -1044,7 +1068,31 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       };
     });
     return options.filter((option, index, all) => all.findIndex(item => item.id === option.id) === index);
-  }, [effectiveAgentIds, subAgents, currentAgentId, viewingAgentName]);
+  }, [teamAgentFilterRootId, teamAgentOptions, effectiveAgentIds, subAgents, currentAgentId, viewingAgentName]);
+
+  useEffect(() => {
+    if (!teamAgentFilterRootId) {
+      setTeamAgentOptions([]);
+      setTeamAgentOptionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setTeamAgentOptions([]);
+    setTeamAgentOptionsLoading(true);
+    agentPoliciesV2Api.getTeamAgentOptions(teamAgentFilterRootId)
+      .then(options => {
+        if (!cancelled) setTeamAgentOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setTeamAgentOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTeamAgentOptionsLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [teamAgentFilterRootId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2187,7 +2235,9 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                     <StyledSelect
                       value={row.field}
                       placeholder="Choose field"
-                      options={POLICY_FILTER_FIELDS.map(option => ({ value: option.key, label: option.label }))}
+                      options={POLICY_FILTER_FIELDS
+                        .filter(option => !hideAgentFilter || option.key !== 'ref_agent_owner')
+                        .map(option => ({ value: option.key, label: option.label }))}
                       onChange={value => {
                         const nextField = value as PolicyFilterFieldKey;
                         const nextOps = getPolicyFilterOps(nextField);
@@ -2223,7 +2273,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                         value={row.value}
                         displayValue={row.displayValue}
                         options={getRemoteOptions(row.field)}
-                        loading={filterOptionsLoading}
+                        loading={filterOptionsLoading || (row.field === 'ref_agent_owner' && teamAgentOptionsLoading)}
                         placeholder={`Select ${field.label.toLowerCase()}`}
                         onChange={option => updateFilterRow(group.id, row.id, { value: option.id, displayValue: option.label })}
                       />

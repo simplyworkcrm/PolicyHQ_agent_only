@@ -396,4 +396,13 @@ export const agentPoliciesV2Api = {
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return normalizeMetaOptions(await response.json(), 'Unknown Source');
   },
+
+  async getTeamAgentOptions(agentId: string): Promise<PolicyFilterOption[]> {
+    const response = await fetch(`${UTILITY_API_URL}/team/agents/${encodeURIComponent(agentId)}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    return normalizeMetaOptions(await response.json(), 'Unknown Agent');
+  },
 };
