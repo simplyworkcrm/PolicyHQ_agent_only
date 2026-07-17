@@ -3,6 +3,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { SubAgent } from '../../../shared/types/index';
 
 interface AgentContextType {
+  primaryAgentId: string;
   currentAgentId: string;
   selectedAgentIds: string[];
   isImpersonating: boolean;
@@ -24,6 +25,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   
   // Default to the user's primary agent identity
   const primaryAgent = user?.agentAccess?.[0];
+  const primaryAgentId = primaryAgent?.agentId || '';
   const [selectedImpersonatedIds, setSelectedImpersonatedIds] = useState<string[]>([]);
 
   const subAgents = primaryAgent?.downline || [];
@@ -106,6 +108,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return (
     <AgentContext.Provider value={{
+      primaryAgentId,
       currentAgentId,
       selectedAgentIds,
       isImpersonating,

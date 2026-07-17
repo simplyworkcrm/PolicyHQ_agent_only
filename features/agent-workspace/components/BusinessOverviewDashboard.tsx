@@ -75,11 +75,12 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   loadingLabel,
   initialTimeframe = 'all',
 }) => {
-  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
+  const { primaryAgentId, currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
+  const workspaceAgentId = primaryAgentId || currentAgentId;
   const [timeframe, setTimeframe] = useState<PoliciesTimeframe>(initialTimeframe);
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(currentAgentId);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(workspaceAgentId);
   const [data, setData] = useState<MyBusinessOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,27 +91,27 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   const [isLeaderboardCollapsed, setIsLeaderboardCollapsed] = useState(false);
 
   const agentOptions = useMemo(() => (
-    [currentAgentId, ...selectedAgentIds]
+    [workspaceAgentId, ...selectedAgentIds]
       .filter(Boolean)
       .filter((agentId, index, all) => all.indexOf(agentId) === index)
       .map(agentId => {
         const subAgent = subAgents.find(agent => agent.agentId === agentId);
         return {
           id: agentId,
-          label: agentId === currentAgentId ? 'My Workspace' : (subAgent?.name || agentId),
+          label: agentId === workspaceAgentId ? 'My Workspace' : (subAgent?.name || agentId),
         };
       })
-  ), [currentAgentId, selectedAgentIds, subAgents, viewingAgentName]);
+  ), [selectedAgentIds, subAgents, workspaceAgentId]);
 
   useEffect(() => {
     const nextSelectedId = agentOptions.some(agent => agent.id === selectedAgentId)
       ? selectedAgentId
-      : (agentOptions[0]?.id || currentAgentId);
+      : (agentOptions[0]?.id || workspaceAgentId);
 
     if (nextSelectedId && nextSelectedId !== selectedAgentId) {
       setSelectedAgentId(nextSelectedId);
     }
-  }, [agentOptions, currentAgentId, selectedAgentId]);
+  }, [agentOptions, selectedAgentId, workspaceAgentId]);
 
   const selectedAgentLabel = agentOptions.find(agent => agent.id === selectedAgentId)?.label || viewingAgentName || 'Selected Agent';
 

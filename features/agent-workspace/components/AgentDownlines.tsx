@@ -1211,11 +1211,12 @@ const AgencyExpenseManagement: React.FC<{
 };
 
 export const AgentDownlines: React.FC = () => {
-  const { currentAgentId, selectedAgentIds, subAgents, hasAgentProfile } = useAgentContext();
+  const { primaryAgentId, currentAgentId, selectedAgentIds, subAgents, hasAgentProfile } = useAgentContext();
   const navigate = useNavigate();
+  const workspaceAgentId = primaryAgentId || currentAgentId;
 
   // Main View State
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(currentAgentId);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(workspaceAgentId);
   const [selectedHierarchyData, setSelectedHierarchyData] = useState<DownlineHierarchy | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   
@@ -1245,17 +1246,17 @@ export const AgentDownlines: React.FC = () => {
 
   // 1. Keep the direct-downline request scoped to one selected agent.
   useEffect(() => {
-    const scopeIds = [currentAgentId, ...selectedAgentIds]
+    const scopeIds = [workspaceAgentId, ...selectedAgentIds]
       .filter(Boolean)
       .filter((agentId, index, all) => all.indexOf(agentId) === index);
-    const nextSelectedId = scopeIds.includes(selectedAgentId) ? selectedAgentId : (scopeIds[0] || currentAgentId);
+    const nextSelectedId = scopeIds.includes(selectedAgentId) ? selectedAgentId : (scopeIds[0] || workspaceAgentId);
     if (nextSelectedId && nextSelectedId !== selectedAgentId) {
       setSelectedAgentId(nextSelectedId);
       setTableSearch('');
       setDebouncedTableSearch('');
       setPage(1);
     }
-  }, [currentAgentId, selectedAgentId, selectedAgentIds]);
+  }, [selectedAgentId, selectedAgentIds, workspaceAgentId]);
 
   // 2. Fetch Selected Agent Hierarchy Data
   useEffect(() => {
@@ -1302,14 +1303,14 @@ export const AgentDownlines: React.FC = () => {
     setPage(1);
   };
 
-  const agentSwitchOptions = [currentAgentId, ...selectedAgentIds]
+  const agentSwitchOptions = [workspaceAgentId, ...selectedAgentIds]
     .filter(Boolean)
     .filter((agentId, index, all) => all.indexOf(agentId) === index)
     .map(agentId => {
       const subAgent = subAgents.find(agent => agent.agentId === agentId);
       return {
         id: agentId,
-        label: agentId === currentAgentId ? 'My Workspace' : (subAgent?.name || agentId),
+        label: agentId === workspaceAgentId ? 'My Workspace' : (subAgent?.name || agentId),
       };
     });
 
