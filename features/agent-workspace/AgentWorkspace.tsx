@@ -3009,8 +3009,9 @@ const MyBusinessExpenseLog = ({
 };
 
 const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | 'expenses' }) => {
-  const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
-  const [selectedBusinessAgentId, setSelectedBusinessAgentId] = useState<string>(currentAgentId);
+  const { primaryAgentId, currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
+  const workspaceAgentId = primaryAgentId || currentAgentId;
+  const [selectedBusinessAgentId, setSelectedBusinessAgentId] = useState<string>(workspaceAgentId);
   const tabs = [
     { key: 'overview', label: 'Overview', to: '/business', icon: <BarChart3 className="h-4 w-4" /> },
     { key: 'policies', label: 'Policies', to: '/business/policies', icon: <FileCheck className="h-4 w-4" /> },
@@ -3035,26 +3036,26 @@ const MyBusinessPage = ({ tab }: { tab: 'overview' | 'policies' | 'activity' | '
           icon: <Briefcase className="h-5 w-5" />,
         };
   const businessAgentOptions = useMemo(() => (
-    (selectedAgentIds.length > 0 ? selectedAgentIds : [currentAgentId])
+    [workspaceAgentId, ...selectedAgentIds]
       .filter(Boolean)
       .filter((agentId, index, all) => all.indexOf(agentId) === index)
       .map(agentId => {
         const subAgent = subAgents.find(agent => agent.agentId === agentId);
         return {
           id: agentId,
-          label: subAgent?.name || (agentId === currentAgentId ? viewingAgentName : agentId),
+          label: agentId === workspaceAgentId ? 'My Workspace' : (subAgent?.name || agentId),
         };
       })
-  ), [currentAgentId, selectedAgentIds, subAgents, viewingAgentName]);
+  ), [selectedAgentIds, subAgents, workspaceAgentId]);
   useEffect(() => {
     const nextSelectedId = businessAgentOptions.some(agent => agent.id === selectedBusinessAgentId)
       ? selectedBusinessAgentId
-      : (businessAgentOptions[0]?.id || currentAgentId);
+      : workspaceAgentId;
 
     if (nextSelectedId && nextSelectedId !== selectedBusinessAgentId) {
       setSelectedBusinessAgentId(nextSelectedId);
     }
-  }, [businessAgentOptions, currentAgentId, selectedBusinessAgentId]);
+  }, [businessAgentOptions, selectedBusinessAgentId, workspaceAgentId]);
 
   const selectedBusinessAgentLabel = businessAgentOptions.find(agent => agent.id === selectedBusinessAgentId)?.label || viewingAgentName || 'My Business';
 
