@@ -30,6 +30,7 @@ import { Policy } from '../../../shared/types/index';
 
 type DownlineSortKey = 'first_name' | 'direct_upline_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
 type DownlineSortConfig = { key: DownlineSortKey; direction: 'asc' | 'desc' };
+type AgencyViewMode = 'overview' | 'team' | 'policies' | 'expenses';
 
 interface AgencyDebtRow {
   id?: string | number;
@@ -1211,7 +1212,7 @@ const AgencyExpenseManagement: React.FC<{
   );
 };
 
-export const AgentDownlines: React.FC = () => {
+export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMode = 'overview' }) => {
   const { primaryAgentId, currentAgentId, subAgents, hasAgentProfile } = useAgentContext();
   const navigate = useNavigate();
   const workspaceAgentId = primaryAgentId || currentAgentId;
@@ -1221,9 +1222,6 @@ export const AgentDownlines: React.FC = () => {
   const [selectedHierarchyData, setSelectedHierarchyData] = useState<DownlineHierarchy | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   
-  // Tabs & Views
-  const [viewMode, setViewMode] = useState<'overview' | 'team' | 'policies' | 'expenses'>('policies');
-
   // Policy Table State
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
@@ -1310,33 +1308,7 @@ export const AgentDownlines: React.FC = () => {
 
   return (
     <div className="font-sans w-full animate-in fade-in duration-300">
-      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-100 shadow-sm shrink-0">
-          <button
-            onClick={() => setViewMode('overview')}
-            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'overview' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            Overview
-          </button>
-          <button
-            onClick={() => setViewMode('team')}
-            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'team' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            Team List
-          </button>
-          <button
-            onClick={() => setViewMode('policies')}
-            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'policies' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            Production
-          </button>
-          <button
-            onClick={() => setViewMode('expenses')}
-            className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === 'expenses' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            Expense Management
-          </button>
-        </div>
+      <div className="mb-6 flex min-h-11 justify-end">
         <div id={toolbarSlotId} className="flex min-h-11 flex-wrap items-center justify-end gap-3">
           {(viewMode === 'team' || viewMode === 'expenses') && (
             <DateRangeSelector value={dateRange} onChange={setDateRange} />

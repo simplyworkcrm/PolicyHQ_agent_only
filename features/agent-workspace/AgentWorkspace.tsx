@@ -5,6 +5,7 @@ import goalsUniverseBackground from './assets/goals-universe-background.jpg';
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   FileCheck, 
+  FileImage,
   Split, 
   DollarSign, 
   AlertCircle, 
@@ -34,8 +35,10 @@ import {
   Bot,
   Moon,
   Search,
+  SlidersHorizontal,
   Sun,
   Trash2,
+  Upload,
   X
 } from 'lucide-react';
 import {
@@ -82,7 +85,7 @@ import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { NotificationSale } from '../../shared/components/NotificationSale';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
 import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myBusinessActivityApi } from './services/myBusinessActivityApi';
-import { MyBusinessExpenseRow, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
+import { AssistPolicySplit, MyBusinessExpenseRow, UtilityAgent, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
 
 // Sidebar Group - Expandable parent with sub-items
 const SidebarGroup = ({
@@ -2244,12 +2247,16 @@ const MyBusinessActivityLog = ({ selectedAgentId, toolbarSlotId }: { selectedAge
 };
 
 type ExpenseTableView = 'rundown' | 'month';
+type ExpenseType = 'personal' | 'assist';
 
 interface ExpenseFormState {
   expenseDate: string;
   expense: string;
   cost: string;
   notes: string;
+  type: 'personal' | 'assist';
+  agentOnAssist: string;
+  receipt: File | null;
 }
 
 const emptyExpenseForm = (): ExpenseFormState => ({
@@ -2257,6 +2264,9 @@ const emptyExpenseForm = (): ExpenseFormState => ({
   expense: '',
   cost: '',
   notes: '',
+  type: 'personal',
+  agentOnAssist: '',
+  receipt: null,
 });
 
 const toExpenseNumber = (value: unknown) => {
@@ -2265,6 +2275,29 @@ const toExpenseNumber = (value: unknown) => {
 };
 
 const formatExpenseCurrency = (value: unknown) => currencyFormatter.format(toExpenseNumber(value));
+
+const getExpenseReceiptDisplay = (receipt: unknown) => {
+  if (!receipt) return null;
+
+  if (typeof receipt === 'string') {
+    return {
+      label: 'View receipt',
+      url: /^https?:\/\//i.test(receipt) ? receipt : null,
+    };
+  }
+
+  if (typeof receipt === 'object') {
+    const value = receipt as Record<string, unknown>;
+    const rawUrl = [value.url, value.path, value.access].find(item => typeof item === 'string') as string | undefined;
+    const rawLabel = [value.name, value.filename, value.original_name].find(item => typeof item === 'string') as string | undefined;
+    return {
+      label: rawLabel || 'View receipt',
+      url: rawUrl && /^https?:\/\//i.test(rawUrl) ? rawUrl : null,
+    };
+  }
+
+  return null;
+};
 
 const normalizeExpenseDate = (value?: string | null) => {
   if (!value) return '';
@@ -2473,6 +2506,7 @@ const MyBusinessExpenseLog = ({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [view, setView] = useState<ExpenseTableView>('rundown');
+  const [expenseType, setExpenseType] = useState<ExpenseType>('personal');
   const [formOpen, setFormOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<MyBusinessExpenseRow | null>(null);
   const [form, setForm] = useState<ExpenseFormState>(() => emptyExpenseForm());
@@ -2482,7 +2516,82 @@ const MyBusinessExpenseLog = ({
   const [deleteTarget, setDeleteTarget] = useState<MyBusinessExpenseRow | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [collapsedMonths, setCollapsedMonths] = useState<Record<string, boolean>>({});
+  const [assistAgents, setAssistAgents] = useState<UtilityAgent[]>([]);
+  const [assistAgentsLoading, setAssistAgentsLoading] = useState(false);
+  const [assistAgentsError, setAssistAgentsError] = useState<string | null>(null);
+  const [assistAgentPickerOpen, setAssistAgentPickerOpen] = useState(false);
+  const [assistAgentSearch, setAssistAgentSearch] = useState('');
+  const [splitTarget, setSplitTarget] = useState<MyBusinessExpenseRow | null>(null);
+  const [splitPolicies, setSplitPolicies] = useState<AssistPolicySplit[]>([]);
+  const [splitLoading, setSplitLoading] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  const [splitSearch, setSplitSearch] = useState('');
   const datePickerRef = useRef<HTMLDivElement>(null);
+  const assistAgentPickerRef = useRef<HTMLDivElement>(null);
+  const selectedAssistAgent = useMemo(
+    () => assistAgents.find(agent => agent.id === form.agentOnAssist) || null,
+    [assistAgents, form.agentOnAssist],
+  );
+  const filteredAssistAgents = useMemo(() => {
+    const query = assistAgentSearch.trim().toLocaleLowerCase();
+    const matches = query
+      ? assistAgents.filter(agent => `${agent.first_name || ''} ${agent.last_name || ''}`.trim().toLocaleLowerCase().includes(query))
+      : assistAgents;
+    return matches.slice(0, 75);
+  }, [assistAgentSearch, assistAgents]);
+  const filteredSplitPolicies = useMemo(() => {
+    const query = splitSearch.trim().toLocaleLowerCase();
+    if (!query) return splitPolicies;
+
+    return splitPolicies.filter(policy => (
+      [
+        policy.client,
+        policy.policy_number,
+        policy.ref_carrier_name,
+        policy.carrier_product,
+        policy.state,
+        policy.ref_policyStatus_name,
+      ]
+        .filter(Boolean)
+        .some(value => String(value).toLocaleLowerCase().includes(query))
+    ));
+  }, [splitPolicies, splitSearch]);
+  const splitTotals = useMemo(() => splitPolicies.reduce((totals, policy) => {
+    const annualPremium = toExpenseNumber(policy.annual_premium);
+    const splitPercent = toExpenseNumber(policy.split?.agent_on_split_percent);
+    totals.annualPremium += annualPremium;
+    totals.splitPremium += annualPremium * (splitPercent / 100);
+    return totals;
+  }, { annualPremium: 0, splitPremium: 0 }), [splitPolicies]);
+
+  useEffect(() => {
+    if (!formOpen || form.type !== 'assist' || assistAgents.length > 0) return;
+
+    let cancelled = false;
+    setAssistAgentsLoading(true);
+    setAssistAgentsError(null);
+
+    myBusinessExpenseApi.getUtilityAgents()
+      .then(agents => {
+        if (cancelled) return;
+        const sortedAgents = [...agents].sort((a, b) => {
+          const aName = `${a.first_name || ''} ${a.last_name || ''}`.trim();
+          const bName = `${b.first_name || ''} ${b.last_name || ''}`.trim();
+          return aName.localeCompare(bName);
+        });
+        setAssistAgents(sortedAgents);
+      })
+      .catch(err => {
+        if (!cancelled) setAssistAgentsError(err instanceof Error ? err.message : 'Unable to load agents.');
+      })
+      .finally(() => {
+        if (!cancelled) setAssistAgentsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assistAgents.length, form.type, formOpen]);
 
   useEffect(() => {
     if (!datePickerOpen) return;
@@ -2497,6 +2606,19 @@ const MyBusinessExpenseLog = ({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [datePickerOpen]);
 
+  useEffect(() => {
+    if (!assistAgentPickerOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (assistAgentPickerRef.current && !assistAgentPickerRef.current.contains(event.target as Node)) {
+        setAssistAgentPickerOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [assistAgentPickerOpen]);
+
   const loadExpenses = useCallback(async () => {
     if (!selectedAgentId) return;
 
@@ -2507,6 +2629,7 @@ const MyBusinessExpenseLog = ({
       const requestTimeframe = timeframe === 'all' ? null : timeframe;
       const response = await myBusinessExpenseApi.getExpenses({
         agentId: selectedAgentId,
+        type: expenseType,
         timeframe: requestTimeframe,
         startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
         endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
@@ -2528,7 +2651,7 @@ const MyBusinessExpenseLog = ({
     } finally {
       setLoading(false);
     }
-  }, [endDate, selectedAgentId, startDate, timeframe]);
+  }, [endDate, expenseType, selectedAgentId, startDate, timeframe]);
 
   useEffect(() => {
     loadExpenses();
@@ -2585,6 +2708,8 @@ const MyBusinessExpenseLog = ({
     setFormError(null);
     setMessage(null);
     setDatePickerOpen(false);
+    setAssistAgentPickerOpen(false);
+    setAssistAgentSearch('');
     setFormOpen(true);
   };
 
@@ -2595,10 +2720,15 @@ const MyBusinessExpenseLog = ({
       expense: String(row.expense || ''),
       cost: row.cost === null || row.cost === undefined ? '' : String(row.cost),
       notes: String(row.notes || ''),
+      type: row.type === 'assist' ? 'assist' : row.type === 'personal' ? 'personal' : expenseType,
+      agentOnAssist: String(row.agent_on_assist || ''),
+      receipt: null,
     });
     setFormError(null);
     setMessage(null);
     setDatePickerOpen(false);
+    setAssistAgentPickerOpen(false);
+    setAssistAgentSearch('');
     setFormOpen(true);
   };
 
@@ -2609,6 +2739,8 @@ const MyBusinessExpenseLog = ({
     setForm(emptyExpenseForm());
     setFormError(null);
     setDatePickerOpen(false);
+    setAssistAgentPickerOpen(false);
+    setAssistAgentSearch('');
   };
 
   const handleSaveExpense = async () => {
@@ -2633,6 +2765,11 @@ const MyBusinessExpenseLog = ({
       return;
     }
 
+    if (form.type === 'assist' && !form.agentOnAssist) {
+      setFormError('Select the agent receiving the assist.');
+      return;
+    }
+
     setSaving(true);
     setFormError(null);
     setMessage(null);
@@ -2644,6 +2781,9 @@ const MyBusinessExpenseLog = ({
         expense,
         cost,
         notes: form.notes.trim(),
+        type: form.type,
+        agentOnAssist: form.type === 'assist' ? form.agentOnAssist : null,
+        receipt: form.receipt,
       };
 
       if (editingRow?.id !== undefined && editingRow.id !== null) {
@@ -2657,7 +2797,11 @@ const MyBusinessExpenseLog = ({
       setFormOpen(false);
       setEditingRow(null);
       setForm(emptyExpenseForm());
-      await loadExpenses();
+      if (form.type === expenseType) {
+        await loadExpenses();
+      } else {
+        setExpenseType(form.type);
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Unable to save expense.');
     } finally {
@@ -2696,21 +2840,83 @@ const MyBusinessExpenseLog = ({
     }
   };
 
+  const openAssistSplits = async (row: MyBusinessExpenseRow) => {
+    const agentOnAssist = String(row.agent_on_assist || '').trim();
+    const expenseDate = normalizeExpenseDate(row.expense_date);
+
+    setSplitTarget(row);
+    setSplitPolicies([]);
+    setSplitSearch('');
+    setSplitError(null);
+
+    if (!selectedAgentId || !agentOnAssist || !expenseDate) {
+      setSplitError('This expense is missing the agent or expense date required to load policy splits.');
+      return;
+    }
+
+    setSplitLoading(true);
+    try {
+      const policies = await myBusinessExpenseApi.getAssistSplits({
+        agentId: selectedAgentId,
+        agentOnAssist,
+        expenseDate,
+      });
+      setSplitPolicies(policies);
+    } catch (err) {
+      setSplitError(err instanceof Error ? err.message : 'Unable to load policy splits.');
+    } finally {
+      setSplitLoading(false);
+    }
+  };
+
+  const closeAssistSplits = () => {
+    setSplitTarget(null);
+    setSplitPolicies([]);
+    setSplitSearch('');
+    setSplitError(null);
+  };
+
   const renderExpenseRows = (items: MyBusinessExpenseRow[], keyPrefix: string) => (
     items.length > 0 ? (
       items.map((row, index) => {
         const isDeleting = deletingId !== null && row.id === deletingId;
+        const rowType = row.type === 'assist' ? 'assist' : row.type === 'personal' ? 'personal' : expenseType;
+        const receipt = getExpenseReceiptDisplay(row.receipt);
 
         return (
           <div
             key={`${keyPrefix}-${row.id ?? index}`}
-            className="grid min-w-[58rem] grid-cols-[1fr_1.2fr_0.8fr_1.5fr_0.8fr] items-center border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600"
+            className="grid min-w-[82rem] grid-cols-[0.9fr_1.25fr_1.2fr_0.8fr_0.9fr_1.3fr_1fr] items-center gap-3 border-t border-slate-50 px-5 py-4 text-xs font-bold text-slate-600"
           >
             <span className="font-black text-slate-950">{formatManualActivityDate(normalizeExpenseDate(row.expense_date))}</span>
+            <span className="min-w-0 truncate font-black text-slate-700" title={rowType === 'assist' ? row.agent_on_assist_name || row.agent_on_assist || '' : ''}>
+              {rowType === 'assist' ? row.agent_on_assist_name || row.agent_on_assist || 'Agent unavailable' : '—'}
+            </span>
             <span className="truncate text-slate-800">{row.expense || '-'}</span>
             <span className="font-black text-slate-950">{formatExpenseCurrency(row.cost)}</span>
+            <span>
+              {receipt ? (
+                receipt.url ? (
+                  <a href={receipt.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100" title={receipt.label}>
+                    <FileImage className="h-3.5 w-3.5" /> Receipt
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-slate-500" title={receipt.label}><FileImage className="h-3.5 w-3.5" /> Attached</span>
+                )
+              ) : <span className="text-slate-300">—</span>}
+            </span>
             <span className="truncate">{row.notes || '-'}</span>
             <span className="flex justify-end gap-2">
+              {rowType === 'assist' ? (
+                <button
+                  type="button"
+                  onClick={() => openAssistSplits(row)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-100 bg-violet-50 text-violet-600 transition hover:border-violet-300 hover:bg-violet-100 hover:text-violet-800"
+                  title="View agent splits"
+                >
+                  <Split className="h-4 w-4" />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => openEditForm(row)}
@@ -2745,7 +2951,7 @@ const MyBusinessExpenseLog = ({
         slotId={toolbarSlotId}
         fallbackClassName="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-start"
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-start">
+        <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-start">
         <PolicyDateRangeFilter
           timeframe={timeframe}
           startDate={startDate}
@@ -2764,7 +2970,7 @@ const MyBusinessExpenseLog = ({
           type="button"
           onClick={openCreateForm}
           disabled={!selectedAgentId}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none sm:ml-auto"
         >
           <Plus className="h-4 w-4" />
           Add Expense
@@ -2809,6 +3015,29 @@ const MyBusinessExpenseLog = ({
             </div>
           ) : null}
 
+          <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Expense table type">
+              {(['personal', 'assist'] as const).map(type => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={expenseType === type}
+                  onClick={() => {
+                    setExpenseType(type);
+                    setRows([]);
+                    setSummary({ totalCost: 0, expenseCount: 0 });
+                    setMessage(null);
+                  }}
+                  className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-black capitalize transition-all ${expenseType === type ? type === 'assist' ? 'bg-violet-600 text-white shadow-lg shadow-violet-200' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white text-slate-500 hover:text-slate-950'}`}
+                >
+                  {type === 'assist' ? <Users className="h-4 w-4" /> : <ReceiptText className="h-4 w-4" />}
+                  {type}
+                </button>
+              ))}
+            </div>
+            <p className="px-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Showing {expenseType} expenses</p>
+          </div>
+
           <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
             {[
               ['Total Cost', formatExpenseCurrency(summary.totalCost)],
@@ -2846,10 +3075,12 @@ const MyBusinessExpenseLog = ({
           {view === 'rundown' ? (
             <div className="overflow-hidden rounded-3xl border border-slate-100">
               <div className="overflow-auto">
-                <div className="grid min-w-[58rem] grid-cols-[1fr_1.2fr_0.8fr_1.5fr_0.8fr] bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                <div className="grid min-w-[82rem] grid-cols-[0.9fr_1.25fr_1.2fr_0.8fr_0.9fr_1.3fr_1fr] gap-3 bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                   <span>Date</span>
+                  <span>Assisted Agent</span>
                   <span>Expense</span>
                   <span>Cost</span>
+                  <span>Receipt</span>
                   <span>Notes</span>
                   <span className="text-right">Actions</span>
                 </div>
@@ -2888,10 +3119,12 @@ const MyBusinessExpenseLog = ({
                     </button>
                     {!collapsed ? (
                       <div className="overflow-auto">
-                        <div className="grid min-w-[58rem] grid-cols-[1fr_1.2fr_0.8fr_1.5fr_0.8fr] bg-white px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                        <div className="grid min-w-[82rem] grid-cols-[0.9fr_1.25fr_1.2fr_0.8fr_0.9fr_1.3fr_1fr] gap-3 bg-white px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                           <span>Date</span>
+                          <span>Assisted Agent</span>
                           <span>Expense</span>
                           <span>Cost</span>
+                          <span>Receipt</span>
                           <span>Notes</span>
                           <span className="text-right">Actions</span>
                         </div>
@@ -2929,6 +3162,109 @@ const MyBusinessExpenseLog = ({
             </div>
 
             <div className="space-y-4 p-6">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2">
+                <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Expense type</p>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Expense type">
+                  {(['personal', 'assist'] as const).map(type => (
+                    <button
+                      key={type}
+                      type="button"
+                      aria-pressed={form.type === type}
+                      onClick={() => {
+                        setForm(current => ({
+                          ...current,
+                          type,
+                          agentOnAssist: type === 'personal' ? '' : current.agentOnAssist,
+                        }));
+                        setAssistAgentPickerOpen(false);
+                        setAssistAgentSearch('');
+                        setFormError(null);
+                      }}
+                      className={`h-11 rounded-xl text-xs font-black capitalize transition-all ${form.type === type ? 'bg-slate-950 text-white shadow-lg shadow-slate-300' : 'bg-white text-slate-500 hover:text-slate-950'}`}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {form.type === 'assist' ? (
+                <div className="block space-y-2" ref={assistAgentPickerRef}>
+                  <span id="assist-agent-label" className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Agent receiving assist</span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      aria-labelledby="assist-agent-label"
+                      aria-haspopup="listbox"
+                      aria-expanded={assistAgentPickerOpen}
+                      disabled={assistAgentsLoading}
+                      onClick={() => setAssistAgentPickerOpen(open => !open)}
+                      className="flex h-12 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-left text-sm font-bold text-slate-900 outline-none transition hover:border-amber-300 focus:border-amber-300 disabled:cursor-wait disabled:bg-slate-50 disabled:text-slate-400"
+                    >
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <Users className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className={`truncate ${selectedAssistAgent ? 'text-slate-950' : 'text-slate-400'}`}>
+                          {assistAgentsLoading
+                            ? 'Loading agents...'
+                            : selectedAssistAgent
+                              ? `${selectedAssistAgent.first_name || ''} ${selectedAssistAgent.last_name || ''}`.trim()
+                              : 'Search and select an agent'}
+                        </span>
+                      </span>
+                      {assistAgentsLoading ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-500" /> : <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${assistAgentPickerOpen ? 'rotate-180' : ''}`} />}
+                    </button>
+
+                    {assistAgentPickerOpen ? (
+                      <div className="absolute left-0 right-0 top-full z-[270] mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-300/70">
+                        <div className="border-b border-slate-100 p-3">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                            <input
+                              autoFocus
+                              type="search"
+                              value={assistAgentSearch}
+                              onChange={event => setAssistAgentSearch(event.target.value)}
+                              placeholder="Search agents by name..."
+                              className="h-10 w-full rounded-xl bg-slate-50 pl-10 pr-3 text-sm font-bold text-slate-900 outline-none ring-1 ring-slate-100 transition focus:ring-amber-300"
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-56 overflow-y-auto p-2" role="listbox" aria-labelledby="assist-agent-label">
+                          {filteredAssistAgents.length > 0 ? filteredAssistAgents.map(agent => {
+                            const label = `${agent.first_name || ''} ${agent.last_name || ''}`.trim() || agent.id;
+                            const selected = agent.id === form.agentOnAssist;
+                            return (
+                              <button
+                                key={agent.id}
+                                type="button"
+                                role="option"
+                                aria-selected={selected}
+                                onClick={() => {
+                                  setForm(current => ({ ...current, agentOnAssist: agent.id }));
+                                  setAssistAgentPickerOpen(false);
+                                  setAssistAgentSearch('');
+                                  setFormError(null);
+                                }}
+                                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${selected ? 'bg-slate-950 text-white' : 'text-slate-700 hover:bg-amber-50 hover:text-slate-950'}`}
+                              >
+                                <span className="truncate">{label}</span>
+                                {selected ? <Check className="h-4 w-4 shrink-0" /> : null}
+                              </button>
+                            );
+                          }) : (
+                            <p className="px-3 py-8 text-center text-xs font-bold text-slate-400">No agents match your search.</p>
+                          )}
+                        </div>
+                        {!assistAgentSearch && assistAgents.length > filteredAssistAgents.length ? (
+                          <p className="border-t border-slate-100 px-4 py-2 text-[10px] font-bold text-slate-400">Showing the first 75 agents. Search to find anyone else.</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  {assistAgentsError ? <span className="block text-xs font-bold text-red-600">Unable to load agents: {assistAgentsError}</span> : null}
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="relative space-y-2" ref={datePickerRef}>
                   <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Date</span>
@@ -2989,6 +3325,39 @@ const MyBusinessExpenseLog = ({
                 />
               </label>
 
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Receipt <span className="normal-case tracking-normal text-slate-300">(optional image)</span></span>
+                {form.receipt ? (
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white"><FileImage className="h-5 w-5" /></span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-950">{form.receipt.name}</p>
+                        <p className="text-[10px] font-bold text-emerald-700">{(form.receipt.size / 1024).toFixed(1)} KB ready to upload</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setForm(current => ({ ...current, receipt: null }))} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-slate-400 shadow-sm transition hover:text-red-500" title="Remove receipt">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm font-black text-slate-500 transition hover:border-amber-300 hover:bg-amber-50 hover:text-slate-950">
+                    <Upload className="h-5 w-5 text-amber-500" />
+                    Upload receipt image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={event => {
+                        const file = event.target.files?.[0] || null;
+                        setForm(current => ({ ...current, receipt: file }));
+                        event.target.value = '';
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+
               {formError ? (
                 <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
                   {formError}
@@ -3013,6 +3382,143 @@ const MyBusinessExpenseLog = ({
                   {saving ? 'Saving...' : 'Save Expense'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {splitTarget ? (
+        <div className="fixed inset-0 z-[255] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-white shadow-2xl shadow-slate-950/40">
+            <div className="relative overflow-hidden bg-gradient-to-r from-slate-950 via-violet-950 to-indigo-950 px-6 py-6 text-white">
+              <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-violet-500/20 blur-3xl" />
+              <div className="relative flex items-start justify-between gap-5">
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-500 text-white shadow-lg shadow-violet-950/50">
+                    <Split className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-violet-200">Assist Intelligence</p>
+                    <h3 className="mt-1 text-2xl font-black tracking-tight">Agent policy splits</h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-300">
+                      {splitTarget.agent_on_assist_name || 'Assisted agent'} · {formatManualActivityDate(normalizeExpenseDate(splitTarget.expense_date))}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAssistSplits}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white transition hover:bg-white/20"
+                  title="Close policy splits"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-6">
+              {splitLoading ? (
+                <div className="flex min-h-80 flex-col items-center justify-center rounded-3xl border border-violet-100 bg-white text-center shadow-sm">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </span>
+                  <p className="mt-4 text-base font-black text-slate-950">Loading policy splits</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">Matching policies to this assist expense...</p>
+                </div>
+              ) : splitError ? (
+                <div className="flex min-h-64 flex-col items-center justify-center rounded-3xl border border-red-100 bg-white p-8 text-center shadow-sm">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+                    <AlertCircle className="h-6 w-6" />
+                  </span>
+                  <p className="mt-4 text-base font-black text-slate-950">Policy splits unavailable</p>
+                  <p className="mt-1 max-w-lg text-sm font-semibold text-slate-500">{splitError}</p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    {[
+                      { label: 'Matched Policies', value: splitPolicies.length.toLocaleString(), accent: 'from-violet-600 to-indigo-600' },
+                      { label: 'Total Annual Premium', value: formatExpenseCurrency(splitTotals.annualPremium), accent: 'from-cyan-500 to-blue-600' },
+                      { label: 'Your Split Premium', value: formatExpenseCurrency(splitTotals.splitPremium), accent: 'from-emerald-500 to-teal-600' },
+                    ].map(card => (
+                      <div key={card.label} className="relative overflow-hidden rounded-3xl border border-white bg-white p-5 shadow-sm">
+                        <div className={`absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b ${card.accent}`} />
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{card.label}</p>
+                        <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{card.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+                    <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-500">Policy Breakdown</p>
+                        <h4 className="mt-1 text-lg font-black text-slate-950">Policies connected to this assist</h4>
+                      </div>
+                      <div className="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row">
+                        <label className="relative block min-w-0 flex-1">
+                          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="search"
+                            value={splitSearch}
+                            onChange={event => setSplitSearch(event.target.value)}
+                            placeholder="Search client, policy, carrier..."
+                            className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm font-bold text-slate-800 outline-none transition focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled
+                          title="Advanced policy filters are coming soon"
+                          className="inline-flex h-11 shrink-0 cursor-not-allowed items-center justify-center gap-2 rounded-2xl border border-violet-100 bg-violet-50 px-3.5 text-xs font-black text-violet-700 opacity-90"
+                        >
+                          <SlidersHorizontal className="h-4 w-4" />
+                          Filters
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.08em] text-amber-700">Coming Soon</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-auto">
+                      <div className="grid min-w-[72rem] grid-cols-[1.25fr_1fr_1.35fr_0.85fr_0.85fr_0.7fr_0.9fr] gap-3 bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+                        <span>Client</span>
+                        <span>Policy</span>
+                        <span>Carrier / Product</span>
+                        <span>Status</span>
+                        <span>Annual Premium</span>
+                        <span>Split</span>
+                        <span>Split Premium</span>
+                      </div>
+                      {filteredSplitPolicies.length > 0 ? filteredSplitPolicies.map(policy => {
+                        const annualPremium = toExpenseNumber(policy.annual_premium);
+                        const splitPercent = toExpenseNumber(policy.split?.agent_on_split_percent);
+                        const status = policy.meta_policy_paidstatus_name || policy.ref_policyStatus_name || 'Unknown';
+                        return (
+                          <div key={policy.id} className="grid min-w-[72rem] grid-cols-[1.25fr_1fr_1.35fr_0.85fr_0.85fr_0.7fr_0.9fr] items-center gap-3 border-t border-slate-100 px-5 py-4 text-xs font-bold text-slate-600 transition hover:bg-violet-50/40">
+                            <div className="min-w-0">
+                              <p className="truncate font-black text-slate-950">{policy.client || 'Client unavailable'}</p>
+                              <p className="mt-1 truncate text-[10px] font-bold text-slate-400">{policy.state || 'State unavailable'} · Draft {formatManualActivityDate(normalizeExpenseDate(policy.initial_draft_date))}</p>
+                            </div>
+                            <span className="truncate font-black text-slate-800">{policy.policy_number || 'Pending'}</span>
+                            <div className="min-w-0">
+                              <p className="truncate font-black text-slate-800">{policy.ref_carrier_name || 'Carrier unavailable'}</p>
+                              <p className="mt-1 truncate text-[10px] text-slate-400">{policy.carrier_product || 'Product unavailable'}</p>
+                            </div>
+                            <span className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-black ${String(status).toLocaleLowerCase() === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{status}</span>
+                            <span className="font-black text-slate-950">{formatExpenseCurrency(annualPremium)}</span>
+                            <span className="w-fit rounded-xl bg-violet-100 px-2.5 py-1.5 font-black text-violet-700">{splitPercent.toLocaleString()}%</span>
+                            <span className="font-black text-emerald-700">{formatExpenseCurrency(annualPremium * (splitPercent / 100))}</span>
+                          </div>
+                        );
+                      }) : (
+                        <div className="border-t border-slate-100 px-5 py-12 text-center">
+                          <p className="text-sm font-black text-slate-500">{splitPolicies.length > 0 ? 'No policies match your search.' : 'No policy splits were found for this expense.'}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3184,8 +3690,8 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/business/commissions')) return 'Commissions';
     if (path.startsWith('/business/debt-recovery')) return 'Debt Recovery';
     if (path.startsWith('/policies/details')) return 'Policy Details';
+    if (['/downlines', '/downlines/team', '/downlines/production', '/downlines/expenses'].includes(path)) return 'My Agency';
     if (path.startsWith('/downlines/')) return 'Downline Profile';
-    if (path.startsWith('/downlines')) return 'My Agency';
     if (path.startsWith('/services')) return 'Services';
     if (path.startsWith('/splits')) return 'Split Business';
     if (path.startsWith('/commissions')) return 'Commissions';
@@ -3414,12 +3920,19 @@ const AgentLayout: React.FC = () => {
           <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
 
           <div className="w-full space-y-0.5">
-            {!isCollapsed && (
-              <p className={`px-3 pb-1 text-[9px] font-bold uppercase tracking-wider ${isDarkRoute ? 'text-slate-700' : 'text-slate-400'}`}>
-                Network
-              </p>
-            )}
-            <SidebarItem to="/downlines" icon={<Users size={16} />} label="My Agency" active={isActive('/downlines')} locked={isLocked('downlines')} collapsed={isCollapsed} dark={isDarkRoute} />
+            <SidebarGroup
+              icon={<Users size={16} />}
+              label="Team Agency"
+              active={location.pathname.startsWith('/downlines')}
+              collapsed={isCollapsed}
+              dark={isDarkRoute}
+              sectionHeader
+            >
+              <SidebarSubItem to="/downlines" label="Overview" active={location.pathname === '/downlines'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
+              <SidebarSubItem to="/downlines/team" label="Team List" active={location.pathname === '/downlines/team'} dark={isDarkRoute} icon={<Users size={13} strokeWidth={1.8} />} />
+              <SidebarSubItem to="/downlines/production" label="Production" active={location.pathname === '/downlines/production'} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
+              <SidebarSubItem to="/downlines/expenses" label="Expense Management" active={location.pathname === '/downlines/expenses'} dark={isDarkRoute} icon={<ReceiptText size={13} strokeWidth={1.8} />} />
+            </SidebarGroup>
             <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isCollapsed} dark={isDarkRoute} />
           </div>
         </nav>
@@ -3573,7 +4086,10 @@ const AgentLayout: React.FC = () => {
                   <Route path="/policies" element={<Navigate to="/business/policies" replace />} />
                   <Route path="/policies/v2" element={<Navigate to="/business/policies" replace />} />
                   <Route path="/policies/details" element={<AgentPolicyDetails />} />
-                  <Route path="/downlines" element={<AgentDownlines />} />
+                  <Route path="/downlines" element={<AgentDownlines viewMode="overview" />} />
+                  <Route path="/downlines/team" element={<AgentDownlines viewMode="team" />} />
+                  <Route path="/downlines/production" element={<AgentDownlines viewMode="policies" />} />
+                  <Route path="/downlines/expenses" element={<AgentDownlines viewMode="expenses" />} />
                   <Route path="/downlines/:agentId" element={<DownlineAgentDetails />} />
                   <Route path="/commissions" element={<Navigate to="/business/commissions" replace />} />
                   <Route path="/splits" element={<Navigate to="/business/splits" replace />} />
