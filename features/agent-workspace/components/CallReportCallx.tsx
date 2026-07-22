@@ -309,15 +309,15 @@ export const CallReportCallx: React.FC = () => {
   };
 
   return (
-    <div className="animate-in fade-in duration-300 -mx-6 -mt-4 -mb-12">
-      <div style={{ background: 'linear-gradient(160deg, #0e0e1c 0%, #08080f 100%)', minHeight: '100%' }} className="px-8 pt-7 pb-16">
+    <div className="call-report-dashboard animate-in fade-in duration-300 -mx-6 -mt-4 -mb-12">
+      <div style={{ background: 'linear-gradient(160deg, #0e0e1c 0%, #08080f 100%)', minHeight: '100%' }} className="call-report-surface px-8 pt-7 pb-16">
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <div>
               <div className="flex items-center gap-2.5 mb-0.5">
-                <h1 className="text-2xl font-black text-white tracking-tight">Activity Dashboard</h1>
+                <h1 className="call-report-heading text-2xl font-black text-white tracking-tight">Activity Dashboard</h1>
                 <span
                   className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg"
                   style={{ background: 'rgba(249,115,22,0.15)', color: '#fb923c', border: '1px solid rgba(249,115,22,0.2)' }}
@@ -330,7 +330,7 @@ export const CallReportCallx: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="call-report-header-actions flex items-center gap-3">
             <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: '#374151' }}>UTC</span>
             <DateRangePicker startDate={startDate} endDate={endDate} onChange={handleDateChange} />
             <button
@@ -430,7 +430,7 @@ export const CallReportCallx: React.FC = () => {
         </div>
 
         {/* ── Main Dark Card ─────────────────────────────────────────────── */}
-        <div className="rounded-3xl overflow-hidden" style={{ background: '#0d0d1a', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="call-report-card rounded-3xl overflow-hidden" style={{ background: '#0d0d1a', border: '1px solid rgba(255,255,255,0.06)' }}>
 
           {/* Summary Stats Strip */}
           <div className="grid grid-cols-4 divide-x divide-white/5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>

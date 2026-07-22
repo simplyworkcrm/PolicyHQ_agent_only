@@ -108,6 +108,64 @@
   background: #64748b;
 }
 
+/* Activity dashboards keep their neon treatment in dark mode and gain a
+   dedicated high-contrast surface when the workspace is in light mode. */
+.workspace-app:not(.workspace-night) .call-report-surface {
+  background: linear-gradient(160deg, #f8fafc 0%, #eef2f7 100%) !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-heading {
+  color: #0f172a !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-header-actions > button {
+  background: #ffffff !important;
+  border-color: #dbe3ee !important;
+  color: #475569 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.workspace-app:not(.workspace-night) .call-report-header-actions > button:hover {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.workspace-app:not(.workspace-night) .call-report-card .text-white {
+  color: #0f172a !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card input {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card input::placeholder {
+  color: #94a3b8 !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card > div {
+  border-color: #e2e8f0 !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card > div[style*="background"] {
+  background: #f8fafc !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card [style*="border-bottom"] {
+  border-color: #edf2f7 !important;
+}
+
+.workspace-app:not(.workspace-night) .call-report-card [style*="border-top"] {
+  border-color: #e2e8f0 !important;
+}
+
 /* Keep page typography close to the compact navigation scale. */
 .workspace-content .text-6xl {
   font-size: 2rem !important;

@@ -3674,7 +3674,7 @@ const AgentLayout: React.FC = () => {
   }, [isNightMode]);
 
   const isActive = (path: string) => location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
-  const isDarkRoute = isNightMode || location.pathname.startsWith('/call-report');
+  const isDarkRoute = isNightMode;
   const isBusinessPage = location.pathname.startsWith('/business') || location.pathname.startsWith('/policies');
   const isPoliciesPage = location.pathname === '/business/policies' || location.pathname === '/policies' || location.pathname === '/policies/v2';
   const pageTitle = (() => {

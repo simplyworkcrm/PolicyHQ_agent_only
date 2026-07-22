@@ -1310,7 +1310,7 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
     <div className="font-sans w-full animate-in fade-in duration-300">
       <div className="mb-6 flex min-h-11 justify-end">
         <div id={toolbarSlotId} className="flex min-h-11 flex-wrap items-center justify-end gap-3">
-          {(viewMode === 'team' || viewMode === 'expenses') && (
+          {viewMode === 'expenses' && (
             <DateRangeSelector value={dateRange} onChange={setDateRange} />
           )}
         </div>
