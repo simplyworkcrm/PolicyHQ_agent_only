@@ -54,7 +54,7 @@ export const NotificationDirect: React.FC = () => {
       <button 
         onClick={handleToggle}
         className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-sm border relative group z-50
-            ${isOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-900 border-slate-200/50'}
+            ${isOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600 hover:text-emerald-700 border-emerald-200'}
         `}
         title="Direct Messages"
       >

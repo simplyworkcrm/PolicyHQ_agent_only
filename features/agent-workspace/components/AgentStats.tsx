@@ -37,7 +37,7 @@ const COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#64748b'
 
 export const AgentStats: React.FC = () => {
   const navigate = useNavigate();
-  const { currentAgentId, viewingAgentName } = useAgentContext();
+  const { currentAgentId } = useAgentContext();
   const [stats, setStats] = useState<PersonalStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -65,19 +65,14 @@ export const AgentStats: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-6">
+      <div className="flex items-center">
           <button 
             onClick={() => navigate(-1)}
             className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-slate-900 shadow-sm transition-all"
+            aria-label="Go back"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Performance Portfolio</h1>
-            <p className="text-slate-500 font-medium uppercase text-[10px] tracking-[0.2em] mt-1">Detailed stats for {viewingAgentName}</p>
-          </div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

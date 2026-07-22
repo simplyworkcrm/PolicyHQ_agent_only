@@ -10,7 +10,6 @@ interface AgentContextType {
   startImpersonation: (downlineAgentId: string) => void;
   stopImpersonation: () => void;
   toggleAgentSelection: (agentId: string) => void;
-  selectAllAgents: () => void;
   availableFeatures: string[];
   subAgents: SubAgent[];
   viewingAgentName: string;
@@ -41,28 +40,14 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleAgentSelection = (agentId: string) => {
-    setSelectedImpersonatedIds(prev => {
-      // If choosing the primary agent
-      if (agentId === primaryAgent?.agentId) {
-         if (prev.length === 0) return []; // Already only primary
-         return []; // Reset to primary (which means empty array of impersonated)
-      }
-      
-      // If toggling a subAgent
-      if (subAgents.some(a => a.agentId === agentId)) {
-         if (prev.includes(agentId)) {
-           const newSelected = prev.filter(id => id !== agentId);
-           return newSelected;
-         } else {
-           return [...prev, agentId];
-         }
-      }
-      return prev;
-    });
-  };
+    if (agentId === primaryAgent?.agentId) {
+      setSelectedImpersonatedIds([]);
+      return;
+    }
 
-  const selectAllAgents = () => {
-     setSelectedImpersonatedIds(subAgents.map(a => a.agentId));
+    if (subAgents.some(agent => agent.agentId === agentId)) {
+      setSelectedImpersonatedIds([agentId]);
+    }
   };
 
   const isImpersonating = selectedImpersonatedIds.length > 0;
@@ -115,7 +100,6 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       startImpersonation,
       stopImpersonation,
       toggleAgentSelection,
-      selectAllAgents,
       availableFeatures,
       subAgents,
       viewingAgentName,

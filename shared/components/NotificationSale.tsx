@@ -45,7 +45,7 @@ export const NotificationSale: React.FC = () => {
       <button 
         onClick={handleToggle}
         className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-sm border relative group z-50
-            ${isOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-900 border-slate-200/50'}
+            ${isOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-700 border-amber-200'}
         `}
         title="Sales Feed"
       >

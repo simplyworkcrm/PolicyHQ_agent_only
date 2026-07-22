@@ -457,7 +457,8 @@ const AgencyExpenseManagement: React.FC<{
   selectedAgentLabel: string;
   dateRange: DateRange;
   onDateRangeChange: (range: DateRange) => void;
-}> = ({ selectedAgentId, selectedAgentLabel, dateRange, onDateRangeChange }) => {
+  hideDateRange?: boolean;
+}> = ({ selectedAgentId, selectedAgentLabel, dateRange, onDateRangeChange, hideDateRange = false }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'expenses' | 'debts'>('overview');
   const [overviewData, setOverviewData] = useState<AgencyExpenseOverviewResponse['overview'] | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -790,7 +791,7 @@ const AgencyExpenseManagement: React.FC<{
               <p className="text-sm font-semibold text-slate-500">Track expenses and debt exposure for {selectedAgentLabel}.</p>
             </div>
           </div>
-          <DateRangeSelector value={dateRange} onChange={onDateRangeChange} />
+          {!hideDateRange && <DateRangeSelector value={dateRange} onChange={onDateRangeChange} />}
         </div>
       </div>
 
@@ -1211,7 +1212,7 @@ const AgencyExpenseManagement: React.FC<{
 };
 
 export const AgentDownlines: React.FC = () => {
-  const { primaryAgentId, currentAgentId, selectedAgentIds, subAgents, hasAgentProfile } = useAgentContext();
+  const { primaryAgentId, currentAgentId, subAgents, hasAgentProfile } = useAgentContext();
   const navigate = useNavigate();
   const workspaceAgentId = primaryAgentId || currentAgentId;
 
@@ -1244,19 +1245,16 @@ export const AgentDownlines: React.FC = () => {
     return () => window.clearTimeout(timeout);
   }, [tableSearch]);
 
-  // 1. Keep the direct-downline request scoped to one selected agent.
+  // Keep My Agency aligned with the single workspace selected in the sidebar.
   useEffect(() => {
-    const scopeIds = [workspaceAgentId, ...selectedAgentIds]
-      .filter(Boolean)
-      .filter((agentId, index, all) => all.indexOf(agentId) === index);
-    const nextSelectedId = scopeIds.includes(selectedAgentId) ? selectedAgentId : (scopeIds[0] || workspaceAgentId);
+    const nextSelectedId = currentAgentId || workspaceAgentId;
     if (nextSelectedId && nextSelectedId !== selectedAgentId) {
       setSelectedAgentId(nextSelectedId);
       setTableSearch('');
       setDebouncedTableSearch('');
       setPage(1);
     }
-  }, [selectedAgentId, selectedAgentIds, workspaceAgentId]);
+  }, [currentAgentId, selectedAgentId, workspaceAgentId]);
 
   // 2. Fetch Selected Agent Hierarchy Data
   useEffect(() => {
@@ -1303,43 +1301,16 @@ export const AgentDownlines: React.FC = () => {
     setPage(1);
   };
 
-  const agentSwitchOptions = [workspaceAgentId, ...selectedAgentIds]
-    .filter(Boolean)
-    .filter((agentId, index, all) => all.indexOf(agentId) === index)
-    .map(agentId => {
-      const subAgent = subAgents.find(agent => agent.agentId === agentId);
-      return {
-        id: agentId,
-        label: agentId === workspaceAgentId ? 'My Workspace' : (subAgent?.name || agentId),
-      };
-    });
-
-  const selectedAgentLabel = agentSwitchOptions.find(agent => agent.id === selectedAgentId)?.label
+  const selectedAgentLabel = selectedAgentId === workspaceAgentId
+    ? 'My Workspace'
+    : subAgents.find(agent => agent.agentId === selectedAgentId)?.name
     || `${selectedHierarchyData?.first_name || ''} ${selectedHierarchyData?.last_name || ''}`.trim()
     || 'Selected Agent';
+  const toolbarSlotId = 'my-agency-toolbar-actions';
 
   return (
     <div className="font-sans w-full animate-in fade-in duration-300">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-6">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-900 text-white shadow-xl shadow-slate-900/10">
-            <Users className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-3xl font-black tracking-tight text-slate-900">
-              {viewMode === 'policies' ? 'Team Production' : viewMode === 'expenses' ? 'Expense Management' : viewMode === 'overview' ? 'My Agency' : 'Downlines'}
-            </h2>
-            <p className="text-sm font-bold text-slate-500">
-              {viewMode === 'policies'
-                ? `Aggregated policies for ${selectedAgentLabel} and their downline tree.`
-                : viewMode === 'expenses'
-                  ? `Review expense logs and debts for ${selectedAgentLabel}.`
-                : viewMode === 'overview'
-                  ? 'Review agency analytics, state coverage, sources, and policy status trends.'
-                  : 'Review direct team access and aggregated production.'}
-            </p>
-          </div>
-        </div>
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex gap-1 p-1 bg-white rounded-2xl border border-slate-100 shadow-sm shrink-0">
           <button
             onClick={() => setViewMode('overview')}
@@ -1366,55 +1337,12 @@ export const AgentDownlines: React.FC = () => {
             Expense Management
           </button>
         </div>
-      </div>
-
-      {viewMode !== 'overview' && agentSwitchOptions.length > 1 && (
-        <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1">
-          {agentSwitchOptions.map(agent => {
-            const active = agent.id === selectedAgentId;
-            return (
-              <button
-                key={agent.id}
-                onClick={() => {
-                  setSelectedAgentId(agent.id);
-                  setTableSearch('');
-                  setDebouncedTableSearch('');
-                  setPage(1);
-                  setPolicies([]);
-                }}
-                className={`shrink-0 px-4 py-2.5 rounded-2xl text-xs font-black border transition-all ${
-                  active
-                    ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-900/10'
-                    : 'bg-white text-slate-500 border-slate-200 hover:text-slate-900 hover:border-slate-300'
-                }`}
-              >
-                {agent.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {viewMode !== 'overview' && !agentSwitchOptions.some(agent => agent.id === selectedAgentId) && (
-        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <div>
-            <p className="text-xs font-black text-amber-900">Viewing direct downline profile</p>
-            <p className="text-[11px] font-semibold text-amber-700">Use a workspace tab to return to your selected agents.</p>
-          </div>
-          {agentSwitchOptions[0] && (
-            <button
-              onClick={() => {
-                setSelectedAgentId(agentSwitchOptions[0].id);
-                setTableSearch('');
-                setPolicies([]);
-              }}
-              className="shrink-0 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition-colors"
-            >
-              Back to {agentSwitchOptions[0].label}
-            </button>
+        <div id={toolbarSlotId} className="flex min-h-11 flex-wrap items-center justify-end gap-3">
+          {(viewMode === 'team' || viewMode === 'expenses') && (
+            <DateRangeSelector value={dateRange} onChange={setDateRange} />
           )}
         </div>
-      )}
+      </div>
 
       {viewMode === 'overview' ? (
         <BusinessOverviewDashboard
@@ -1425,6 +1353,7 @@ export const AgentDownlines: React.FC = () => {
           subtitlePrefix="Agency production signals for"
           loadingLabel="Loading agency overview..."
           initialTimeframe="weekly"
+          toolbarSlotId={toolbarSlotId}
         />
       ) : viewMode === 'policies' ? (
         <AgentPoliciesV2
@@ -1438,6 +1367,7 @@ export const AgentDownlines: React.FC = () => {
           enableNeedAttention
           needAttentionScope="agency"
           teamAgentFilterRootId={selectedAgentId}
+          toolbarSlotId={toolbarSlotId}
         />
       ) : viewMode === 'expenses' ? (
         <AgencyExpenseManagement
@@ -1445,6 +1375,7 @@ export const AgentDownlines: React.FC = () => {
           selectedAgentLabel={selectedAgentLabel}
           dateRange={dateRange}
           onDateRangeChange={setDateRange}
+          hideDateRange
         />
       ) : (
       <div className="flex-1 min-w-0 bg-white border border-slate-100 shadow-sm overflow-visible relative min-h-[600px] flex flex-col rounded-[2.5rem]">

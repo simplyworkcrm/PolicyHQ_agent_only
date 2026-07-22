@@ -905,16 +905,6 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-lg shadow-slate-200">
-          <Settings className="w-5 h-5" />
-        </div>
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Settings</h1>
-          <p className="text-sm font-semibold text-slate-400">Manage your user account and agent profile separately.</p>
-        </div>
-      </div>
-
       <div className="flex items-center gap-2 rounded-2xl bg-slate-100 p-1 w-fit">
         <button
           onClick={() => setActiveTab('user')}

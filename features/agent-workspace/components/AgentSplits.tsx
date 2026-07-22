@@ -31,6 +31,8 @@ import { agentSplitsApi } from '../services/agentSplitsApi';
 import { agentPolicyDetailsApi } from '../services/agentPolicyDetailsApi';
 import { agentPoliciesV2Api, PolicyFilterOption } from '../services/agentPoliciesV2Api';
 import { SplitPolicy } from '../../../shared/types/index';
+import { PolicyDateRangeFilter, PoliciesTimeframe } from './AgentPoliciesV2';
+import { WorkspaceToolbarPortal } from './WorkspaceToolbarPortal';
 
 interface DateRange {
     start: number;
@@ -1090,8 +1092,8 @@ const MainDateRangeSelector: React.FC<{
     );
 };
 
-export const AgentSplits: React.FC = () => {
-  const { currentAgentId, selectedAgentIds, hasAgentProfile, viewingAgentName } = useAgentContext();
+export const AgentSplits: React.FC<{ toolbarSlotId?: string }> = ({ toolbarSlotId }) => {
+  const { currentAgentId, selectedAgentIds, hasAgentProfile } = useAgentContext();
   const [splits, setSplits] = useState<SplitPolicy[]>([]);
   const [apiPartners, setApiPartners] = useState<Array<{ id: string; name: string; totalPremium: number; count: number }>>([]);
   const [itemsTotal, setItemsTotal] = useState(0);
@@ -1104,6 +1106,12 @@ export const AgentSplits: React.FC = () => {
 
   // Primary Time Filter
   const [dateRange, setDateRange] = useState<DateRange>(getDateRange('all'));
+  const toolbarTimeframe = (getTimeframeFromRange(dateRange) ?? 'all') as PoliciesTimeframe;
+
+  const handleToolbarTimeframeChange = (nextTimeframe: PoliciesTimeframe) => {
+      if (nextTimeframe === 'custom') return;
+      setDateRange(getDateRange(nextTimeframe));
+  };
   
   // Filtering State
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
@@ -1685,14 +1693,20 @@ export const AgentSplits: React.FC = () => {
 
         {/* RIGHT: MAIN CONTENT */}
         <div className="flex-1 w-full space-y-8 pb-32">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
-                <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Split Business</h1>
-                    <p className="text-sm text-slate-500 font-medium mt-1">Shared production for <span className="font-bold text-slate-800">{viewingAgentName}</span></p>
-                </div>
-                <MainDateRangeSelector value={dateRange} onChange={setDateRange} placeholder="Fetch Period" />
-            </div>
+            <WorkspaceToolbarPortal slotId={toolbarSlotId} fallbackClassName="flex justify-start pt-2">
+                <PolicyDateRangeFilter
+                    timeframe={toolbarTimeframe}
+                    startDate={dateRange.start}
+                    endDate={dateRange.end}
+                    onTimeframeChange={handleToolbarTimeframeChange}
+                    onDateChange={(start, end) => {
+                        if (start !== undefined && end !== undefined) {
+                            setDateRange({ start, end, label: 'Custom' });
+                        }
+                    }}
+                    variant="inline"
+                />
+            </WorkspaceToolbarPortal>
 
             {/* DASHBOARD GRID */}
             <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_minmax(360px,0.95fr)] gap-5 items-stretch">

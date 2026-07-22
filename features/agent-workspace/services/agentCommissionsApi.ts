@@ -1,5 +1,6 @@
 import { BASE_URL, ApiError } from '../../../services/api';
 
+const COMMISSIONS_SUMMARY_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/commissions/summary';
 
 // Helper to handle authenticated requests
 const getAuthToken = () => localStorage.getItem('authToken');
@@ -13,31 +14,32 @@ export const agentCommissionsApi = {
   /**
    * Fetches commission summary
    */
-  getCommissionsSummary: async (agentId: string, startDate: number, endDate: number) => {
-    const params = new URLSearchParams({
-      agent_id: agentId,
-      start_date: String(startDate ?? ''),
-      end_date: String(endDate ?? '')
-    });
-
-    const response = await fetch(`${BASE_URL}/commissions/summary?${params.toString()}`, {
-      method: 'GET',
+  getCommissionsSummary: async (input: {
+    timeframe: string | null;
+    agent_id: string;
+    search: string;
+    start_date: string | null;
+    end_date: string | null;
+  }) => {
+    const response = await fetch(COMMISSIONS_SUMMARY_URL, {
+      method: 'POST',
       headers: authHeader(),
+      body: JSON.stringify(input),
     });
 
     if (!response.ok) throw new ApiError('Failed to fetch commission summary', response.status);
-    return response.json();
+    const data = await response.json();
+    return data?.summary ?? data?.commissions_summary ?? data;
   },
 
   /**
    * Fetches commission transactions list
    */
-  getCommissions: async (agentId: string, startDate: number, endDate: number, statusId: string | null = null) => {
-    const params = new URLSearchParams({
-      agent_id: agentId,
-      start_date: String(startDate ?? ''),
-      end_date: String(endDate ?? '')
-    });
+  getCommissions: async (agentId: string, startDate: number | null, endDate: number | null, statusId: string | null = null) => {
+    const params = new URLSearchParams({ agent_id: agentId });
+
+    if (startDate !== null) params.append('start_date', String(startDate));
+    if (endDate !== null) params.append('end_date', String(endDate));
     
     if (statusId) {
         params.append('status_id', statusId);

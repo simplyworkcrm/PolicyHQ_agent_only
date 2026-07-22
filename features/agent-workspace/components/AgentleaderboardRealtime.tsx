@@ -22,8 +22,6 @@ import {
   PieChart,
   ArrowRight,
   LayoutDashboard,
-  Moon,
-  Sun,
   Share2,
   Search
 } from 'lucide-react';
@@ -666,14 +664,13 @@ const TrainerDetailContent: React.FC<{
   );
 };
 
-export const TrainerDetailPage: React.FC = () => {
+export const TrainerDetailPage: React.FC<{ isNightMode: boolean }> = ({ isNightMode }) => {
   const { trainerId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [stats, setStats] = useState<TrainerSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const isNightMode = localStorage.getItem('arena_theme') === 'night';
   const arenaQuery = searchParams.toString();
   const arenaBackUrl = arenaQuery ? `/leaderboard/realtime?${arenaQuery}` : '/leaderboard/realtime';
 
@@ -725,7 +722,7 @@ export const TrainerDetailPage: React.FC = () => {
   );
 };
 
-export const AgentleaderboardRealtime: React.FC = () => {
+export const AgentleaderboardRealtime: React.FC<{ isNightMode: boolean }> = ({ isNightMode }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sourceId = searchParams.get('sourceId') || undefined;
@@ -739,57 +736,6 @@ export const AgentleaderboardRealtime: React.FC = () => {
   const initEndDate = searchParams.get('endDate') || '';
   const { latestSale } = useRealtime();
   
-  const [isNightMode, setIsNightMode] = useState(() => {
-    return localStorage.getItem('arena_theme') === 'night';
-  });
-
-  // EFFECT: SET GLOBAL BACKGROUND FOR DIV#ROOT, BODY, MAIN AND HEADER
-  useEffect(() => {
-    const root = document.getElementById('root');
-    const body = document.body;
-    const main = document.querySelector('main');
-    const header = document.querySelector('header');
-    const appWrapper = document.querySelector('.bg-\\[\\#F2F3F5\\]'); // Targeting the outer app div
-    
-    if (isNightMode) {
-      body.style.backgroundColor = '#000000';
-      if (root) root.style.backgroundColor = '#000000';
-      if (main) main.style.backgroundColor = '#000000';
-      if (appWrapper instanceof HTMLElement) appWrapper.style.backgroundColor = '#000000';
-      if (header) {
-          header.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-          header.style.transition = 'all 0.5s ease';
-          header.style.borderBottom = '1px solid rgba(255, 255, 255, 0.05)';
-          const h2 = header.querySelector('h2');
-          if (h2) h2.style.color = '#ffffff';
-      }
-    } else {
-      body.style.backgroundColor = '';
-      if (root) root.style.backgroundColor = '';
-      if (main) main.style.backgroundColor = '';
-      if (appWrapper instanceof HTMLElement) appWrapper.style.backgroundColor = '';
-      if (header) {
-          header.style.backgroundColor = '';
-          header.style.borderBottom = '';
-          const h2 = header.querySelector('h2');
-          if (h2) h2.style.color = '';
-      }
-    }
-    
-    return () => {
-      body.style.backgroundColor = '';
-      if (root) root.style.backgroundColor = '';
-      if (main) main.style.backgroundColor = '';
-      if (appWrapper instanceof HTMLElement) appWrapper.style.backgroundColor = '';
-      if (header) {
-          header.style.backgroundColor = '';
-          header.style.borderBottom = '';
-          const h2 = header.querySelector('h2');
-          if (h2) h2.style.color = '';
-      }
-    };
-  }, [isNightMode]);
-
   const [todayData, setTodayData] = useState<ArenaEntry[]>([]);
   const [mtdData, setMtdData] = useState<ArenaEntry[]>([]);
   const [todaySummary, setTodaySummary] = useState({ total_premium: 0, total_records: 0 });
@@ -851,12 +797,6 @@ export const AgentleaderboardRealtime: React.FC = () => {
       .catch(console.error)
       .finally(() => setAgentDetailLoading(false));
   }, [selectedAgentId]);
-
-  const toggleTheme = () => {
-    const next = !isNightMode;
-    setIsNightMode(next);
-    localStorage.setItem('arena_theme', next ? 'night' : 'light');
-  };
 
   // Dynamically extract agents from the currently loaded leaderboard payload 
   // so you don't have to query a separate /meta list!
@@ -1096,26 +1036,8 @@ export const AgentleaderboardRealtime: React.FC = () => {
         {selectedAgentId && agentDetailStats && !agentDetailLoading && (
           <AgentSummaryPopup stats={agentDetailStats} isNightMode={isNightMode} onClose={() => { setSelectedAgentId(null); setAgentDetailStats(null); }} />
         )}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-1">
-          <div className="flex items-center gap-6">
-            <div>
-              <h1 className={`text-3xl font-black tracking-tight flex items-center gap-3 ${isNightMode ? 'text-white' : 'text-slate-900'}`}>
-                Realtime Leaderboard <Zap className="w-8 h-8 text-brand-500 fill-brand-500 animate-pulse" />
-              </h1>
-              <p className={`font-bold uppercase text-[9px] tracking-[0.25em] mt-1 ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Global Competition Matrix</p>
-            </div>
-          </div>
-
+        <div className="flex justify-end gap-6 px-1">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={toggleTheme}
-              className={`p-3 rounded-2xl transition-all border shadow-sm flex items-center justify-center group ${
-                isNightMode ? 'bg-slate-900 border-white/10 text-brand-400 hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-400 hover:text-navy-900'
-              }`}
-            >
-              {isNightMode ? <Sun className="w-4 h-4 animate-in spin-in-90" /> : <Moon className="w-4 h-4 animate-in spin-in-90" />}
-            </button>
-
             <div className={`hidden lg:flex items-center gap-3 px-5 py-3 border rounded-2xl shadow-sm transition-colors ${isNightMode ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-100'}`}>
                <RefreshCw className={`w-3 h-3 text-emerald-500 ${refreshing ? 'animate-spin' : ''}`} />
                <div className="flex flex-col">

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
-  BarChart3,
   Loader2,
   TrendingUp,
   Calendar,
@@ -79,7 +78,6 @@ export const MyProfilePage: React.FC = () => {
 
   // Always the primary logged-in agent — never impersonated
   const myAgentId = user?.agentAccess?.[0]?.agentId ?? '';
-  const myName    = user?.name ?? 'My Stats';
 
   // Production data
   const [prodData,    setProdData]    = useState<AgentDetailsResponse | null>(null);
@@ -134,23 +132,14 @@ export const MyProfilePage: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-12">
 
-      {/* ── Header ── */}
-      <div className="flex items-center gap-6">
+      <div className="flex items-center">
         <button
           onClick={() => navigate(-1)}
           className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-slate-900 shadow-sm transition-all hover:shadow-md active:scale-95"
+          aria-label="Go back"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <BarChart3 className="w-8 h-8 text-brand-500" />
-            My Stats
-          </h1>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">
-            {myName} · Personal Dashboard
-          </p>
-        </div>
       </div>
 
       {/* ── Production ── */}

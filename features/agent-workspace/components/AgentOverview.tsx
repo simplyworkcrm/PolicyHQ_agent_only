@@ -149,13 +149,8 @@ export const AgentOverview: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-700 relative">
       {/* HEADER: UNIFIED CONTROL STRIP */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-8">
-          <div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Global Performance</h1>
-            <p className="text-slate-500 font-medium mt-1 uppercase text-[10px] tracking-[0.2em]">Operational Insight</p>
-          </div>
-
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center">
           {/* Unified Filter Component */}
           <div className="flex items-center p-1 bg-white rounded-full border border-slate-100 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.05)]">
             {/* Agency Context Switcher */}

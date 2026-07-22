@@ -1,0 +1,169 @@
+.workspace-night {
+  color-scheme: dark;
+  background: #080b12;
+  color: #e5e7eb;
+}
+
+.workspace-night .bg-white,
+.workspace-night [class~="bg-white/90"],
+.workspace-night [class~="bg-white/80"],
+.workspace-night [class~="bg-white/70"],
+.workspace-night [class~="bg-white/60"],
+.workspace-night [class~="bg-white/50"],
+.workspace-night [class~="bg-white/40"] {
+  background-color: #111827 !important;
+}
+
+.workspace-night .bg-slate-50,
+.workspace-night [class~="bg-slate-50/80"],
+.workspace-night [class~="bg-slate-50/60"],
+.workspace-night [class~="bg-slate-50/50"] {
+  background-color: #172033 !important;
+}
+
+.workspace-night .bg-slate-100,
+.workspace-night [class~="bg-slate-100/80"],
+.workspace-night [class~="bg-slate-100/60"] {
+  background-color: #1e293b !important;
+}
+
+.workspace-night .text-slate-950,
+.workspace-night .text-slate-900,
+.workspace-night .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+.workspace-night .text-slate-700,
+.workspace-night .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+.workspace-night .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+.workspace-night .text-slate-400 {
+  color: #9ca3af !important;
+}
+
+.workspace-night .border-white,
+.workspace-night .border-slate-50,
+.workspace-night .border-slate-100,
+.workspace-night .border-slate-200,
+.workspace-night .border-slate-300,
+.workspace-night [class~="border-white/80"],
+.workspace-night [class~="border-white/10"],
+.workspace-night [class~="border-white/8"],
+.workspace-night [class~="border-white/6"],
+.workspace-night [class~="border-white/5"],
+.workspace-night [class~="border-slate-200/70"],
+.workspace-night [class~="border-slate-300/60"] {
+  border-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+.workspace-night .divide-slate-50 > :not([hidden]) ~ :not([hidden]),
+.workspace-night .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.workspace-night .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(148, 163, 184, 0.08) !important;
+}
+
+.workspace-night hr {
+  border-color: rgba(148, 163, 184, 0.08) !important;
+}
+
+.workspace-night input,
+.workspace-night select,
+.workspace-night textarea {
+  background-color: #111827;
+  border-color: rgba(148, 163, 184, 0.16);
+  color: #f8fafc;
+}
+
+.workspace-night input::placeholder,
+.workspace-night textarea::placeholder {
+  color: #64748b;
+}
+
+.workspace-night [class*="shadow-slate-"],
+.workspace-night [class*="shadow-gray-"] {
+  --tw-shadow-color: rgba(0, 0, 0, 0.35) !important;
+}
+
+.workspace-night [class*="bg-amber-"] .text-slate-950,
+.workspace-night [class*="bg-amber-"] .text-slate-900,
+.workspace-night [class*="bg-yellow-"] .text-slate-950,
+.workspace-night [class*="bg-yellow-"] .text-slate-900,
+.workspace-night [class*="bg-amber-"].text-slate-950,
+.workspace-night [class*="bg-amber-"].text-slate-900,
+.workspace-night [class*="bg-yellow-"].text-slate-950,
+.workspace-night [class*="bg-yellow-"].text-slate-900 {
+  color: #0f172a !important;
+}
+
+.workspace-night ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.workspace-night ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Keep page typography close to the compact navigation scale. */
+.workspace-content .text-6xl {
+  font-size: 2rem !important;
+  line-height: 1 !important;
+}
+
+.workspace-content .text-5xl {
+  font-size: 1.875rem !important;
+  line-height: 1.05 !important;
+}
+
+.workspace-content .text-4xl {
+  font-size: 1.625rem !important;
+  line-height: 1.1 !important;
+}
+
+.workspace-content .text-3xl {
+  font-size: 1.375rem !important;
+  line-height: 1.15 !important;
+}
+
+.workspace-content .text-2xl {
+  font-size: 1.125rem !important;
+  line-height: 1.2 !important;
+}
+
+.workspace-content .text-xl {
+  font-size: 1rem !important;
+  line-height: 1.3 !important;
+}
+
+.workspace-content .text-lg {
+  font-size: 0.9375rem !important;
+  line-height: 1.4 !important;
+}
+
+.workspace-content .font-black,
+.workspace-content .font-extrabold {
+  font-weight: 700 !important;
+}
+
+.workspace-content .font-bold {
+  font-weight: 600 !important;
+}
+
+/* Activity Log is a dense operational surface; keep its type aligned with the sidebar scale. */
+.business-activity-page {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.business-activity-page .font-black,
+.business-activity-page .font-extrabold {
+  font-weight: 600 !important;
+}
+
+.business-activity-page .font-bold {
+  font-weight: 500 !important;
+}

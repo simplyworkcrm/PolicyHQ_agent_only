@@ -17,6 +17,8 @@ import {
 import { useAgentContext } from '../context/AgentContext';
 import { agentDebtRecoveryApi, DebtSummary, DebtRecord } from '../services/agentDebtRecoveryApi';
 import { AgentDebtDetails } from './AgentDebtDetails';
+import { PolicyDateRangeFilter, PoliciesTimeframe } from './AgentPoliciesV2';
+import { WorkspaceToolbarPortal } from './WorkspaceToolbarPortal';
 
 type SortConfig = {
     key: keyof DebtRecord;
@@ -260,8 +262,8 @@ const MainDateRangeSelector: React.FC<{
     );
 };
 
-export const AgentDebtRecovery: React.FC = () => {
-  const { currentAgentId, hasAgentProfile, viewingAgentName } = useAgentContext();
+export const AgentDebtRecovery: React.FC<{ toolbarSlotId?: string }> = ({ toolbarSlotId }) => {
+  const { currentAgentId, hasAgentProfile } = useAgentContext();
   
   // Summary State
   const [summary, setSummary] = useState<DebtSummary | null>(null);
@@ -278,6 +280,14 @@ export const AgentDebtRecovery: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'unresolved' | 'resolved' | 'all'>('unresolved');
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState<DateRange>(getDateRange('all'));
+  const toolbarTimeframe: PoliciesTimeframe = dateRange.label === 'All Time'
+      ? 'all'
+      : dateRange.label.toLowerCase() as PoliciesTimeframe;
+
+  const handleToolbarTimeframeChange = (nextTimeframe: PoliciesTimeframe) => {
+      if (nextTimeframe === 'custom') return;
+      setDateRange(getDateRange(nextTimeframe));
+  };
 
   // Pagination & Sort
   const [currentPage, setCurrentPage] = useState(1);
@@ -415,11 +425,20 @@ export const AgentDebtRecovery: React.FC = () => {
 
   return (
     <div className="font-sans flex flex-col gap-8 max-w-[1600px] mx-auto w-full pb-20 relative">
-        {/* Header */}
-        <div className="flex flex-col gap-1 mb-2">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Debt Recovery</h1>
-            <p className="text-slate-400 font-medium">Monitor chargebacks and vector logs for <span className="font-bold text-slate-800">{viewingAgentName}</span>.</p>
-        </div>
+        <WorkspaceToolbarPortal slotId={toolbarSlotId} fallbackClassName="flex justify-start">
+            <PolicyDateRangeFilter
+                timeframe={toolbarTimeframe}
+                startDate={dateRange.start}
+                endDate={dateRange.end}
+                onTimeframeChange={handleToolbarTimeframeChange}
+                onDateChange={(start, end) => {
+                    if (start !== undefined && end !== undefined) {
+                        setDateRange({ start, end, label: 'Custom' });
+                    }
+                }}
+                variant="inline"
+            />
+        </WorkspaceToolbarPortal>
 
         {/* SUMMARY CARDS */}
         {loadingSummary ? (
@@ -580,12 +599,6 @@ export const AgentDebtRecovery: React.FC = () => {
                         ))}
                     </div>
 
-                    {/* New Date Range Selector */}
-                    <MainDateRangeSelector 
-                        value={dateRange}
-                        onChange={setDateRange}
-                        placeholder="Filter Date"
-                    />
                 </div>
             </div>
 

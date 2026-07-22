@@ -38,6 +38,7 @@ import {
   SortDirection,
 } from '../services/agentPoliciesV2Api';
 import { useAgentContext } from '../context/AgentContext';
+import { WorkspaceToolbarPortal } from './WorkspaceToolbarPortal';
 
 // ── Date Range Picker ─────────────────────────────────────────────────────────
 
@@ -700,6 +701,7 @@ export const PolicyDateRangeFilter: React.FC<{
   label?: string;
   description?: string;
   includeAllOption?: boolean;
+  variant?: 'dropdown' | 'inline';
 }> = ({
   timeframe,
   startDate,
@@ -709,6 +711,7 @@ export const PolicyDateRangeFilter: React.FC<{
   label = 'Policy Date Range',
   description = 'Controls records loaded from the API',
   includeAllOption = true,
+  variant = 'dropdown',
 }) => {
   const [open, setOpen] = useState(false);
   const [customPickerKey, setCustomPickerKey] = useState(0);
@@ -729,10 +732,69 @@ export const PolicyDateRangeFilter: React.FC<{
     onTimeframeChange(next);
     if (next === 'custom') {
       setCustomPickerKey(key => key + 1);
+      setOpen(true);
     } else {
       setOpen(false);
     }
   };
+
+  if (variant === 'inline') {
+    return (
+      <div className="relative max-w-full" ref={ref}>
+        <div className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl bg-white/80 p-1 shadow-sm">
+          {timeframeOptions.filter(option => option.value !== 'custom').map(option => {
+            const active = timeframe === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => selectTimeframe(option.value)}
+                className={`h-9 shrink-0 rounded-full px-4 text-xs font-bold transition-colors ${
+                  active
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              if (timeframe !== 'custom') {
+                selectTimeframe('custom');
+              } else {
+                setCustomPickerKey(key => key + 1);
+                setOpen(value => !value);
+              }
+            }}
+            className={`flex h-9 shrink-0 items-center gap-2 rounded-full px-4 text-xs font-bold transition-colors ${
+              timeframe === 'custom'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            Custom Date
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+        {open && timeframe === 'custom' && (
+          <div className="absolute left-0 top-full z-[220] mt-3 w-80 rounded-[1.35rem] border border-slate-100 bg-white p-2 shadow-2xl shadow-slate-300/50">
+            <DateRangePicker
+              key={customPickerKey}
+              startDate={startDate}
+              endDate={endDate}
+              onChange={onDateChange}
+              initialOpen
+              inline
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex items-center gap-4" ref={ref}>
@@ -999,6 +1061,7 @@ interface AgentPoliciesV2Props {
   needAttentionScope?: 'business' | 'agency';
   teamAgentFilterRootId?: string;
   hideAgentFilter?: boolean;
+  toolbarSlotId?: string;
 }
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
@@ -1015,6 +1078,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   needAttentionScope = 'business',
   teamAgentFilterRootId,
   hideAgentFilter = false,
+  toolbarSlotId,
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -1542,7 +1606,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
       {hideHeader && showDateRangeWhenHeaderHidden && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
-        <div className="mb-5 flex justify-end">
+        <WorkspaceToolbarPortal slotId={toolbarSlotId} fallbackClassName="mb-5 flex justify-start">
           <PolicyDateRangeFilter
             timeframe={timeframe}
             startDate={startDate}
@@ -1551,8 +1615,9 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
             label={policyWorkspaceView === 'attention' ? 'Created Date Range' : undefined}
             description={policyWorkspaceView === 'attention' ? 'Filters by policy created date' : undefined}
+            variant="inline"
           />
-        </div>
+        </WorkspaceToolbarPortal>
       )}
 
       {enableNeedAttention && (

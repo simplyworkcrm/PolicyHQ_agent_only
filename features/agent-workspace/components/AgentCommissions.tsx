@@ -1,36 +1,22 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-    Wallet, 
-    Calendar, 
-    ChevronDown, 
-    CheckCircle2, 
-    ArrowUpRight, 
+import {
+    Calendar,
+    ChevronDown,
     FileText,
-    TrendingUp,
-    AlertCircle,
-    Clock,
     Search,
     ChevronRight,
     ChevronLeft,
     Filter,
     X,
     Loader2,
-    Download,
-    Split,
-    Ban,
     ArrowUpDown,
     Check,
-    RefreshCw
 } from 'lucide-react';
-import { 
-  AreaChart, 
-  Area, 
-  ResponsiveContainer, 
-  Tooltip as RechartsTooltip
-} from 'recharts';
 import { useAgentContext } from '../context/AgentContext';
 import { agentCommissionsApi } from '../services/agentCommissionsApi';
 import { AgentCommissionDetails } from './AgentCommissionDetails';
+import { PoliciesTimeframe, toPolicyRequestDate } from './AgentPoliciesV2';
+import { WorkspaceToolbarPortal } from './WorkspaceToolbarPortal';
 
 // --- TYPES ---
 interface DateRange {
@@ -40,10 +26,6 @@ interface DateRange {
 }
 
 interface CommissionSummary {
-    overall: {
-        TotalCommissions: number;
-        Records: number;
-    };
     by_status: {
         id: string;
         status: string;
@@ -488,14 +470,64 @@ const CalendarModal: React.FC<{
     );
 };
 
-// Mock Data for Sparkline
-const SPARKLINE_DATA = [
-  { value: 400 }, { value: 300 }, { value: 550 }, { value: 450 }, { value: 700 }, { value: 600 }, { value: 900 }
+const COMMISSION_TIMEFRAMES: Array<{ value: PoliciesTimeframe; label: string }> = [
+    { value: 'all', label: 'All Time' },
+    { value: 'today', label: 'Today' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'yearly', label: 'Yearly' },
 ];
 
-export const AgentCommissions: React.FC = () => {
-  const { currentAgentId, hasAgentProfile, viewingAgentName } = useAgentContext();
-  const [dateRange, setDateRange] = useState<DateRange>(getDateRange('today'));
+const CommissionTimeframeFilter: React.FC<{
+    timeframe: PoliciesTimeframe;
+    onTimeframeChange: (timeframe: PoliciesTimeframe) => void;
+    onCustomClick: () => void;
+}> = ({ timeframe, onTimeframeChange, onCustomClick }) => (
+    <div className="flex max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl bg-white/80 p-1 shadow-sm">
+        {COMMISSION_TIMEFRAMES.map(option => {
+            const active = timeframe === option.value;
+            return (
+                <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => onTimeframeChange(option.value)}
+                    className={`h-9 shrink-0 rounded-full px-4 text-xs font-bold transition-colors ${
+                        active
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                >
+                    {option.label}
+                </button>
+            );
+        })}
+        <button
+            type="button"
+            onClick={onCustomClick}
+            className={`flex h-9 shrink-0 items-center gap-2 rounded-full px-4 text-xs font-bold transition-colors ${
+                timeframe === 'custom'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+        >
+            <Calendar className="h-3.5 w-3.5" />
+            Custom Date
+            <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+    </div>
+);
+
+interface AgentCommissionsProps {
+  selectedAgentId?: string;
+  toolbarSlotId?: string;
+}
+
+export const AgentCommissions: React.FC<AgentCommissionsProps> = ({ selectedAgentId, toolbarSlotId }) => {
+  const { currentAgentId, hasAgentProfile } = useAgentContext();
+  const agentId = selectedAgentId || currentAgentId;
+  const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('all');
+  const [startDate, setStartDate] = useState<number | undefined>(undefined);
+  const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   
   // Data States
@@ -519,31 +551,48 @@ export const AgentCommissions: React.FC = () => {
   // Drawer State - NOW USES OBJECT
   const [selectedCommission, setSelectedCommission] = useState<CommissionRecord | null>(null);
 
+  const transactionDateRange = useMemo(() => {
+      if (timeframe === 'all') return { start: null, end: null };
+      if (timeframe === 'custom') {
+          return {
+              start: startDate ?? null,
+              end: endDate ?? null,
+          };
+      }
+      return getDateRange(timeframe);
+  }, [timeframe, startDate, endDate]);
+
   // Effect 1: Fetch Summary when Agent/Date changes (Reset status filter)
   useEffect(() => {
-    if (currentAgentId) {
+    if (agentId) {
         setLoading(true);
         // Reset selected status when main filters change to avoid empty states
         setSelectedStatusId(null);
         
-        agentCommissionsApi.getCommissionsSummary(currentAgentId, dateRange.start, dateRange.end)
+        agentCommissionsApi.getCommissionsSummary({
+            timeframe: timeframe === 'all' ? null : timeframe,
+            agent_id: agentId,
+            search: searchTerm.trim(),
+            start_date: timeframe === 'custom' ? toPolicyRequestDate(startDate) : null,
+            end_date: timeframe === 'custom' ? toPolicyRequestDate(endDate) : null,
+        })
             .then(data => setSummary(data))
             .catch(err => console.error("Failed to load commission summary", err))
             .finally(() => setLoading(false));
     }
-  }, [currentAgentId, dateRange]);
+  }, [agentId, timeframe, startDate, endDate, searchTerm]);
 
   // Effect 2: Fetch Transactions when Agent/Date/Status changes
   useEffect(() => {
-    if (currentAgentId) {
+    if (agentId) {
         setLoadingTransactions(true);
         
-        agentCommissionsApi.getCommissions(currentAgentId, dateRange.start, dateRange.end, selectedStatusId)
+        agentCommissionsApi.getCommissions(agentId, transactionDateRange.start, transactionDateRange.end, selectedStatusId)
             .then(data => setTransactions(data))
             .catch(err => console.error("Failed to load transactions", err))
             .finally(() => setLoadingTransactions(false));
     }
-  }, [currentAgentId, dateRange, selectedStatusId]);
+  }, [agentId, transactionDateRange, selectedStatusId]);
 
   // Derived Data
   const carriers = useMemo(() => {
@@ -645,249 +694,88 @@ export const AgentCommissions: React.FC = () => {
     );
   }
 
-  // --- STATS EXTRACTION ---
-  const paidData = summary?.by_status.find(s => s.status.toLowerCase() === 'paid') || { id: null, totalCommissions: 0, records: 0 };
-  const chargebackData = summary?.by_status.find(s => s.status.toLowerCase().includes('chargeback') || s.status.toLowerCase().includes('clawback')) || { id: null, totalCommissions: 0, records: 0 };
-  const unpaidData = summary?.by_status.find(s => s.status.toLowerCase().includes('unpaid') || s.status.toLowerCase().includes('pending')) || { id: null, totalCommissions: 0, records: 0 };
-  const splitData = summary?.by_status.find(s => s.status.toLowerCase().includes('split')) || { id: null, totalCommissions: 0, records: 0 };
-  const naData = summary?.by_status.find(s => s.status === 'N/A' || s.status.toLowerCase() === 'n/a') || { id: null, totalCommissions: 0, records: 0 };
-
   return (
     <div className="font-sans flex flex-col gap-8 max-w-[1600px] mx-auto w-full pb-20 relative">
-        <CalendarModal 
-            isOpen={isCalendarOpen} 
-            onClose={() => setIsCalendarOpen(false)} 
+        <WorkspaceToolbarPortal slotId={toolbarSlotId}>
+            <CommissionTimeframeFilter
+                timeframe={timeframe}
+                onTimeframeChange={setTimeframe}
+                onCustomClick={() => setIsCalendarOpen(true)}
+            />
+        </WorkspaceToolbarPortal>
+
+        <CalendarModal
+            isOpen={isCalendarOpen}
+            onClose={() => setIsCalendarOpen(false)}
             onChange={(range) => {
-                setDateRange(range);
-            }} 
+                setTimeframe('custom');
+                setStartDate(range.start);
+                setEndDate(range.end);
+            }}
         />
         
-        {/* 1. Header Section */}
-        <div className="flex flex-col gap-1 mb-2">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Hello, {viewingAgentName.split(' ')[0]}!</h1>
-            <p className="text-slate-400 font-medium">Track your production success today.</p>
-        </div>
-
-        {/* 2. Main Dashboard Grid */}
+        {/* 2. Commission Status Summary */}
         {loading ? (
-            <div className="h-96 flex flex-col items-center justify-center text-slate-400">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg mb-4 animate-bounce">
-                    <Wallet className="w-6 h-6 text-brand-400" />
+            <div className="h-48 flex flex-col items-center justify-center text-slate-400">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3">
+                    <Loader2 className="w-5 h-5 text-brand-400 animate-spin" />
                 </div>
-                <p className="text-xs font-bold uppercase tracking-widest">Calculating...</p>
+                <p className="text-xs font-bold uppercase tracking-widest">Loading summary</p>
             </div>
-        ) : summary ? (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch animate-in fade-in duration-300">
-                
-                {/* LEFT COLUMN (Span 8) */}
-                <div className="xl:col-span-8 flex flex-col gap-6">
-                    
-                    {/* Overall Summary Card (Total Sale style) */}
-                    <div 
-                        onClick={() => handleFilterClick(null)}
-                        className={`bg-white rounded-[2.5rem] p-8 border shadow-sm relative group cursor-pointer transition-all duration-300
-                            ${selectedStatusId === null 
-                                ? 'border-brand-500 ring-2 ring-brand-500/20 shadow-xl shadow-brand-500/10' 
-                                : 'border-slate-100 hover:border-brand-200 hover:shadow-md'
-                            }
-                        `}
-                    >
-                        <div className="flex justify-between items-start mb-10">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-900">Net Earnings</h3>
-                                <p className="text-slate-400 text-xs font-bold mt-1">Overall Total</p>
-                            </div>
-                            <DateDropdown 
-                                value={dateRange} 
-                                onChange={setDateRange}
-                                onCustom={() => setIsCalendarOpen(true)}
-                            />
-                        </div>
+        ) : summary?.by_status?.length ? (
+            <div className="flex gap-3 overflow-x-auto pb-1 animate-in fade-in duration-300">
+                {summary.by_status.map((item) => {
+                    const normalizedStatus = item.status.trim().toLowerCase();
+                    const isPaid = normalizedStatus === 'paid';
+                    const isChargeback = normalizedStatus.includes('chargeback') || normalizedStatus.includes('clawback');
+                    const isPending = normalizedStatus.includes('unpaid') || normalizedStatus.includes('pending');
+                    const isSplit = normalizedStatus.includes('split');
+                    const isSelected = selectedStatusId === item.id;
+                    const tone = isPaid
+                        ? 'border-emerald-200 bg-emerald-50/60 text-emerald-700'
+                        : isChargeback
+                            ? 'border-red-200 bg-red-50/60 text-red-700'
+                            : isPending
+                                ? 'border-amber-200 bg-amber-50/60 text-amber-700'
+                                : isSplit
+                                    ? 'border-purple-200 bg-purple-50/60 text-purple-700'
+                                    : 'border-slate-200 bg-white text-slate-700';
 
-                        <div className="mb-4">
-                            <h2 className="text-6xl font-black text-slate-900 tracking-tighter">
-                                ${summary.overall.TotalCommissions.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </h2>
-                            <p className="text-emerald-500 text-sm font-bold mt-2 flex items-center gap-1">
-                                <TrendingUp className="w-4 h-4" />
-                                <span>Yeah! Net earnings calculated from {summary.overall.Records} records.</span>
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Mini Containers Row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* 1. N/A */}
-                        <div 
-                            onClick={() => handleFilterClick(naData.id)}
-                            className={`bg-slate-50 rounded-[2rem] p-6 border relative group transition-all duration-300 cursor-pointer
-                                ${selectedStatusId === naData.id 
-                                    ? 'border-slate-400 ring-2 ring-slate-400/20 shadow-xl shadow-slate-900/10 bg-white' 
-                                    : 'border-slate-200 hover:-translate-y-1 hover:shadow-md'
-                                }
-                            `}
+                    return (
+                        <button
+                            key={item.id || item.status}
+                            type="button"
+                            onClick={() => handleFilterClick(item.id)}
+                            className={`min-h-28 min-w-44 flex-1 rounded-2xl border p-4 text-left transition-all ${tone} ${
+                                isSelected
+                                    ? 'ring-2 ring-brand-500/30 shadow-md'
+                                    : 'hover:-translate-y-0.5 hover:shadow-sm'
+                            }`}
                         >
-                            <div className="flex justify-between items-start mb-4">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">N/A</span>
-                                <div className="p-2 bg-white rounded-full shadow-sm text-slate-400">
-                                    <Ban className="w-4 h-4" />
-                                </div>
-                            </div>
-                            <h4 className="text-2xl font-black text-slate-700">
-                                ${naData.totalCommissions.toLocaleString()}
-                            </h4>
-                            <div className="flex items-center gap-1 mt-2 text-xs font-bold text-slate-400">
-                                <span className="bg-white px-1.5 py-0.5 rounded-md shadow-sm text-slate-600">{naData.records}</span>
-                                <span>Records</span>
-                            </div>
-                        </div>
-
-                        {/* 2. Chargebacks */}
-                        <div 
-                            onClick={() => handleFilterClick(chargebackData.id)}
-                            className={`bg-red-50 rounded-[2rem] p-6 border relative group transition-all duration-300 cursor-pointer
-                                ${selectedStatusId === chargebackData.id 
-                                    ? 'border-red-500 ring-2 ring-red-500/20 shadow-xl shadow-red-500/10 bg-white' 
-                                    : 'border-red-100 hover:-translate-y-1 hover:shadow-md'
-                                }
-                            `}
-                        >
-                            <div className="flex justify-between items-start mb-4">
-                                <span className="text-xs font-bold text-red-400 uppercase tracking-wider">Chargeback</span>
-                                <div className="p-2 bg-white rounded-full shadow-sm text-red-500">
-                                    <AlertCircle className="w-4 h-4" />
-                                </div>
-                            </div>
-                            <h4 className="text-2xl font-black text-red-900">
-                                ${chargebackData.totalCommissions.toLocaleString()}
-                            </h4>
-                            <div className="flex items-center gap-1 mt-2 text-xs font-bold text-red-400">
-                                <span className="bg-white px-1.5 py-0.5 rounded-md shadow-sm text-red-600">{chargebackData.records}</span>
-                                <span>Records</span>
-                            </div>
-                        </div>
-
-                        {/* 3. Unpaid */}
-                        <div 
-                            onClick={() => handleFilterClick(unpaidData.id)}
-                            className={`bg-amber-50 rounded-[2rem] p-6 border relative group transition-all duration-300 cursor-pointer
-                                ${selectedStatusId === unpaidData.id 
-                                    ? 'border-amber-500 ring-2 ring-amber-500/20 shadow-xl shadow-amber-500/10 bg-white' 
-                                    : 'border-amber-100 hover:-translate-y-1 hover:shadow-md'
-                                }
-                            `}
-                        >
-                            <div className="flex justify-between items-start mb-4">
-                                <span className="text-xs font-bold text-amber-500 uppercase tracking-wider">Unpaid</span>
-                                <div className="p-2 bg-white rounded-full shadow-sm text-amber-500">
-                                    <Clock className="w-4 h-4" />
-                                </div>
-                            </div>
-                            <h4 className="text-2xl font-black text-amber-900">
-                                ${unpaidData.totalCommissions.toLocaleString()}
-                            </h4>
-                            <div className="flex items-center gap-1 mt-2 text-xs font-bold text-amber-500">
-                                <span className="bg-white px-1.5 py-0.5 rounded-md shadow-sm text-amber-600">{unpaidData.records}</span>
-                                <span>Pending</span>
-                            </div>
-                        </div>
-
-                        {/* 4. Needed to Split */}
-                        <div 
-                            onClick={() => handleFilterClick(splitData.id)}
-                            className={`bg-purple-50 rounded-[2rem] p-6 border relative group transition-all duration-300 cursor-pointer
-                                ${selectedStatusId === splitData.id 
-                                    ? 'border-purple-500 ring-2 ring-purple-500/20 shadow-xl shadow-purple-500/10 bg-white' 
-                                    : 'border-purple-100 hover:-translate-y-1 hover:shadow-md'
-                                }
-                            `}
-                        >
-                            <div className="flex justify-between items-start mb-4">
-                                <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">Needed to Split</span>
-                                <div className="p-2 bg-white rounded-full shadow-sm text-purple-500">
-                                    <Split className="w-4 h-4" />
-                                </div>
-                            </div>
-                            <h4 className="text-2xl font-black text-purple-900">
-                                ${splitData.totalCommissions.toLocaleString()}
-                            </h4>
-                            <div className="flex items-center gap-1 mt-2 text-xs font-bold text-purple-400">
-                                <span className="bg-white px-1.5 py-0.5 rounded-md shadow-sm text-purple-600">{splitData.records}</span>
-                                <span>Shared</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* RIGHT COLUMN (Span 4) - Realized Income */}
-                <div className="xl:col-span-4">
-                    <div 
-                        onClick={() => handleFilterClick(paidData.id)}
-                        className={`bg-white rounded-[2.5rem] p-8 border shadow-sm h-full flex flex-col justify-between relative overflow-hidden cursor-pointer transition-all duration-300
-                            ${selectedStatusId === paidData.id 
-                                ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-xl shadow-emerald-500/10' 
-                                : 'border-slate-100 hover:border-emerald-200 hover:shadow-md'
-                            }
-                        `}
-                    >
-                        <div className="relative z-10">
-                            <div className="flex justify-between items-start mb-6">
-                                <h3 className="text-lg font-black text-slate-900">Realized Income</h3>
-                                <div className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-lg">
-                                    <Wallet className="w-5 h-5" />
-                                </div>
-                            </div>
-                            
-                            <div className="mb-2">
-                                <h2 className="text-4xl font-black text-slate-900">
-                                    ${paidData.totalCommissions.toLocaleString()}
-                                </h2>
-                                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg text-xs font-bold mt-2">
-                                    <TrendingUp className="w-3 h-3" />
-                                    {paidData.records} Paid Records
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-xs font-bold uppercase tracking-wider">{item.status}</span>
+                                <span className="rounded-lg bg-white/80 px-2 py-1 text-xs font-bold text-slate-500">
+                                    {item.records.toLocaleString()} records
                                 </span>
                             </div>
-                            
-                            <p className="text-xs text-slate-400 font-medium mt-4 leading-relaxed">
-                                Great job! This represents your realized income that has been successfully paid out.
+                            <p className="mt-4 text-xl font-black text-slate-900">
+                                {item.totalCommissions.toLocaleString('en-US', {
+                                    style: 'currency',
+                                    currency: 'USD',
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                })}
                             </p>
-                        </div>
-
-                        {/* Graph Section */}
-                        <div className="h-40 w-full mt-8 -mx-4 -mb-4 relative">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={SPARKLINE_DATA}>
-                                    <defs>
-                                        <linearGradient id="colorPaid" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
-                                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                                        </linearGradient>
-                                    </defs>
-                                    <RechartsTooltip 
-                                        contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: '#1e293b', color: '#fff', fontSize: '12px' }}
-                                        cursor={{ stroke: '#cbd5e1' }}
-                                    />
-                                    <Area 
-                                        type="monotone" 
-                                        dataKey="value" 
-                                        stroke="#f59e0b" 
-                                        strokeWidth={4} 
-                                        fillOpacity={1} 
-                                        fill="url(#colorPaid)" 
-                                    />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                </div>
+                        </button>
+                    );
+                })}
             </div>
         ) : (
-            <div className="min-h-[400px] flex flex-col items-center justify-center bg-white rounded-[2.5rem] border border-slate-100 text-slate-400 p-8 text-center">
-                <FileText className="w-12 h-12 mb-4 opacity-20" />
-                <p className="text-sm font-bold">No commission data available for this period.</p>
+            <div className="min-h-40 flex flex-col items-center justify-center bg-white rounded-2xl border border-slate-100 text-slate-400 p-6 text-center">
+                <FileText className="w-8 h-8 mb-3 opacity-20" />
+                <p className="text-sm font-bold">No commission status data available for this period.</p>
             </div>
         )}
-
         {/* 3. Commission Transactions Table */}
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden relative mt-4">
             <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">

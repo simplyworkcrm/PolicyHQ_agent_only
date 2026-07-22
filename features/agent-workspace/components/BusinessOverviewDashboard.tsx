@@ -17,6 +17,7 @@ import {
   PoliciesTimeframe,
   toPolicyRequestDate,
 } from './AgentPoliciesV2';
+import { WorkspaceToolbarPortal } from './WorkspaceToolbarPortal';
 
 type OverviewMode = 'business' | 'agency';
 
@@ -28,6 +29,7 @@ interface BusinessOverviewDashboardProps {
   subtitlePrefix: string;
   loadingLabel: string;
   initialTimeframe?: PoliciesTimeframe;
+  toolbarSlotId?: string;
 }
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -74,6 +76,7 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   subtitlePrefix,
   loadingLabel,
   initialTimeframe = 'all',
+  toolbarSlotId,
 }) => {
   const { primaryAgentId, currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const workspaceAgentId = primaryAgentId || currentAgentId;
@@ -305,41 +308,56 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">{scopeEyebrow}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {agentOptions.map(agent => {
-              const active = agent.id === selectedAgentId;
-              return (
-                <button
-                  key={agent.id}
-                  type="button"
-                  onClick={() => setSelectedAgentId(agent.id)}
-                  className={`rounded-2xl px-4 py-2.5 text-xs font-black transition-all ${
-                    active
-                      ? 'bg-slate-950 text-white shadow-lg shadow-slate-900/15'
-                      : 'border border-slate-100 bg-white text-slate-500 hover:border-slate-200 hover:text-slate-950'
-                  }`}
-                >
-                  {agent.label}
-                </button>
-              );
-            })}
+      {toolbarSlotId ? (
+        <WorkspaceToolbarPortal slotId={toolbarSlotId}>
+          <PolicyDateRangeFilter
+            timeframe={timeframe}
+            startDate={startDate}
+            endDate={endDate}
+            onTimeframeChange={setTimeframe}
+            onDateChange={(start, end) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
+          />
+        </WorkspaceToolbarPortal>
+      ) : (
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">{scopeEyebrow}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {agentOptions.map(agent => {
+                const active = agent.id === selectedAgentId;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    onClick={() => setSelectedAgentId(agent.id)}
+                    className={`rounded-2xl px-4 py-2.5 text-xs font-black transition-all ${
+                      active
+                        ? 'bg-slate-950 text-white shadow-lg shadow-slate-900/15'
+                        : 'border border-slate-100 bg-white text-slate-500 hover:border-slate-200 hover:text-slate-950'
+                    }`}
+                  >
+                    {agent.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
 
-        <PolicyDateRangeFilter
-          timeframe={timeframe}
-          startDate={startDate}
-          endDate={endDate}
-          onTimeframeChange={setTimeframe}
-          onDateChange={(start, end) => {
-            setStartDate(start);
-            setEndDate(end);
-          }}
-        />
-      </div>
+          <PolicyDateRangeFilter
+            timeframe={timeframe}
+            startDate={startDate}
+            endDate={endDate}
+            onTimeframeChange={setTimeframe}
+            onDateChange={(start, end) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
+          />
+        </div>
+      )}
 
       <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-sm">
         <div className="flex flex-col gap-5 border-b border-slate-100 p-6 lg:flex-row lg:items-center lg:justify-between">
