@@ -510,50 +510,50 @@ const MyBusinessOverviewContent = ({
             Loading business overview...
           </div>
         ) : (
-          <div className="space-y-6 bg-slate-50/70 p-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="relative overflow-hidden rounded-[1.75rem] bg-slate-950 p-6 text-white shadow-xl shadow-slate-200">
-                <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full border border-white/10" />
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-400 text-slate-950">
-                  <MapPinned className="h-5 w-5" />
+          <div className="space-y-4 bg-slate-50/70 p-4 sm:p-5">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-4 text-white shadow-lg shadow-slate-200">
+                <div className="absolute -right-7 -top-7 h-24 w-24 rounded-full border border-white/10" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-400 text-slate-950">
+                  <MapPinned className="h-4 w-4" />
                 </div>
-                <p className="mt-8 text-[10px] font-black uppercase tracking-[0.26em] text-white/45">Total Annual Premium</p>
-                <p className="mt-2 text-4xl font-black tracking-tight">{compactCurrencyFormatter.format(totals.annualPremium)}</p>
-                <p className="mt-1 text-xs font-bold text-white/55">{currencyFormatter.format(totals.annualPremium)} exact</p>
+                <p className="mt-4 text-[9px] font-black uppercase tracking-[0.22em] text-white/45">Total Annual Premium</p>
+                <p className="mt-1 text-2xl font-black tracking-tight">{compactCurrencyFormatter.format(totals.annualPremium)}</p>
+                <p className="mt-0.5 text-[11px] font-bold text-white/55">{currencyFormatter.format(totals.annualPremium)} exact</p>
               </div>
 
-              <div className="rounded-[1.75rem] border border-slate-100 bg-white p-6 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Submitted Records</p>
-                <p className="mt-4 text-4xl font-black tracking-tight text-slate-950">{totals.records.toLocaleString()}</p>
-                <p className="mt-2 text-xs font-bold text-slate-500">Across the selected scope and date range.</p>
+              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">Submitted Records</p>
+                <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{totals.records.toLocaleString()}</p>
+                <p className="mt-1 text-[11px] font-bold leading-snug text-slate-500">Across the selected scope and date range.</p>
               </div>
 
-              <div className="rounded-[1.75rem] border border-slate-100 bg-white p-6 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Market Coverage</p>
-                <p className="mt-4 text-4xl font-black tracking-tight text-slate-950">{totals.stateCount.toLocaleString()}</p>
-                <p className="mt-2 text-xs font-bold text-slate-500">States with production returned.</p>
+              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">Market Coverage</p>
+                <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{totals.stateCount.toLocaleString()}</p>
+                <p className="mt-1 text-[11px] font-bold leading-snug text-slate-500">States with production returned.</p>
               </div>
 
-              <div className="rounded-[1.75rem] border border-amber-200 bg-amber-50 p-6 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-700">Lead Sources</p>
-                <p className="mt-4 text-4xl font-black tracking-tight text-slate-950">{sources.length.toLocaleString()}</p>
-                <p className="mt-2 text-xs font-bold text-amber-800/70">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-amber-700">Lead Sources</p>
+                <p className="mt-2 text-2xl font-black tracking-tight text-slate-950">{sources.length.toLocaleString()}</p>
+                <p className="mt-1 text-[11px] font-bold leading-snug text-amber-800/70">
                   Avg AP / record: {currencyFormatter.format(totals.averagePremium)}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-              <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
-                <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">State Heat Map</p>
-                    <h3 className="text-2xl font-black tracking-tight text-slate-950">Production by state</h3>
-                    <p className="mt-1 text-sm font-semibold text-slate-500">Darker states carry higher annual premium.</p>
+                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">State Heat Map</p>
+                    <h3 className="text-lg font-black tracking-tight text-slate-950">Production by state</h3>
+                    <p className="text-xs font-semibold text-slate-500">Darker states carry higher annual premium.</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-right">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Top State</p>
-                    <p className="text-sm font-black text-slate-950">{totals.topState?.state || 'No state data'}</p>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-right">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Top State</p>
+                    <p className="text-xs font-black text-slate-950">{totals.topState?.state || 'No state data'}</p>
                   </div>
                 </div>
 
@@ -562,7 +562,7 @@ const MyBusinessOverviewContent = ({
                     No state production returned for this range.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-11 gap-2 rounded-[1.5rem] bg-slate-50 p-5">
+                  <div className="grid grid-cols-11 gap-1.5 rounded-xl bg-slate-50 p-3">
                     {stateTileRows.flatMap((row, rowIndex) => row.map((code, colIndex) => {
                       const state = code ? statesByCode.get(code) : null;
                       const title = state ? `${state.state}: ${currencyFormatter.format(state.total_ap)} · ${state.records} records` : code;
@@ -570,36 +570,36 @@ const MyBusinessOverviewContent = ({
                         <div
                           key={`${code}-${rowIndex}-${colIndex}`}
                           title={title}
-                          className={`flex aspect-square min-h-9 items-center justify-center rounded-xl border text-[10px] font-black transition-all ${stateTileClass(state?.total_ap || 0)}`}
+                          className={`flex aspect-square min-h-8 items-center justify-center rounded-lg border text-[9px] font-black transition-all ${stateTileClass(state?.total_ap || 0)}`}
                         >
                           {code}
                         </div>
                       ) : (
-                        <div key={`empty-${rowIndex}-${colIndex}`} className="aspect-square min-h-9" />
+                        <div key={`empty-${rowIndex}-${colIndex}`} className="aspect-square min-h-8" />
                       );
                     }))}
                   </div>
                 )}
               </section>
 
-              <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">State Rundown</p>
-                <h3 className="text-2xl font-black tracking-tight text-slate-950">Top markets</h3>
-                <div className="mt-5 max-h-[24rem] space-y-3 overflow-y-auto pr-2">
+              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">State Rundown</p>
+                <h3 className="text-lg font-black tracking-tight text-slate-950">Top markets</h3>
+                <div className="mt-3 max-h-[20rem] space-y-2 overflow-y-auto pr-1">
                   {states.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-400">No state data.</div>
                   ) : states.slice(0, 12).map((item, index) => {
                     const percent = Math.max(4, (item.total_ap / maxStatePremium) * 100);
                     return (
-                      <div key={`${item.state}-rundown-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div key={`${item.state}-rundown-${index}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-black text-slate-950">{index + 1}. {item.state}</p>
-                            <p className="mt-1 text-xs font-bold text-slate-400">{item.records.toLocaleString()} records</p>
+                            <p className="text-[11px] font-bold text-slate-400">{item.records.toLocaleString()} records</p>
                           </div>
                           <p className="text-sm font-black text-slate-950">{currencyFormatter.format(item.total_ap)}</p>
                         </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white">
                           <div className="h-full rounded-full bg-gradient-to-r from-slate-950 to-amber-400" style={{ width: `${percent}%` }} />
                         </div>
                       </div>
@@ -609,27 +609,27 @@ const MyBusinessOverviewContent = ({
               </section>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-              <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
-                <div className="mb-5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Policy Status</p>
-                  <h3 className="text-2xl font-black tracking-tight text-slate-950">Status breakdown</h3>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <div className="mb-3">
+                  <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">Policy Status</p>
+                  <h3 className="text-lg font-black tracking-tight text-slate-950">Status breakdown</h3>
                 </div>
-                <div className="max-h-80 space-y-3 overflow-y-auto pr-2">
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
                   {policyStatuses.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-400">No policy status data returned yet.</div>
                   ) : policyStatuses.map((item, index) => {
                     const percent = Math.max(4, (item.total_ap / maxPolicyStatusPremium) * 100);
                     return (
-                      <div key={`${item.label}-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div key={`${item.label}-${index}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-black text-slate-950">{item.label}</p>
-                            <p className="mt-1 text-xs font-bold text-slate-400">{item.records.toLocaleString()} policies</p>
+                            <p className="text-[11px] font-bold text-slate-400">{item.records.toLocaleString()} policies</p>
                           </div>
                           <p className="text-sm font-black text-slate-950">{currencyFormatter.format(item.total_ap)}</p>
                         </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white">
                           <div className="h-full rounded-full bg-amber-400" style={{ width: `${percent}%` }} />
                         </div>
                       </div>
@@ -638,15 +638,15 @@ const MyBusinessOverviewContent = ({
                 </div>
               </section>
 
-              <section className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm">
-                <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">Lead Source Mix</p>
-                    <h3 className="text-2xl font-black tracking-tight text-slate-950">Source performance</h3>
+                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">Lead Source Mix</p>
+                    <h3 className="text-lg font-black tracking-tight text-slate-950">Source performance</h3>
                   </div>
-                  <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-right">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Source AP</p>
-                    <p className="text-sm font-black text-slate-950">{currencyFormatter.format(sourceTotals.annualPremium)}</p>
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-right">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">Source AP</p>
+                    <p className="text-xs font-black text-slate-950">{currencyFormatter.format(sourceTotals.annualPremium)}</p>
                   </div>
                 </div>
 
@@ -655,8 +655,8 @@ const MyBusinessOverviewContent = ({
                     No source production returned for this range.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-                    <div className="relative h-72 min-w-0 rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4">
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+                    <div className="relative h-64 min-w-0 rounded-xl border border-slate-100 bg-slate-50 p-3">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart margin={{ top: 18, right: 18, bottom: 18, left: 18 }}>
                           <Pie
@@ -689,9 +689,9 @@ const MyBusinessOverviewContent = ({
                       </div>
                     </div>
 
-                    <div className="max-h-72 space-y-3 overflow-y-auto pr-2">
+                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
                       {sources.slice(0, 8).map((item, index) => (
-                        <div key={`${item.label}-source-${index}`} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                        <div key={`${item.label}-source-${index}`} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -701,7 +701,7 @@ const MyBusinessOverviewContent = ({
                                 />
                                 <p className="truncate text-sm font-black text-slate-950">{item.label}</p>
                               </div>
-                              <p className="mt-2 text-lg font-black text-slate-950">{currencyFormatter.format(item.total_ap)}</p>
+                              <p className="mt-1 text-base font-black text-slate-950">{currencyFormatter.format(item.total_ap)}</p>
                             </div>
                             <span className="rounded-xl bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">
                               {item.records.toLocaleString()}
@@ -3748,6 +3748,7 @@ const AgentLayout: React.FC = () => {
   const agencyInitials = user?.agencyName
     ? user.agencyName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
     : 'HQ';
+  const workspaceBrandName = user?.agencyName || 'PolicyHQ';
 
   return (
     <div
@@ -3772,21 +3773,21 @@ const AgentLayout: React.FC = () => {
         </button>
 
         {/* Brand Header */}
-        <div className={`flex items-center gap-3 mb-6 transition-all duration-300 ${isCollapsed ? 'justify-center' : 'px-1 pr-9'}`}>
-            <div className="w-9 h-9 bg-slate-900 rounded-lg flex items-center justify-center text-white font-black shrink-0 text-base relative overflow-hidden group">
+        <div className={`flex items-center gap-3 mb-6 transition-all duration-300 ${isCollapsed ? 'justify-center' : 'px-1 pr-9'}`} title={workspaceBrandName}>
+            <div className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black shrink-0 text-sm relative overflow-hidden group shadow-sm">
                 <div className="absolute inset-0 bg-brand-500/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
                 {user?.agencyLogoUrl ? (
-                    <img src={user.agencyLogoUrl} alt="Agency Logo" className="relative z-10 w-full h-full object-contain p-2" />
+                    <img src={user.agencyLogoUrl} alt={`${workspaceBrandName} logo`} className="relative z-10 w-full h-full object-contain p-1.5" />
                 ) : (
                     <span className="relative z-10 text-brand-500">{agencyInitials}</span>
                 )}
             </div>
-            <div className={`overflow-hidden transition-all duration-500 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-                <span className={`font-bold text-base tracking-tight whitespace-nowrap block ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
-                  PolicyHQ
+            <div className={`min-w-0 overflow-hidden transition-all duration-500 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+                <span className={`block max-w-[9.5rem] truncate whitespace-nowrap text-sm font-bold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
+                  {workspaceBrandName}
                 </span>
                 <span className={`text-[8px] font-semibold uppercase truncate block ${isDarkRoute ? 'text-slate-600' : 'text-slate-400'}`}>
-                  {user?.agencyName || 'Agent Portal'}
+                  {user?.agencyName ? 'Agency Portal' : 'Agent Portal'}
                 </span>
             </div>
         </div>
@@ -4006,18 +4007,18 @@ const AgentLayout: React.FC = () => {
                 backgroundAttachment: 'fixed',
               } : undefined}
             >
-            <header className={`h-16 sticky top-0 z-[100] px-5 flex items-center justify-between gap-4 transition-colors duration-500 ${isDarkRoute ? 'bg-white/5 backdrop-blur-md' : 'bg-white/90 backdrop-blur-md'}`}>
-                <h1 className={`min-w-0 truncate text-xl font-bold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-950'}`}>
+            <header className={`sticky top-0 z-[100] flex h-14 items-center justify-between gap-3 border-b px-4 transition-colors duration-500 ${isDarkRoute ? 'border-white/5 bg-slate-950/70 backdrop-blur-xl' : 'border-slate-200/70 bg-white/75 backdrop-blur-xl'}`}>
+                <h1 className={`min-w-0 truncate text-base font-semibold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
                   {pageTitle}
                 </h1>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     <ModuleSwitcher />
                     <button
                       type="button"
                       onClick={() => setIsNightMode(current => !current)}
                       aria-label={isNightMode ? 'Switch to light mode' : 'Switch to night mode'}
                       title={isNightMode ? 'Switch to light mode' : 'Switch to night mode'}
-                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-colors ${
                         isNightMode
                           ? 'border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
                           : 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
@@ -4029,12 +4030,12 @@ const AgentLayout: React.FC = () => {
                       type="button"
                       disabled
                       title="I am coming soon and currently under training. Hope to meet you soon!"
-                      className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700 opacity-90"
+                      className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-xl border border-amber-200/80 bg-amber-50/80 px-2.5 text-[9px] font-semibold text-amber-700 opacity-80"
                     >
-                      <Bot className="w-4 h-4 text-brand-500" />
-                      AI Coming Soon
+                      <Bot className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="hidden lg:inline">AI Soon</span>
                     </button>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                         <NotificationDirect />
                         <NotificationBell />
                         <NotificationSale />

@@ -103,6 +103,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const mapApiUserToAppUser = (data: any): User => {
     const agentAccessRows = Array.isArray(data.agent_access) ? data.agent_access : [];
+    const agencyPayload = data.agency && typeof data.agency === 'object' && !Array.isArray(data.agency)
+      ? data.agency
+      : null;
+    const agencyLogo = agencyPayload?.logo ?? data.agency_logo;
+    const agencyLogoUrl = typeof agencyLogo === 'string'
+      ? agencyLogo
+      : agencyLogo?.url || agencyLogo?.access || agencyLogo?.path;
     const firstName = data.first_name || data.firstName || data.firstname || '';
     const lastName = data.last_name || data.lastName || data.lastname || '';
     const userAgentId = data.agent_id && data.agent_id !== 'null' ? data.agent_id : null;
@@ -151,8 +158,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       phone: data.phone,
       agentId: userAgentId,
       npn: data.agent_npn || data.npn,
-      agencyName: data.agency_name || data.agency,
-      agencyLogoUrl: data.agency_logo?.url,
+      agencyName: agencyPayload?.name || data.agency_name || (typeof data.agency === 'string' ? data.agency : primaryAgentRow?.agency_name),
+      agencyLogoUrl,
+      agency: agencyPayload ? {
+        id: String(agencyPayload.id || ''),
+        name: String(agencyPayload.name || ''),
+        logo: agencyLogoUrl || null,
+        monthlyGoalAp: agencyPayload.monthly_goal_ap ?? null,
+        managerAgentId: agencyPayload.ref_agent_manager ?? null,
+        parentAgencyId: agencyPayload.ref_parent_agency ?? null,
+      } : null,
       agentAccess: [primaryAgentAccess],
       agencyAccess: agencyAccess,
       hybridAccess: hybridAccess

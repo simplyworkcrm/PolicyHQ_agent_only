@@ -28,6 +28,15 @@ export interface HybridAccess {
   features: string[]; // e.g., ['audit', 'config']
 }
 
+export interface UserAgency {
+  id: string;
+  name: string;
+  logo?: string | null;
+  monthlyGoalAp?: number | null;
+  managerAgentId?: string | null;
+  parentAgencyId?: string | null;
+}
+
 // User Principal
 export interface User {
   id: string;
@@ -40,6 +49,7 @@ export interface User {
   npn?: string | number;
   agencyName?: string;
   agencyLogoUrl?: string;
+  agency?: UserAgency | null;
   avatarUrl?: string;
   agentAccess?: AgentAccess[]; // Can be an agent in multiple contexts
   agencyAccess?: AgencyAccess[]; // Can manage multiple agencies
