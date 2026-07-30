@@ -23,6 +23,7 @@ type OverviewMode = 'business' | 'agency';
 
 interface BusinessOverviewDashboardProps {
   mode: OverviewMode;
+  activeAgentId?: string;
   scopeEyebrow: string;
   overviewEyebrow: string;
   title: string;
@@ -70,6 +71,7 @@ const stateTileRows = [
 
 export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps> = ({
   mode,
+  activeAgentId,
   scopeEyebrow,
   overviewEyebrow,
   title,
@@ -83,7 +85,7 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   const [timeframe, setTimeframe] = useState<PoliciesTimeframe>(initialTimeframe);
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(workspaceAgentId);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(activeAgentId || workspaceAgentId);
   const [data, setData] = useState<MyBusinessOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,14 +109,15 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
   ), [selectedAgentIds, subAgents, workspaceAgentId]);
 
   useEffect(() => {
-    const nextSelectedId = agentOptions.some(agent => agent.id === selectedAgentId)
-      ? selectedAgentId
-      : (agentOptions[0]?.id || workspaceAgentId);
+    const nextSelectedId = activeAgentId
+      || (agentOptions.some(agent => agent.id === selectedAgentId)
+        ? selectedAgentId
+        : (agentOptions[0]?.id || workspaceAgentId));
 
     if (nextSelectedId && nextSelectedId !== selectedAgentId) {
       setSelectedAgentId(nextSelectedId);
     }
-  }, [agentOptions, selectedAgentId, workspaceAgentId]);
+  }, [activeAgentId, agentOptions, selectedAgentId, workspaceAgentId]);
 
   const selectedAgentLabel = agentOptions.find(agent => agent.id === selectedAgentId)?.label || viewingAgentName || 'Selected Agent';
 
@@ -319,6 +322,7 @@ export const BusinessOverviewDashboard: React.FC<BusinessOverviewDashboardProps>
               setStartDate(start);
               setEndDate(end);
             }}
+            variant="inline"
           />
         </WorkspaceToolbarPortal>
       ) : (

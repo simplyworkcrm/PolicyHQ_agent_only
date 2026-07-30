@@ -79,6 +79,7 @@ import { AgencyDetailPage } from './components/AgencyDetailPage';
 import { MyProfilePage } from './components/MyProfilePage';
 import { SettingsPage } from './components/SettingsPage';
 import { ServicesPage } from './components/ServicesPage';
+import { AmericoReconciliation } from './components/AmericoReconciliation';
 import { ModuleSwitcher } from '../../shared/components/ModuleSwitcher';
 import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
@@ -86,6 +87,62 @@ import { NotificationSale } from '../../shared/components/NotificationSale';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
 import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myBusinessActivityApi } from './services/myBusinessActivityApi';
 import { AssistPolicySplit, MyBusinessExpenseRow, UtilityAgent, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
+
+const useDelayedHover = (enabled: boolean, closeDelay = 400) => {
+  const [mounted, setMounted] = React.useState(false);
+  const [visible, setVisible] = React.useState(false);
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unmountTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enterTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimers = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    if (unmountTimer.current) clearTimeout(unmountTimer.current);
+    if (enterTimer.current) clearTimeout(enterTimer.current);
+    closeTimer.current = null;
+    unmountTimer.current = null;
+    enterTimer.current = null;
+  };
+
+  const show = () => {
+    if (!enabled) return;
+    clearTimers();
+    if (mounted) {
+      setVisible(true);
+      return;
+    }
+    setMounted(true);
+    enterTimer.current = setTimeout(() => {
+      setVisible(true);
+      enterTimer.current = null;
+    }, 20);
+  };
+
+  const hide = () => {
+    if (!enabled) return;
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => {
+      setVisible(false);
+      closeTimer.current = null;
+      unmountTimer.current = setTimeout(() => {
+        setMounted(false);
+        unmountTimer.current = null;
+      }, 200);
+    }, closeDelay);
+  };
+
+  React.useEffect(() => () => clearTimers(), []);
+
+  React.useEffect(() => {
+    if (!enabled) {
+      clearTimers();
+      setVisible(false);
+      setMounted(false);
+    }
+  }, [enabled]);
+
+  return { mounted, visible, show, hide };
+};
 
 // Sidebar Group - Expandable parent with sub-items
 const SidebarGroup = ({
@@ -96,6 +153,7 @@ const SidebarGroup = ({
   collapsed,
   dark,
   sectionHeader,
+  defaultOpen,
   children,
 }: {
   icon: React.ReactNode;
@@ -105,16 +163,22 @@ const SidebarGroup = ({
   collapsed?: boolean;
   dark?: boolean;
   sectionHeader?: boolean;
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) => {
-  const [open, setOpen] = React.useState(active);
+  const [open, setOpen] = React.useState(active || Boolean(defaultOpen));
+  const { mounted: flyoutMounted, visible: flyoutVisible, show: showFlyout, hide: hideFlyout } = useDelayedHover(Boolean(collapsed));
 
   React.useEffect(() => {
     if (active) setOpen(true);
   }, [active]);
 
   return (
-    <div className="w-full">
+    <div
+      className="relative w-full"
+      onMouseEnter={showFlyout}
+      onMouseLeave={hideFlyout}
+    >
       <button
         onClick={() => !locked && setOpen((o) => !o)}
         className={`
@@ -163,6 +227,23 @@ const SidebarGroup = ({
           {children}
         </div>
       )}
+
+      {collapsed && flyoutMounted && !locked && (
+        <div
+          className={`absolute left-full top-0 z-50 ml-2 w-56 overflow-hidden rounded-xl border p-2 shadow-2xl transition-all duration-200 ease-out ${
+            flyoutVisible ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-2 opacity-0'
+          } ${
+            dark
+              ? 'border-white/10 bg-[#151522] shadow-black/40'
+              : 'border-slate-200 bg-white shadow-slate-900/15'
+          }`}
+        >
+          <div className={`px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.14em] ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+            {label}
+          </div>
+          <div className="space-y-0.5">{children}</div>
+        </div>
+      )}
     </div>
   );
 };
@@ -175,6 +256,7 @@ const SidebarSubItem = ({
   locked,
   dark,
   icon,
+  badgeLabel,
 }: {
   to: string;
   label: string;
@@ -182,6 +264,7 @@ const SidebarSubItem = ({
   locked?: boolean;
   dark?: boolean;
   icon?: React.ReactNode;
+  badgeLabel?: string;
 }) => (
   <Link
     to={locked ? '#' : to}
@@ -206,7 +289,13 @@ const SidebarSubItem = ({
       )}
     </span>
     <span className="truncate">{label}</span>
-    {locked && <span className={`ml-auto text-[10px] font-black uppercase tracking-wider ${dark ? 'text-slate-700' : 'text-slate-300'}`}>Soon</span>}
+    {locked && (
+      <span className={`ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide ${
+        dark ? 'bg-white/5 text-slate-600' : 'bg-slate-200/70 text-slate-500'
+      }`}>
+        {badgeLabel || 'Soon'}
+      </span>
+    )}
   </Link>
 );
 
@@ -228,43 +317,60 @@ const SidebarItem = ({
   collapsed?: boolean,
   dark?: boolean,
 }) => {
+  const { mounted: flyoutMounted, visible: flyoutVisible, show: showFlyout, hide: hideFlyout } = useDelayedHover(Boolean(collapsed));
+
   return (
-    <Link 
-      to={locked ? '#' : to} 
-      onClick={(e) => locked && e.preventDefault()}
-      className={`
-        relative flex items-center transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1.0)] group
-        ${collapsed
-          ? 'justify-center w-9 h-9 rounded-lg mx-auto'
-          : 'w-full px-3 py-2.5 rounded-lg gap-3'
-        }
-        ${active 
-          ? dark ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-950'
-          : locked 
-            ? 'opacity-50 cursor-not-allowed grayscale' 
-            : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-        }
-      `}
-      title={collapsed ? label : undefined}
+    <div
+      className="relative w-full"
+      onMouseEnter={showFlyout}
+      onMouseLeave={hideFlyout}
     >
-      <span className={`shrink-0 transition-colors duration-200 ${active ? 'text-brand-500' : dark ? 'text-slate-600 group-hover:text-slate-300' : 'text-slate-400 group-hover:text-slate-700'}`}>
-        {icon}
-      </span>
-      
-      <span className={`
-        font-semibold text-xs whitespace-nowrap overflow-hidden transition-all duration-300 origin-left
-        ${collapsed ? 'w-0 opacity-0 -translate-x-2' : 'w-auto opacity-100 translate-x-0 flex-1'}
-      `}>
-        {label}
-      </span>
+      <Link
+        to={locked ? '#' : to}
+        onClick={(e) => locked && e.preventDefault()}
+        className={`
+          relative flex items-center transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1.0)] group
+          ${collapsed
+            ? 'justify-center w-9 h-9 rounded-lg mx-auto'
+            : 'w-full px-3 py-2.5 rounded-lg gap-3'
+          }
+          ${active
+            ? dark ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-950'
+            : locked
+              ? 'opacity-50 cursor-not-allowed grayscale'
+              : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+          }
+        `}
+      >
+        <span className={`shrink-0 transition-colors duration-200 ${active ? 'text-brand-500' : dark ? 'text-slate-600 group-hover:text-slate-300' : 'text-slate-400 group-hover:text-slate-700'}`}>
+          {icon}
+        </span>
 
-      {!collapsed && locked && <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+        <span className={`
+          font-semibold text-xs whitespace-nowrap overflow-hidden transition-all duration-300 origin-left
+          ${collapsed ? 'w-0 opacity-0 -translate-x-2' : 'w-auto opacity-100 translate-x-0 flex-1'}
+        `}>
+          {label}
+        </span>
 
-      {/* Active Dot for Collapsed Mode */}
-      {active && collapsed && (
-        <span className="absolute top-2 right-2 w-2 h-2 bg-brand-500 rounded-full border border-white animate-in zoom-in duration-300"></span>
+        {!collapsed && locked && <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+
+        {/* Active Dot for Collapsed Mode */}
+        {active && collapsed && (
+          <span className="absolute top-2 right-2 w-2 h-2 bg-brand-500 rounded-full border border-white animate-in zoom-in duration-300"></span>
+        )}
+      </Link>
+
+      {collapsed && flyoutMounted && (
+        <div className={`pointer-events-none absolute left-full top-1/2 z-50 ml-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-bold shadow-xl transition-all duration-200 ease-out ${
+          flyoutVisible ? '-translate-y-1/2 translate-x-0 opacity-100' : '-translate-x-2 -translate-y-1/2 opacity-0'
+        } ${
+          dark ? 'border-white/10 bg-[#151522] text-white shadow-black/40' : 'border-slate-200 bg-white text-slate-800 shadow-slate-900/10'
+        }`}>
+          {label}
+        </div>
       )}
-    </Link>
+    </div>
   );
 };
 
@@ -3656,6 +3762,7 @@ const AgentLayout: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [agentSearch, setAgentSearch] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const isSidebarCompact = isCollapsed;
   const [isNightMode, setIsNightMode] = useState(() => {
     const savedTheme = localStorage.getItem('workspace_theme') || localStorage.getItem('arena_theme');
     return savedTheme === 'night';
@@ -3701,6 +3808,7 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/call-report/policytek')) return 'PolicyTek';
     if (path.startsWith('/call-report/wavv')) return 'Wavv';
     if (path.startsWith('/call-report/callx')) return 'CallX';
+    if (path.startsWith('/reconciliation/americo')) return 'Americo Reconciliation';
     if (path.startsWith('/stats') || path.startsWith('/my-profile')) return 'My Stats';
     if (path.startsWith('/agency/')) return 'Agency';
     return 'PolicyHQ';
@@ -3745,10 +3853,11 @@ const AgentLayout: React.FC = () => {
   }, [agentSearch, subAgents]);
 
   // Extract agency initials for fallback logo
-  const agencyInitials = user?.agencyName
-    ? user.agencyName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+  const safeAgencyName = typeof user?.agencyName === 'string' ? user.agencyName.trim() : '';
+  const agencyInitials = safeAgencyName
+    ? safeAgencyName.split(/\s+/).filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase()
     : 'HQ';
-  const workspaceBrandName = user?.agencyName || 'PolicyHQ';
+  const workspaceBrandName = safeAgencyName || 'PolicyHQ';
 
   return (
     <div
@@ -3758,7 +3867,7 @@ const AgentLayout: React.FC = () => {
       {/* Floating Sidebar */}
       <aside 
         className={`
-          ${isCollapsed ? 'w-16 px-2' : 'w-60 px-3'}
+          ${isSidebarCompact ? 'w-16 px-2' : 'w-60 px-3'}
           ${isDarkRoute ? 'bg-[#0d0d1a] border-white/6' : 'bg-transparent border-transparent'}
           rounded-2xl flex flex-col transition-[width,padding,background-color,border-color] duration-300 ease-out
           border relative z-20 shrink-0 py-4
@@ -3767,13 +3876,16 @@ const AgentLayout: React.FC = () => {
         {/* Toggle Handle */}
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)} 
-          className={`absolute right-3 top-5 w-7 h-7 rounded-lg flex items-center justify-center transition-colors z-50 ${isDarkRoute ? 'bg-white/5 text-slate-500 hover:text-brand-400' : 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+          className={`absolute top-5 rounded-lg flex items-center justify-center transition-all z-50 ${
+            isSidebarCompact ? '-right-4 h-6 w-6 shadow-md' : 'right-3 h-7 w-7'
+          } ${isDarkRoute ? 'bg-[#181827] text-slate-500 hover:text-brand-400' : 'border border-slate-200 bg-white text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+          aria-label={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
         >
-          {isCollapsed ? <ChevronRight size={16} strokeWidth={3} /> : <ChevronLeft size={16} strokeWidth={3} />}
+          {isSidebarCompact ? <ChevronRight size={16} strokeWidth={3} /> : <ChevronLeft size={16} strokeWidth={3} />}
         </button>
 
         {/* Brand Header */}
-        <div className={`flex items-center gap-3 mb-6 transition-all duration-300 ${isCollapsed ? 'justify-center' : 'px-1 pr-9'}`} title={workspaceBrandName}>
+        <div className={`flex items-center gap-3 mb-6 transition-all duration-300 ${isSidebarCompact ? 'justify-center' : 'px-1 pr-9'}`} title={workspaceBrandName}>
             <div className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black shrink-0 text-sm relative overflow-hidden group shadow-sm">
                 <div className="absolute inset-0 bg-brand-500/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
                 {user?.agencyLogoUrl ? (
@@ -3782,19 +3894,19 @@ const AgentLayout: React.FC = () => {
                     <span className="relative z-10 text-brand-500">{agencyInitials}</span>
                 )}
             </div>
-            <div className={`min-w-0 overflow-hidden transition-all duration-500 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+            <div className={`min-w-0 overflow-hidden transition-all duration-500 ${isSidebarCompact ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
                 <span className={`block max-w-[9.5rem] truncate whitespace-nowrap text-sm font-bold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
                   {workspaceBrandName}
                 </span>
                 <span className={`text-[8px] font-semibold uppercase truncate block ${isDarkRoute ? 'text-slate-600' : 'text-slate-400'}`}>
-                  {user?.agencyName ? 'Agency Portal' : 'Agent Portal'}
+                  {safeAgencyName ? 'Agency Portal' : 'Agent Portal'}
                 </span>
             </div>
         </div>
         
         {/* Context Switcher - Collapsible */}
         <div className="mb-5 relative z-40">
-            {!isCollapsed ? (
+            {!isSidebarCompact ? (
               <>
                 <button 
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -3876,19 +3988,19 @@ const AgentLayout: React.FC = () => {
         </div>
 
         {/* Nav Items */}
-        <nav className="space-y-0.5 flex flex-col items-center w-full flex-1 overflow-y-auto overflow-x-hidden min-h-0 scrollbar-hide">
+        <nav className={`space-y-0.5 flex flex-col items-center w-full flex-1 min-h-0 scrollbar-hide ${isSidebarCompact ? 'overflow-visible' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className="w-full space-y-0.5">
-            {!isCollapsed && (
+            {!isSidebarCompact && (
               <p className={`px-3 pb-1 text-[9px] font-bold uppercase tracking-wider ${isDarkRoute ? 'text-slate-700' : 'text-slate-400'}`}>
                 Performance
               </p>
             )}
-            <SidebarItem to="/" icon={<Trophy size={16} />} label="Leaderboard" active={location.pathname === '/' || location.pathname === ''} locked={isLocked('overview')} collapsed={isCollapsed} dark={isDarkRoute} />
+            <SidebarItem to="/" icon={<Trophy size={16} />} label="Leaderboard" active={location.pathname === '/' || location.pathname === ''} locked={isLocked('overview')} collapsed={isSidebarCompact} dark={isDarkRoute} />
             <SidebarGroup
               icon={<PhoneCall size={16} />}
               label="Activity Dashboard"
               active={location.pathname.startsWith('/call-report')}
-              collapsed={isCollapsed}
+              collapsed={isSidebarCompact}
               dark={isDarkRoute}
             >
               <SidebarSubItem to="/call-report/policytek" label="PolicyTek" active={isActive('/call-report/policytek')} dark={isDarkRoute} />
@@ -3904,9 +4016,10 @@ const AgentLayout: React.FC = () => {
               icon={<Briefcase size={16} />}
               label="My Business"
               active={isBusinessPage}
-              collapsed={isCollapsed}
+              collapsed={isSidebarCompact}
               dark={isDarkRoute}
               sectionHeader
+              defaultOpen
             >
                         <SidebarSubItem to="/business" label="Overview" active={location.pathname === '/business' || location.pathname === '/business/overview'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
                         <SidebarSubItem to="/business/policies" label="Policies" active={location.pathname === '/business/policies'} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
@@ -3925,16 +4038,50 @@ const AgentLayout: React.FC = () => {
               icon={<Users size={16} />}
               label="Team Agency"
               active={location.pathname.startsWith('/downlines')}
-              collapsed={isCollapsed}
+              collapsed={isSidebarCompact}
               dark={isDarkRoute}
               sectionHeader
+              defaultOpen
             >
               <SidebarSubItem to="/downlines" label="Overview" active={location.pathname === '/downlines'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
               <SidebarSubItem to="/downlines/team" label="Team List" active={location.pathname === '/downlines/team'} dark={isDarkRoute} icon={<Users size={13} strokeWidth={1.8} />} />
               <SidebarSubItem to="/downlines/production" label="Production" active={location.pathname === '/downlines/production'} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
               <SidebarSubItem to="/downlines/expenses" label="Expense Management" active={location.pathname === '/downlines/expenses'} dark={isDarkRoute} icon={<ReceiptText size={13} strokeWidth={1.8} />} />
             </SidebarGroup>
-            <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isCollapsed} dark={isDarkRoute} />
+          </div>
+
+          <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
+
+          <div className="w-full space-y-0.5">
+            {!isSidebarCompact && (
+              <p className={`px-3 pb-1 text-[9px] font-bold uppercase tracking-wider ${isDarkRoute ? 'text-slate-700' : 'text-slate-400'}`}>
+                Reconciliation
+              </p>
+            )}
+            <SidebarGroup
+              icon={<RotateCcw size={16} />}
+              label="Carriers"
+              active={location.pathname.startsWith('/reconciliation')}
+              collapsed={isSidebarCompact}
+              dark={isDarkRoute}
+            >
+              <SidebarSubItem to="/reconciliation/americo" label="Americo" active={isActive('/reconciliation/americo')} dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/transamerica" label="Transamerica" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/mutual-of-omaha" label="Mutual Of Omaha" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/ethos" label="Ethos" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/gerber-life" label="Gerber Life" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/american-amicable" label="American Amicable" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/aetna" label="Aetna" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/corebridge" label="Corebridge" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/national-life-group" label="National Life Group" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+              <SidebarSubItem to="/reconciliation/baltimore-life" label="Baltimore Life" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
+            </SidebarGroup>
+          </div>
+
+          <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
+
+          <div className="w-full space-y-0.5">
+            <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isSidebarCompact} dark={isDarkRoute} />
           </div>
         </nav>
 
@@ -3947,7 +4094,7 @@ const AgentLayout: React.FC = () => {
                 label="Help"
                 active={isActive('/tickets')}
                 locked={isLocked('ticketing')}
-                collapsed={isCollapsed}
+                collapsed={isSidebarCompact}
                 dark={isDarkRoute}
               />
               <SidebarItem
@@ -3955,17 +4102,17 @@ const AgentLayout: React.FC = () => {
                 icon={<Settings size={16} />}
                 label="Settings"
                 active={isActive('/settings')}
-                collapsed={isCollapsed}
+                collapsed={isSidebarCompact}
                 dark={isDarkRoute}
               />
             </div>
             <div className={`pt-2 border-t ${isDarkRoute ? 'border-white/8' : 'border-slate-300/60'}`}>
-            <div className={`flex items-center gap-2 p-2 rounded-lg transition-all duration-300 ${isCollapsed ? 'justify-center' : isDarkRoute ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}>
+            <div className={`flex items-center gap-2 p-2 rounded-lg transition-all duration-300 ${isSidebarCompact ? 'justify-center' : isDarkRoute ? 'hover:bg-white/5' : 'hover:bg-slate-50'}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border shrink-0 ${isDarkRoute ? 'bg-white/10 text-white border-white/10' : 'bg-slate-50 text-slate-900 border-slate-200'}`}>
                   {user?.name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
                 </div>
                 
-                <div className={`flex-1 min-w-0 transition-all duration-500 ${isCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100'}`}>
+                <div className={`flex-1 min-w-0 transition-all duration-500 ${isSidebarCompact ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100'}`}>
                     <p className={`text-xs font-semibold truncate ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>{user?.name}</p>
                     <div className="flex flex-col gap-0.5 mt-0.5">
                         <p className={`text-[10px] truncate font-bold ${isDarkRoute ? 'text-slate-600' : 'text-slate-400'}`}>{user?.email || user?.phone || 'Signed in'}</p>
@@ -3973,7 +4120,7 @@ const AgentLayout: React.FC = () => {
                     </div>
                 </div>
                 
-                <button onClick={logout} className={`rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all ${isCollapsed ? 'hidden' : 'p-2'}`} title="Logout">
+                <button onClick={logout} className={`rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all ${isSidebarCompact ? 'hidden' : 'p-2'}`} title="Logout">
                   <LogOut className="w-4 h-4" />
                 </button>
             </div>
@@ -4071,6 +4218,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/call-report/policytek" element={<CallReportPolicytek />} />
                   <Route path="/call-report/wavv" element={<CallReportWavv />} />
                   <Route path="/call-report/callx" element={<CallReportCallx />} />
+                  <Route path="/reconciliation/americo" element={<AmericoReconciliation />} />
                   <Route path="/agency/:teamId" element={<AgencyDetailPage />} />
                   <Route path="/stats" element={<AgentStats />} />
                   <Route path="/my-profile" element={<MyProfilePage />} />

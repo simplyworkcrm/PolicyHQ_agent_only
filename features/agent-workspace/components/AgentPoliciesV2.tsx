@@ -1567,6 +1567,68 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     setShowFilters(false);
   };
 
+  const policyViewControls = enableNeedAttention ? (
+    <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Policy view">
+        {([
+          { value: 'all', label: 'All Policies', icon: FileText },
+          { value: 'attention', label: 'Need Attention', icon: AlertTriangle },
+        ] as const).map(option => {
+          const Icon = option.icon;
+          const active = policyWorkspaceView === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                setPolicyWorkspaceView(option.value);
+                if (option.value === 'attention') setPolicyAttentionView('missing');
+                setPage(1);
+                setShowFilters(false);
+                setSelectedPolicy(null);
+                setSelectedIds(new Set());
+              }}
+              className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black transition-colors sm:flex-none ${
+                active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {policyWorkspaceView === 'attention' && (
+        <div className="inline-flex w-full rounded-xl border border-slate-200 bg-white p-1 sm:w-auto" aria-label="Attention type">
+          {([
+            { value: 'missing', label: 'Missing Policy Number' },
+            { value: 'duplicates', label: 'Duplicates' },
+          ] as const).map(option => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                setPolicyAttentionView(option.value);
+                setPage(1);
+                setShowFilters(false);
+                setSelectedPolicy(null);
+                setSelectedIds(new Set());
+              }}
+              className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition-colors sm:flex-none ${
+                policyAttentionView === option.value
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className={`animate-in fade-in duration-300 ${isDownlineVariant ? 'rounded-[2rem] border border-amber-100/80 bg-[#fffaf0] p-5 shadow-inner shadow-amber-900/5' : ''}`}>
 
@@ -1607,79 +1669,29 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
       {hideHeader && showDateRangeWhenHeaderHidden && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
         <WorkspaceToolbarPortal slotId={toolbarSlotId} fallbackClassName="mb-5 flex justify-start">
-          <PolicyDateRangeFilter
-            timeframe={timeframe}
-            startDate={startDate}
-            endDate={endDate}
-            onTimeframeChange={handleTimeframeChange}
-            onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
-            label={policyWorkspaceView === 'attention' ? 'Created Date Range' : undefined}
-            description={policyWorkspaceView === 'attention' ? 'Filters by policy created date' : undefined}
-            variant="inline"
-          />
+          <div className="mr-auto">
+            <PolicyDateRangeFilter
+              timeframe={timeframe}
+              startDate={startDate}
+              endDate={endDate}
+              onTimeframeChange={handleTimeframeChange}
+              onDateChange={(s, e) => { setStartDate(s); setEndDate(e); setPage(1); }}
+              label={policyWorkspaceView === 'attention' ? 'Created Date Range' : undefined}
+              description={policyWorkspaceView === 'attention' ? 'Filters by policy created date' : undefined}
+              variant="inline"
+            />
+          </div>
         </WorkspaceToolbarPortal>
       )}
 
       {enableNeedAttention && (
-      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Policy view">
-          {([
-            { value: 'all', label: 'All Policies', icon: FileText },
-            { value: 'attention', label: 'Need Attention', icon: AlertTriangle },
-          ] as const).map(option => {
-            const Icon = option.icon;
-            const active = policyWorkspaceView === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  setPolicyWorkspaceView(option.value);
-                  if (option.value === 'attention') setPolicyAttentionView('missing');
-                  setPage(1);
-                  setShowFilters(false);
-                  setSelectedPolicy(null);
-                  setSelectedIds(new Set());
-                }}
-                className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black transition-colors sm:flex-none ${
-                  active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {policyWorkspaceView === 'attention' && (
-          <div className="inline-flex w-full rounded-xl border border-slate-200 bg-white p-1 sm:w-auto" aria-label="Attention type">
-            {([
-              { value: 'missing', label: 'Missing Policy Number' },
-              { value: 'duplicates', label: 'Duplicates' },
-            ] as const).map(option => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  setPolicyAttentionView(option.value);
-                  setPage(1);
-                  setShowFilters(false);
-                  setSelectedPolicy(null);
-                  setSelectedIds(new Set());
-                }}
-                className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition-colors sm:flex-none ${
-                  policyAttentionView === option.value
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+        toolbarSlotId ? (
+          <WorkspaceToolbarPortal slotId={toolbarSlotId}>
+            {policyViewControls}
+          </WorkspaceToolbarPortal>
+        ) : (
+          <div className="mb-5">{policyViewControls}</div>
+        )
       )}
 
       <div className="flex items-center justify-between mb-4">

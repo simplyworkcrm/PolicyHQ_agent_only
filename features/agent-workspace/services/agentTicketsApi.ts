@@ -1,11 +1,26 @@
 import { BASE_URL, ApiError } from '../../../services/api';
 
+const CREATE_TICKET_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket';
+
 const getAuthToken = () => localStorage.getItem('authToken');
 
 const authHeader = () => ({
   'Authorization': `Bearer ${getAuthToken()}`,
   'Content-Type': 'application/json',
 });
+
+const authOnlyHeader = () => ({
+  'Authorization': `Bearer ${getAuthToken()}`,
+});
+
+export interface CreateTicketInput {
+  subject: string;
+  category: string;
+  priority: string;
+  description: string;
+  screenshots: File[];
+  urls: string[];
+}
 
 export const agentTicketsApi = {
   /**
@@ -42,11 +57,19 @@ export const agentTicketsApi = {
   /**
    * Creates a new support ticket
    */
-  createTicket: async (ticketData: any) => {
-    const response = await fetch(`${BASE_URL}/tickets`, {
+  createTicket: async (ticketData: CreateTicketInput) => {
+    const formData = new FormData();
+    formData.append('subject', ticketData.subject);
+    formData.append('category', ticketData.category);
+    formData.append('priority', ticketData.priority);
+    formData.append('description', ticketData.description);
+    ticketData.urls.forEach(url => formData.append('urls[]', url));
+    ticketData.screenshots.forEach(file => formData.append('screenshots[]', file, file.name));
+
+    const response = await fetch(CREATE_TICKET_URL, {
       method: 'POST',
-      headers: authHeader(),
-      body: JSON.stringify(ticketData),
+      headers: authOnlyHeader(),
+      body: formData,
     });
 
     if (!response.ok) throw new ApiError('Failed to create ticket', response.status);

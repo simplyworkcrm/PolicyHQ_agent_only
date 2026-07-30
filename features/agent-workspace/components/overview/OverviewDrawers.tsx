@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Search, Trophy, X, Crown, Target, ChevronRight, Briefcase, User, Users, FileCheck, CheckCircle2, GitBranch, TrendingUp } from 'lucide-react';
 import { AllTimeLeaderboardEntry, CarrierBreakdown, TeamRankingEntry } from '../../services/agentOverviewApi';
@@ -43,10 +44,10 @@ export const ClosersDrawer: React.FC<AllClosersDrawerProps> = ({ isOpen, onClose
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex justify-end">
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={onClose} />
-        <div className="relative w-full max-w-lg bg-white h-full shadow-2xl border-l border-slate-100 animate-in slide-in-from-right duration-500 flex flex-col overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] isolate flex justify-end overflow-hidden">
+        <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-300" onClick={onClose} />
+        <div className="relative flex h-dvh w-full max-w-[560px] flex-col overflow-hidden border-l border-slate-200/80 bg-white shadow-2xl animate-in slide-in-from-right duration-300 sm:rounded-l-[2rem]">
             <div className="p-8 border-b border-slate-50 flex items-start justify-between shrink-0 bg-white z-10">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
@@ -107,7 +108,8 @@ export const ClosersDrawer: React.FC<AllClosersDrawerProps> = ({ isOpen, onClose
                 )}
             </div>
         </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -129,21 +131,21 @@ export const CarrierDrawer: React.FC<CarrierDrawerProps> = ({ isOpen, onClose, d
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex justify-end">
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={onClose} />
-        <div className="relative w-full max-w-lg bg-white h-full shadow-2xl border-l border-slate-100 animate-in slide-in-from-right duration-500 flex flex-col overflow-hidden">
-            <div className="p-8 border-b border-slate-50 flex items-start justify-between shrink-0 bg-white z-10">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] isolate flex justify-end overflow-hidden">
+        <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-300" onClick={onClose} />
+        <div className="relative flex h-dvh w-full max-w-[560px] flex-col overflow-hidden border-l border-slate-200/80 bg-white shadow-2xl animate-in slide-in-from-right duration-300 sm:rounded-l-[2rem]">
+            <div className="z-10 flex shrink-0 items-start justify-between border-b border-slate-100 bg-white p-6">
                 <div>
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2.5 bg-slate-900 rounded-xl text-brand-500 shadow-lg shadow-navy-900/10"><Briefcase className="w-5 h-5" /></div>
-                        <h3 className="text-2xl font-black text-slate-900 tracking-tight">Full Carrier Portfolio</h3>
+                    <div className="mb-1.5 flex items-center gap-3">
+                        <div className="rounded-xl bg-slate-900 p-2.5 text-brand-500 shadow-lg shadow-navy-900/10"><Briefcase className="h-5 w-5" /></div>
+                        <h3 className="text-xl font-black tracking-tight text-slate-900">Full Carrier Portfolio</h3>
                     </div>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Ranked by total premium</p>
+                    <p className="pl-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Ranked by total premium</p>
                 </div>
-                <button onClick={onClose} className="p-2.5 rounded-full hover:bg-slate-50 text-slate-400 hover:text-navy-900 transition-colors"><X className="w-6 h-6" /></button>
+                <button type="button" aria-label="Close carrier portfolio" onClick={onClose} className="rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-navy-900"><X className="h-5 w-5" /></button>
             </div>
-            <div className="p-6 bg-slate-50/50 border-b border-slate-100 shrink-0">
+            <div className="shrink-0 border-b border-slate-100 bg-slate-50/70 p-4">
                 <div className="relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-slate-400 group-focus-within:text-brand-500 transition-colors" />
                     <input 
@@ -151,19 +153,19 @@ export const CarrierDrawer: React.FC<CarrierDrawerProps> = ({ isOpen, onClose, d
                         placeholder="Search carriers..." 
                         value={search} 
                         onChange={(e) => setSearch(e.target.value)} 
-                        className="w-full pl-12 pr-5 py-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:outline-none focus:ring-4 focus:ring-brand-500/10 focus:border-brand-500 transition-all placeholder:text-slate-300 shadow-sm" 
+                        className="w-full rounded-xl border border-slate-200 bg-white py-3.5 pl-12 pr-5 text-sm font-bold shadow-sm transition-all placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
                     />
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide bg-white">
+            <div className="flex-1 space-y-3 overflow-y-auto bg-white p-4 scrollbar-hide">
                 {filtered.length > 0 ? (
                     filtered.map((carrier) => {
                         const placement = carrier.submissions > 0 ? ((carrier.issued / carrier.submissions) * 100).toFixed(2) : "0.00";
                         const avgPrem = carrier.issued > 0 ? (carrier.total_premium / carrier.issued).toFixed(2) : "0.00";
                         return (
-                            <div key={carrier.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-5 hover:bg-white hover:shadow-xl hover:shadow-slate-200/50 transition-all cursor-default group">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-3">
+                            <div key={carrier.id} className="group cursor-default rounded-2xl border border-slate-200/70 bg-slate-50 p-4 transition-all hover:bg-white hover:shadow-xl hover:shadow-slate-200/50">
+                                <div className="mb-3 flex items-start justify-between gap-4">
+                                    <div className="flex min-w-0 items-center gap-3">
                                         <div className="w-12 h-12 bg-white rounded-xl border border-slate-200 p-1 flex items-center justify-center shadow-sm overflow-hidden shrink-0">
                                             {carrier.logo?.url ? (
                                                 <img src={carrier.logo.url} className="w-full h-full object-contain p-1" alt={carrier.label} />
@@ -173,12 +175,12 @@ export const CarrierDrawer: React.FC<CarrierDrawerProps> = ({ isOpen, onClose, d
                                                 </div>
                                             )}
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-black text-slate-900 leading-tight">{carrier.label}</p>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Placement Ratio: <span className="text-blue-500 font-black">{placement}%</span></p>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-black leading-tight text-slate-900">{carrier.label}</p>
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Placement Ratio: <span className="font-black text-blue-500">{placement}%</span></p>
                                         </div>
                                     </div>
-                                    <div className="text-right">
+                                    <div className="shrink-0 text-right">
                                         <p className="text-lg font-black text-blue-600">${(carrier.total_premium / 1000).toFixed(1)}K</p>
                                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Premium</p>
                                     </div>
@@ -219,7 +221,8 @@ export const CarrierDrawer: React.FC<CarrierDrawerProps> = ({ isOpen, onClose, d
                 )}
             </div>
         </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -238,10 +241,10 @@ export const TeamRankingDrawer: React.FC<TeamRankingDrawerProps> = ({ isOpen, on
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex justify-end">
-        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={onClose} />
-        <div className="relative w-full max-w-lg bg-white h-full shadow-2xl border-l border-slate-100 animate-in slide-in-from-right duration-500 flex flex-col overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] isolate flex justify-end overflow-hidden">
+        <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-300" onClick={onClose} />
+        <div className="relative flex h-dvh w-full max-w-[560px] flex-col overflow-hidden border-l border-slate-200/80 bg-white shadow-2xl animate-in slide-in-from-right duration-300 sm:rounded-l-[2rem]">
             <div className="p-8 border-b border-slate-50 flex items-start justify-between shrink-0 bg-white z-10">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
@@ -342,6 +345,7 @@ export const TeamRankingDrawer: React.FC<TeamRankingDrawerProps> = ({ isOpen, on
                 )}
             </div>
         </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

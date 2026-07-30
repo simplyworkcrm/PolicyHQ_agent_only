@@ -24,7 +24,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
 import { agencyExpenseManagementApi, AgencyExpenseLogRow, AgencyExpenseLogSummary, AgencyExpenseOverviewResponse, AgencyExpenseRiskAgent, AgencyExpenseRiskAgency } from '../services/agencyExpenseManagementApi';
-import { AgentPoliciesV2 } from './AgentPoliciesV2';
+import { AgentPoliciesV2, PolicyDateRangeFilter } from './AgentPoliciesV2';
 import { BusinessOverviewDashboard } from './BusinessOverviewDashboard';
 import { Policy } from '../../../shared/types/index';
 
@@ -115,6 +115,34 @@ const getDateRange = (type: 'all' | 'today' | 'weekly' | 'monthly' | 'yearly'): 
     
     return { start: start.getTime(), end: end.getTime(), label: 'Custom', timeframe: 'custom' };
 };
+
+const AgencyDateRangeFilter: React.FC<{
+  value: DateRange;
+  onChange: (range: DateRange) => void;
+}> = ({ value, onChange }) => (
+  <PolicyDateRangeFilter
+    timeframe={value.timeframe}
+    startDate={value.start}
+    endDate={value.end}
+    onTimeframeChange={timeframe => {
+      if (timeframe === 'custom') {
+        onChange({ ...value, label: 'Custom Range', timeframe: 'custom' });
+        return;
+      }
+      onChange(getDateRange(timeframe));
+    }}
+    onDateChange={(start, end) => {
+      if (start === undefined || end === undefined) return;
+      onChange({
+        start,
+        end,
+        label: 'Custom Range',
+        timeframe: 'custom',
+      });
+    }}
+    variant="inline"
+  />
+);
 
 const formatDate = (date: string | number | undefined) => {
     if (!date) return 'N/A';
@@ -1309,9 +1337,9 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
   return (
     <div className="font-sans w-full animate-in fade-in duration-300">
       <div className="mb-6 flex min-h-11 justify-end">
-        <div id={toolbarSlotId} className="flex min-h-11 flex-wrap items-center justify-end gap-3">
+        <div id={toolbarSlotId} className="flex min-h-11 w-full flex-wrap items-center justify-end gap-3">
           {viewMode === 'expenses' && (
-            <DateRangeSelector value={dateRange} onChange={setDateRange} />
+            <AgencyDateRangeFilter value={dateRange} onChange={setDateRange} />
           )}
         </div>
       </div>
@@ -1319,6 +1347,7 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
       {viewMode === 'overview' ? (
         <BusinessOverviewDashboard
           mode="agency"
+          activeAgentId={selectedAgentId}
           scopeEyebrow="Agency Scope"
           overviewEyebrow="Agency Overview"
           title="Agency Analytics Dashboard"

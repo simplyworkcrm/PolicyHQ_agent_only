@@ -22,7 +22,7 @@ import {
   Check
 } from 'lucide-react';
 import { useAgentContext } from '../context/AgentContext';
-import { agentTicketsApi } from '../services/agentTicketsApi';
+import { agentTicketsApi, CreateTicketInput } from '../services/agentTicketsApi';
 import { useAuth } from '../../../context/AuthContext';
 
 // --- MOCK DATA ---
@@ -157,15 +157,46 @@ const CreateTicketModal = ({
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
-  onSubmit: (ticket: Omit<TicketData, 'id' | 'ticketNumber' | 'created_at' | 'last_update' | 'comments' | 'status'>) => Promise<void>; 
+  onSubmit: (ticket: CreateTicketInput) => Promise<void>; 
 }) => {
-  if (!isOpen) return null;
-
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState('Technical');
   const [priority, setPriority] = useState<'Low' | 'Intermediate' | 'High'>('Intermediate');
   const [description, setDescription] = useState('');
+  const [screenshots, setScreenshots] = useState<File[]>([]);
+  const [urlInput, setUrlInput] = useState('');
+  const [urls, setUrls] = useState<string[]>([]);
+  const [urlError, setUrlError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isOpen) return null;
+
+  const addUrl = () => {
+    const candidate = urlInput.trim();
+    if (!candidate) return;
+
+    try {
+      const parsed = new URL(candidate);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Unsupported protocol');
+      if (!urls.includes(parsed.toString())) setUrls(current => [...current, parsed.toString()]);
+      setUrlInput('');
+      setUrlError('');
+    } catch {
+      setUrlError('Enter a valid http:// or https:// link.');
+    }
+  };
+
+  const addScreenshots = (files: FileList | null) => {
+    if (!files) return;
+    const images = Array.from(files).filter(file => file.type.startsWith('image/'));
+    setScreenshots(current => {
+      const existing = new Set(current.map(file => `${file.name}-${file.size}-${file.lastModified}`));
+      return [
+        ...current,
+        ...images.filter(file => !existing.has(`${file.name}-${file.size}-${file.lastModified}`)),
+      ];
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,13 +204,17 @@ const CreateTicketModal = ({
     
     setIsSubmitting(true);
     try {
-        await onSubmit({ subject, category, priority, description });
+        await onSubmit({ subject, category, priority, description, screenshots, urls });
         onClose();
         // Reset form
         setSubject('');
         setDescription('');
         setCategory('Technical');
         setPriority('Intermediate');
+        setScreenshots([]);
+        setUrlInput('');
+        setUrls([]);
+        setUrlError('');
     } catch (error) {
         console.error("Error submitting ticket:", error);
     } finally {
@@ -190,7 +225,7 @@ const CreateTicketModal = ({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
-        <div className="relative bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
                     <h3 className="text-xl font-black text-slate-900">New Ticket</h3>
@@ -201,7 +236,7 @@ const CreateTicketModal = ({
                 </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-8 space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6 overflow-y-auto p-8">
                 <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Subject</label>
                     <input 
@@ -245,6 +280,89 @@ const CreateTicketModal = ({
                         rows={5}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all placeholder:text-slate-400 resize-none"
                     />
+                </div>
+
+                <div className="space-y-3">
+                    <label className="ml-1 text-xs font-bold uppercase tracking-wider text-slate-500">Related links <span className="normal-case text-slate-300">(optional)</span></label>
+                    <div className="flex gap-2">
+                        <input
+                            type="url"
+                            value={urlInput}
+                            onChange={(event) => {
+                              setUrlInput(event.target.value);
+                              if (urlError) setUrlError('');
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                addUrl();
+                              }
+                            }}
+                            placeholder="https://example.com/page"
+                            className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition-all placeholder:text-slate-400 focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                        />
+                        <button
+                            type="button"
+                            onClick={addUrl}
+                            disabled={!urlInput.trim()}
+                            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white transition-colors hover:bg-brand-500 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="Add link"
+                        >
+                            <Plus className="h-4 w-4" />
+                        </button>
+                    </div>
+                    {urlError && <p className="px-1 text-xs font-semibold text-red-500">{urlError}</p>}
+                    {urls.length > 0 && (
+                      <div className="space-y-2">
+                        {urls.map(url => (
+                          <div key={url} className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
+                            <span className="min-w-0 flex-1 truncate text-xs font-bold text-blue-700">{url}</span>
+                            <button type="button" onClick={() => setUrls(current => current.filter(item => item !== url))} className="text-blue-400 hover:text-red-500" aria-label={`Remove ${url}`}>
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </div>
+
+                <div className="space-y-3">
+                    <label className="ml-1 text-xs font-bold uppercase tracking-wider text-slate-500">Screenshots <span className="normal-case text-slate-300">(optional)</span></label>
+                    <label className="flex cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-5 py-5 text-center transition-colors hover:border-brand-300 hover:bg-brand-50/30">
+                        <Paperclip className="h-5 w-5 text-slate-400" />
+                        <span>
+                          <span className="block text-sm font-black text-slate-700">Attach image files</span>
+                          <span className="block text-xs font-semibold text-slate-400">Choose one or multiple screenshots</span>
+                        </span>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="sr-only"
+                            onChange={(event) => {
+                              addScreenshots(event.target.files);
+                              event.target.value = '';
+                            }}
+                        />
+                    </label>
+                    {screenshots.length > 0 && (
+                      <div className="space-y-2">
+                        {screenshots.map((file, index) => (
+                          <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                              <FileText className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-black text-slate-700">{file.name}</p>
+                              <p className="text-[10px] font-semibold text-slate-400">{(file.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                            <button type="button" onClick={() => setScreenshots(current => current.filter((_, itemIndex) => itemIndex !== index))} className="text-slate-400 hover:text-red-500" aria-label={`Remove ${file.name}`}>
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                 </div>
 
                 <div className="pt-2 flex gap-3">
@@ -392,7 +510,7 @@ export const AgentTickets: React.FC = () => {
     return matchesSearch;
   });
 
-  const handleCreateTicket = async (newTicketData: Omit<TicketData, 'id' | 'ticketNumber' | 'created_at' | 'last_update' | 'comments' | 'status'>) => {
+  const handleCreateTicket = async (newTicketData: CreateTicketInput) => {
     try {
         const createdTicket = await agentTicketsApi.createTicket(newTicketData);
         

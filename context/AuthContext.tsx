@@ -81,8 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   // Helper to normalize backend feature strings to frontend keys
-  const normalizeFeature = (feature: string): string => {
-    const lower = feature.toLowerCase().trim();
+  const normalizeFeature = (feature: unknown): string => {
+    const lower = typeof feature === 'string' ? feature.toLowerCase().trim() : '';
     
     // Agent Features
     if (lower.includes('polic')) return 'policies';
@@ -102,20 +102,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const mapApiUserToAppUser = (data: any): User => {
+    const toCleanString = (value: unknown): string => {
+      if (typeof value === 'string') return value.trim();
+      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+      return '';
+    };
+    const firstCleanString = (...values: unknown[]): string | undefined => (
+      values.map(toCleanString).find(Boolean) || undefined
+    );
     const agentAccessRows = Array.isArray(data.agent_access) ? data.agent_access : [];
     const agencyPayload = data.agency && typeof data.agency === 'object' && !Array.isArray(data.agency)
       ? data.agency
       : null;
     const agencyLogo = agencyPayload?.logo ?? data.agency_logo;
-    const agencyLogoUrl = typeof agencyLogo === 'string'
-      ? agencyLogo
-      : agencyLogo?.url || agencyLogo?.access || agencyLogo?.path;
-    const firstName = data.first_name || data.firstName || data.firstname || '';
-    const lastName = data.last_name || data.lastName || data.lastname || '';
+    const agencyLogoUrl = firstCleanString(
+      typeof agencyLogo === 'string' ? agencyLogo : null,
+      agencyLogo?.url,
+      agencyLogo?.access,
+      agencyLogo?.path,
+    );
+    const firstName = firstCleanString(data.first_name, data.firstName, data.firstname) || '';
+    const lastName = firstCleanString(data.last_name, data.lastName, data.lastname) || '';
     const userAgentId = data.agent_id && data.agent_id !== 'null' ? data.agent_id : null;
     const primaryAgentRow = userAgentId
       ? agentAccessRows.find((a: any) => a.agent_id === data.agent_id)
       : agentAccessRows[0];
+    const agencyName = firstCleanString(
+      agencyPayload?.name,
+      data.agency_name,
+      typeof data.agency === 'string' ? data.agency : null,
+      primaryAgentRow?.agency_name,
+    );
     const primaryAgentId = userAgentId || primaryAgentRow?.agent_id || '';
     const primaryAgentFeatures = Array.isArray(primaryAgentRow?.feature)
       ? primaryAgentRow.feature.map(normalizeFeature)
@@ -123,25 +140,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const primaryAgentAccess: AgentAccess = {
       agentId: primaryAgentId,
-      agentName: primaryAgentRow?.agent_name,
+      agentName: firstCleanString(primaryAgentRow?.agent_name),
       npn: primaryAgentRow?.agent_npn,
-      agencyName: primaryAgentRow?.agency_name,
+      agencyName: firstCleanString(primaryAgentRow?.agency_name),
       features: primaryAgentFeatures,
       downline: agentAccessRows.filter((a: any) => a.agent_id !== primaryAgentId).map((a: any) => ({
         agentId: a.agent_id,
-        name: a.agent_name,
+        name: firstCleanString(a.agent_name) || 'Unknown agent',
         npn: a.agent_npn,
         features: Array.isArray(a.feature) ? a.feature.map(normalizeFeature) : []
       }))
     };
 
     // Map Agency Access
-    const agencyAccess: AgencyAccess[] = data.agency_access ? data.agency_access.map((a: any) => ({
+    const agencyAccessRows = Array.isArray(data.agency_access) ? data.agency_access : [];
+    const agencyAccess: AgencyAccess[] = agencyAccessRows.map((a: any) => ({
       agencyId: a.agency_id,
-      agencyName: a.agency_name,
+      agencyName: firstCleanString(a.agency_name) || 'Unknown agency',
       role: 'admin', // Defaulting role as it's not explicitly in the API response object for agency
       features: Array.isArray(a.feature) ? a.feature.map(normalizeFeature) : []
-    })) : [];
+    }));
 
     // Map Hybrid Access
     const hybridAccess: HybridAccess | null = data.hybrid_access ? {
@@ -151,18 +169,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return {
       id: data.id,
-      name: data.name || [firstName, lastName].filter(Boolean).join(' '),
+      name: firstCleanString(data.name) || [firstName, lastName].filter(Boolean).join(' ') || 'User',
       firstName,
       lastName,
       email: data.email || '',
       phone: data.phone,
       agentId: userAgentId,
       npn: data.agent_npn || data.npn,
-      agencyName: agencyPayload?.name || data.agency_name || (typeof data.agency === 'string' ? data.agency : primaryAgentRow?.agency_name),
+      agencyName,
       agencyLogoUrl,
       agency: agencyPayload ? {
         id: String(agencyPayload.id || ''),
-        name: String(agencyPayload.name || ''),
+        name: firstCleanString(agencyPayload.name) || '',
         logo: agencyLogoUrl || null,
         monthlyGoalAp: agencyPayload.monthly_goal_ap ?? null,
         managerAgentId: agencyPayload.ref_agent_manager ?? null,

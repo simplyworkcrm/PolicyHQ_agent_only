@@ -713,18 +713,20 @@ export const SettingsPage: React.FC = () => {
     if (!file) return;
 
     const token = localStorage.getItem('authToken');
-    const imageAgentId = user?.agentId || '';
-    if (!imageAgentId) {
-      setProfileImageError('Save the agent profile before uploading a profile image.');
-      return;
-    }
+    const imageAgentId = currentAgentProfileId;
 
     setProfileImage(file);
-    setProfileImageUploading(true);
     setProfileImageError(null);
     setProfileImageMessage(null);
     setAgentProfileSaveError(null);
     setAgentProfileSaveMessage(null);
+
+    if (!imageAgentId) {
+      setProfileImageMessage('Photo selected. It will upload when you create the agent profile.');
+      return;
+    }
+
+    setProfileImageUploading(true);
 
     try {
       const uploadedUrl = await uploadProfileImage(file, imageAgentId, token || '');
@@ -751,7 +753,7 @@ export const SettingsPage: React.FC = () => {
     if (!phoneVerified) return 'Verify work phone before saving.';
     if (!agentEmail.trim()) return 'Work email is required.';
     if (profileImageUploading) return 'Wait for the profile image upload to finish.';
-    if (!existingProfileImageUrl) return 'Profile image is required.';
+    if (!existingProfileImageUrl && !profileImage) return 'Profile image is required.';
     return null;
   };
 
@@ -763,6 +765,7 @@ export const SettingsPage: React.FC = () => {
 
     const token = localStorage.getItem('authToken');
     const isUpdate = Boolean(currentAgentProfileId);
+    let profileWasSaved = false;
     setAgentProfileSaving(true);
     try {
       const body = JSON.stringify({
@@ -785,18 +788,42 @@ export const SettingsPage: React.FC = () => {
       });
 
       if (!response.ok) throw new Error(`API error: ${response.status}`);
+      profileWasSaved = true;
 
       const data = await response.json().catch(() => null);
+      let persistedProfileId = currentAgentProfileId;
       if (data) {
         const profile = mapAgentProfile(data);
-        if (profile.id) setSavedAgentProfileId(profile.id);
+        if (profile.id) {
+          persistedProfileId = profile.id;
+          setSavedAgentProfileId(profile.id);
+        }
         if (profile.imageUrl) setExistingProfileImageUrl(profile.imageUrl);
         setHasExistingNpn(Boolean(profile.npn || agentNpn));
       }
+
+      if (profileImage) {
+        if (!persistedProfileId) {
+          throw new Error('The profile was created, but the API did not return an agent ID for the image upload. Refresh and try the photo again.');
+        }
+
+        setProfileImageUploading(true);
+        try {
+          const uploadedUrl = await uploadProfileImage(profileImage, persistedProfileId, token || '');
+          if (!uploadedUrl) throw new Error('Image upload returned no image URL.');
+          setExistingProfileImageUrl(uploadedUrl);
+          setProfileImage(null);
+          setProfileImageMessage('Profile image uploaded.');
+        } finally {
+          setProfileImageUploading(false);
+        }
+      }
+
       await refreshUser();
       setAgentProfileSaveMessage(isUpdate ? 'Agent profile saved.' : 'Agent profile created.');
     } catch (error) {
-      setAgentProfileSaveError(error instanceof Error ? error.message : 'Failed to save agent profile.');
+      const message = error instanceof Error ? error.message : 'Failed to save agent profile.';
+      setAgentProfileSaveError(profileWasSaved ? `Agent profile saved, but the image could not be completed. ${message}` : message);
     } finally {
       setAgentProfileSaving(false);
     }
@@ -1244,13 +1271,18 @@ export const SettingsPage: React.FC = () => {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  disabled={profileImageUploading}
+                  disabled={profileImageUploading || agentProfileSaving}
                   onChange={(event) => {
                     void handleProfileImageChange(event.target.files?.[0] || null);
                     event.target.value = '';
                   }}
                 />
               </label>
+              {!hasUserAgentProfile && !profileImage && (
+                <p className="text-[11px] font-semibold leading-relaxed text-slate-400">
+                  Choose a photo now. It will upload automatically when you create the agent profile.
+                </p>
+              )}
               {profileImageUploading && <p className="text-[11px] font-bold text-slate-500">Uploading profile image...</p>}
               {profileImageError && <p className="text-[11px] font-bold text-red-500">{profileImageError}</p>}
               {profileImageMessage && <p className="text-[11px] font-bold text-emerald-600">{profileImageMessage}</p>}
