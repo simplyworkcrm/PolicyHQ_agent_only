@@ -21,7 +21,6 @@ import {
   Loader2,
   MapPinned,
   ReceiptText,
-  RotateCcw, 
   Users, 
   Ticket,
   Trophy,
@@ -80,6 +79,7 @@ import { MyProfilePage } from './components/MyProfilePage';
 import { SettingsPage } from './components/SettingsPage';
 import { ServicesPage } from './components/ServicesPage';
 import { AmericoReconciliation } from './components/AmericoReconciliation';
+import { AmericoBusinessPolicies } from './components/AmericoBusinessPolicies';
 import { ModuleSwitcher } from '../../shared/components/ModuleSwitcher';
 import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
@@ -152,7 +152,6 @@ const SidebarGroup = ({
   locked,
   collapsed,
   dark,
-  sectionHeader,
   defaultOpen,
   children,
 }: {
@@ -162,7 +161,6 @@ const SidebarGroup = ({
   locked?: boolean;
   collapsed?: boolean;
   dark?: boolean;
-  sectionHeader?: boolean;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) => {
@@ -175,7 +173,13 @@ const SidebarGroup = ({
 
   return (
     <div
-      className="relative w-full"
+      className={`relative w-full transition-colors duration-200 ${collapsed ? 'flex justify-center' : ''} ${
+        !collapsed && open
+          ? dark
+            ? 'rounded-2xl bg-white/[0.04] p-1'
+            : 'rounded-2xl bg-slate-100/80 p-1'
+          : ''
+      }`}
       onMouseEnter={showFlyout}
       onMouseLeave={hideFlyout}
     >
@@ -184,36 +188,31 @@ const SidebarGroup = ({
         className={`
           relative flex items-center transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1.0)] group
           ${collapsed
-            ? 'justify-center w-9 h-9 rounded-lg mx-auto'
-            : sectionHeader
-            ? 'w-full px-3 pb-1 pt-0.5 gap-2 rounded-md'
-            : 'w-full px-3 py-2.5 rounded-lg gap-3'
+            ? 'h-9 w-9 shrink-0 justify-center rounded-lg'
+            : 'w-full px-2.5 py-2.5 rounded-xl gap-2.5'
           }
-          ${sectionHeader && !collapsed
-            ? dark ? 'text-slate-700 hover:text-slate-400' : 'text-slate-400 hover:text-slate-600'
-            : active
-            ? dark ? 'bg-white/8 text-white border border-brand-500/30' : 'bg-brand-500/10 text-slate-900 border border-brand-500/20'
+          ${active
+            ? dark ? 'bg-white/[0.06] text-white' : 'bg-white text-slate-950 shadow-sm'
             : locked
             ? 'opacity-50 cursor-not-allowed grayscale'
-            : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            : dark ? 'text-slate-400 hover:bg-white/5 hover:text-white' : 'text-slate-700 hover:bg-white hover:text-slate-950'
           }
         `}
         title={collapsed ? label : undefined}
       >
-        <span className={`shrink-0 transition-colors duration-200 ${sectionHeader && !collapsed ? 'hidden' : ''} ${active ? 'text-brand-500' : dark ? 'text-slate-600 group-hover:text-slate-300' : 'text-slate-400 group-hover:text-slate-700'}`}>
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center transition-colors duration-200 ${active ? 'text-violet-600' : dark ? 'text-slate-500 group-hover:text-slate-300' : 'text-slate-500 group-hover:text-slate-800'}`}>
           {icon}
         </span>
         <span className={`
-          whitespace-nowrap overflow-hidden transition-all duration-300 origin-left flex-1 text-left
-          ${sectionHeader && !collapsed ? 'text-[9px] font-bold uppercase tracking-wider' : 'font-semibold text-xs'}
-          ${collapsed ? 'w-0 opacity-0 -translate-x-2' : 'w-auto opacity-100 translate-x-0'}
+          whitespace-nowrap overflow-hidden transition-all duration-300 origin-left text-left text-xs font-bold
+          ${collapsed ? 'w-0 opacity-0 -translate-x-2' : 'w-auto flex-1 opacity-100 translate-x-0'}
         `}>
           {label}
         </span>
         {!collapsed && !locked && (
           <ChevronDown
             size={14}
-            className={`shrink-0 transition-transform duration-300 ${open ? 'rotate-180' : ''} ${sectionHeader ? 'h-3 w-3' : ''} ${active && !sectionHeader ? 'text-brand-400' : dark ? 'text-slate-600' : 'text-slate-400'}`}
+            className={`shrink-0 transition-transform duration-300 ${open ? 'rotate-180' : ''} ${active ? 'text-violet-500' : dark ? 'text-slate-600' : 'text-slate-400'}`}
           />
         )}
         {!collapsed && locked && <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
@@ -223,7 +222,7 @@ const SidebarGroup = ({
       </button>
 
       {!collapsed && open && (
-        <div className="mt-0.5 w-full space-y-0.5 pb-1 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="relative ml-3 mt-0.5 w-[calc(100%-0.75rem)] space-y-0.5 pb-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
           {children}
         </div>
       )}
@@ -241,7 +240,9 @@ const SidebarGroup = ({
           <div className={`px-3 pb-2 pt-1 text-[10px] font-black uppercase tracking-[0.14em] ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
             {label}
           </div>
-          <div className="space-y-0.5">{children}</div>
+          <div className="relative ml-2 space-y-0.5">
+            {children}
+          </div>
         </div>
       )}
     </div>
@@ -270,22 +271,22 @@ const SidebarSubItem = ({
     to={locked ? '#' : to}
     onClick={(e) => locked && e.preventDefault()}
     className={`
-      flex w-full min-h-9 items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold transition-all duration-200
+      relative flex w-full min-h-8 items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all duration-200
       ${
         active
-          ? dark ? 'bg-white/10 text-white shadow-md' : 'bg-slate-900 text-white shadow-md'
+          ? dark ? 'bg-violet-500/20 text-violet-200' : 'bg-violet-200/80 text-violet-700'
           : locked
           ? dark ? 'text-slate-700 cursor-not-allowed' : 'text-slate-400 cursor-not-allowed'
-          : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+          : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-950'
       }
     `}
   >
     <span
       aria-hidden="true"
-      className={`flex h-4 w-4 shrink-0 items-center justify-center ${active ? 'text-brand-400' : dark ? 'text-slate-600' : 'text-slate-400'}`}
+      className={`flex h-4 w-4 shrink-0 items-center justify-center ${active ? 'text-violet-600' : dark ? 'text-slate-600' : 'text-slate-400'}`}
     >
       {icon ?? (
-        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-brand-400' : dark ? 'bg-slate-700' : 'bg-slate-300'}`} />
+        <span className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-violet-600' : dark ? 'bg-slate-700' : 'bg-slate-300'}`} />
       )}
     </span>
     <span className="truncate">{label}</span>
@@ -321,7 +322,7 @@ const SidebarItem = ({
 
   return (
     <div
-      className="relative w-full"
+      className={`relative w-full ${collapsed ? 'flex justify-center' : ''}`}
       onMouseEnter={showFlyout}
       onMouseLeave={hideFlyout}
     >
@@ -331,23 +332,23 @@ const SidebarItem = ({
         className={`
           relative flex items-center transition-all duration-500 ease-[cubic-bezier(0.25,0.1,0.25,1.0)] group
           ${collapsed
-            ? 'justify-center w-9 h-9 rounded-lg mx-auto'
+            ? 'h-9 w-9 shrink-0 justify-center rounded-lg'
             : 'w-full px-3 py-2.5 rounded-lg gap-3'
           }
           ${active
             ? dark ? 'bg-white/10 text-white' : 'bg-slate-100 text-slate-950'
             : locked
               ? 'opacity-50 cursor-not-allowed grayscale'
-              : dark ? 'text-slate-500 hover:bg-white/5 hover:text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+              : dark ? 'text-slate-400 hover:bg-white/5 hover:text-white' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950'
           }
         `}
       >
-        <span className={`shrink-0 transition-colors duration-200 ${active ? 'text-brand-500' : dark ? 'text-slate-600 group-hover:text-slate-300' : 'text-slate-400 group-hover:text-slate-700'}`}>
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center transition-colors duration-200 ${active ? 'text-violet-600' : dark ? 'text-slate-500 group-hover:text-slate-300' : 'text-slate-500 group-hover:text-slate-800'}`}>
           {icon}
         </span>
 
         <span className={`
-          font-semibold text-xs whitespace-nowrap overflow-hidden transition-all duration-300 origin-left
+          font-bold text-xs whitespace-nowrap overflow-hidden transition-all duration-300 origin-left
           ${collapsed ? 'w-0 opacity-0 -translate-x-2' : 'w-auto opacity-100 translate-x-0 flex-1'}
         `}>
           {label}
@@ -3698,14 +3699,14 @@ const MyBusinessExpenseLog = ({
   );
 };
 
-type MyBusinessTab = 'gamification' | 'overview' | 'policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
+type MyBusinessTab = 'gamification' | 'overview' | 'policies' | 'americo-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
 
 const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
   const { currentAgentId, viewingAgentName } = useAgentContext();
   const selectedBusinessAgentId = currentAgentId;
   const selectedBusinessAgentLabel = viewingAgentName || 'My Workspace';
   const toolbarSlotId = 'my-business-toolbar-actions';
-  const hasToolbar = tab === 'gamification' || tab === 'overview' || tab === 'policies' || tab === 'activity' || tab === 'expenses' || tab === 'splits' || tab === 'commissions' || tab === 'debts';
+  const hasToolbar = tab === 'gamification' || tab === 'overview' || tab === 'policies' || tab === 'americo-policies' || tab === 'activity' || tab === 'expenses' || tab === 'splits' || tab === 'commissions' || tab === 'debts';
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -3717,11 +3718,14 @@ const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
 
       {tab === 'gamification' ? (
         <MyBusinessGamification selectedAgentId={selectedBusinessAgentId} toolbarSlotId={toolbarSlotId} />
+      ) : tab === 'americo-policies' ? (
+        <AmericoBusinessPolicies toolbarSlotId={toolbarSlotId} />
       ) : tab === 'policies' ? (
         <AgentPoliciesV2
           agentIdsOverride={selectedBusinessAgentId ? [selectedBusinessAgentId] : []}
           hideHeader
           showDateRangeWhenHeaderHidden
+          showPolicySourceSelector
           enableNeedAttention
           hideAgentFilter
           toolbarSlotId={toolbarSlotId}
@@ -3783,14 +3787,14 @@ const AgentLayout: React.FC = () => {
   const isActive = (path: string) => location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
   const isDarkRoute = isNightMode;
   const isBusinessPage = location.pathname.startsWith('/business') || location.pathname.startsWith('/policies');
-  const isPoliciesPage = location.pathname === '/business/policies' || location.pathname === '/policies' || location.pathname === '/policies/v2';
+  const isPoliciesPage = location.pathname.startsWith('/business/policies') || location.pathname === '/policies' || location.pathname === '/policies/v2';
   const pageTitle = (() => {
     const path = location.pathname;
     if (path === '/' || path === '') return 'Global Performance';
     if (path.startsWith('/leaderboard/realtime')) return 'Realtime Leaderboard';
     if (path.startsWith('/leaderboard/trainer/')) return 'Trainer Performance';
     if (path === '/business' || path === '/business/overview') return 'My Business';
-    if (path === '/business/policies' || path === '/policies' || path === '/policies/v2') return 'Policies';
+    if (path.startsWith('/business/policies') || path === '/policies' || path === '/policies/v2') return 'Policies';
     if (path.startsWith('/business/activity-log')) return 'Daily Activity';
     if (path.startsWith('/business/expense-log')) return 'Expense Log';
     if (path.startsWith('/business/splits')) return 'Split Business';
@@ -3992,7 +3996,7 @@ const AgentLayout: React.FC = () => {
           <div className="w-full space-y-0.5">
             {!isSidebarCompact && (
               <p className={`px-3 pb-1 text-[9px] font-bold uppercase tracking-wider ${isDarkRoute ? 'text-slate-700' : 'text-slate-400'}`}>
-                Performance
+                Main
               </p>
             )}
             <SidebarItem to="/" icon={<Trophy size={16} />} label="Leaderboard" active={location.pathname === '/' || location.pathname === ''} locked={isLocked('overview')} collapsed={isSidebarCompact} dark={isDarkRoute} />
@@ -4009,7 +4013,7 @@ const AgentLayout: React.FC = () => {
             </SidebarGroup>
           </div>
 
-          <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
+          <div className="h-1 w-full shrink-0" />
 
           <div className="w-full space-y-0.5">
             <SidebarGroup
@@ -4018,11 +4022,10 @@ const AgentLayout: React.FC = () => {
               active={isBusinessPage}
               collapsed={isSidebarCompact}
               dark={isDarkRoute}
-              sectionHeader
               defaultOpen
             >
                         <SidebarSubItem to="/business" label="Overview" active={location.pathname === '/business' || location.pathname === '/business/overview'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/policies" label="Policies" active={location.pathname === '/business/policies'} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
+                        <SidebarSubItem to="/business/policies" label="Policies" active={location.pathname.startsWith('/business/policies')} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
                         <SidebarSubItem to="/business/splits" label="Splits" active={location.pathname === '/business/splits'} dark={isDarkRoute} icon={<Split size={13} strokeWidth={1.8} />} />
                         <SidebarSubItem to="/business/commissions" label="Commissions" active={location.pathname === '/business/commissions'} dark={isDarkRoute} icon={<DollarSign size={13} strokeWidth={1.8} />} />
                         <SidebarSubItem to="/business/debt-recovery" label="Debts" active={location.pathname === '/business/debt-recovery'} dark={isDarkRoute} icon={<AlertCircle size={13} strokeWidth={1.8} />} />
@@ -4031,7 +4034,7 @@ const AgentLayout: React.FC = () => {
             </SidebarGroup>
           </div>
 
-          <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
+          <div className="h-1 w-full shrink-0" />
 
           <div className="w-full space-y-0.5">
             <SidebarGroup
@@ -4040,8 +4043,6 @@ const AgentLayout: React.FC = () => {
               active={location.pathname.startsWith('/downlines')}
               collapsed={isSidebarCompact}
               dark={isDarkRoute}
-              sectionHeader
-              defaultOpen
             >
               <SidebarSubItem to="/downlines" label="Overview" active={location.pathname === '/downlines'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
               <SidebarSubItem to="/downlines/team" label="Team List" active={location.pathname === '/downlines/team'} dark={isDarkRoute} icon={<Users size={13} strokeWidth={1.8} />} />
@@ -4050,35 +4051,7 @@ const AgentLayout: React.FC = () => {
             </SidebarGroup>
           </div>
 
-          <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
-
-          <div className="w-full space-y-0.5">
-            {!isSidebarCompact && (
-              <p className={`px-3 pb-1 text-[9px] font-bold uppercase tracking-wider ${isDarkRoute ? 'text-slate-700' : 'text-slate-400'}`}>
-                Reconciliation
-              </p>
-            )}
-            <SidebarGroup
-              icon={<RotateCcw size={16} />}
-              label="Carriers"
-              active={location.pathname.startsWith('/reconciliation')}
-              collapsed={isSidebarCompact}
-              dark={isDarkRoute}
-            >
-              <SidebarSubItem to="/reconciliation/americo" label="Americo" active={isActive('/reconciliation/americo')} dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/transamerica" label="Transamerica" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/mutual-of-omaha" label="Mutual Of Omaha" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/ethos" label="Ethos" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/gerber-life" label="Gerber Life" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/american-amicable" label="American Amicable" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/aetna" label="Aetna" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/corebridge" label="Corebridge" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/national-life-group" label="National Life Group" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-              <SidebarSubItem to="/reconciliation/baltimore-life" label="Baltimore Life" active={false} locked badgeLabel="Soon" dark={isDarkRoute} />
-            </SidebarGroup>
-          </div>
-
-          <div className={`my-2 w-full border-t ${isDarkRoute ? 'border-white/5' : 'border-slate-200/70'}`} />
+          <div className="h-1 w-full shrink-0" />
 
           <div className="w-full space-y-0.5">
             <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isSidebarCompact} dark={isDarkRoute} />
@@ -4227,6 +4200,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/business" element={<MyBusinessPage tab="gamification" />} />
                   <Route path="/business/overview" element={<MyBusinessPage tab="overview" />} />
                   <Route path="/business/policies" element={<MyBusinessPage tab="policies" />} />
+                  <Route path="/business/policies/americo" element={<MyBusinessPage tab="americo-policies" />} />
                   <Route path="/business/activity-log" element={<MyBusinessPage tab="activity" />} />
                   <Route path="/business/expense-log" element={<MyBusinessPage tab="expenses" />} />
                   <Route path="/business/splits" element={<MyBusinessPage tab="splits" />} />

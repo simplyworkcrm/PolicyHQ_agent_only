@@ -1056,6 +1056,7 @@ interface AgentPoliciesV2Props {
   readOnlyRows?: boolean;
   hideHeader?: boolean;
   showDateRangeWhenHeaderHidden?: boolean;
+  showPolicySourceSelector?: boolean;
   initialTimeframe?: PoliciesTimeframe;
   enableNeedAttention?: boolean;
   needAttentionScope?: 'business' | 'agency';
@@ -1063,6 +1064,138 @@ interface AgentPoliciesV2Props {
   hideAgentFilter?: boolean;
   toolbarSlotId?: string;
 }
+
+export const PolicySourceDropdown: React.FC<{
+  carrierOptions: PolicyFilterOption[];
+  loading: boolean;
+  currentSource?: 'policyhq' | 'americo';
+}> = ({ carrierOptions, loading, currentSource = 'policyhq' }) => {
+  const [open, setOpen] = useState(false);
+  const [carrierSearch, setCarrierSearch] = useState('');
+  const sourceRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const currentSourceLabel = currentSource === 'americo' ? 'Americo Policies' : 'PolicyHQ Policies';
+  const filteredCarrierOptions = useMemo(() => {
+    const query = carrierSearch.trim().toLowerCase();
+    if (!query) return carrierOptions;
+    return carrierOptions.filter(carrier => carrier.label.toLowerCase().includes(query));
+  }, [carrierOptions, carrierSearch]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (sourceRef.current && !sourceRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) setCarrierSearch('');
+  }, [open]);
+
+  return (
+    <div ref={sourceRef} className="relative ml-auto">
+      <button
+        type="button"
+        onClick={() => setOpen(value => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`inline-flex h-9 items-center gap-2 rounded-xl border bg-white px-3 text-[10px] font-black transition ${
+          open
+            ? 'border-violet-200 text-violet-700 shadow-md shadow-violet-100'
+            : 'border-slate-200 text-slate-700 shadow-sm hover:border-slate-300'
+        }`}
+      >
+        <FileText className="h-3.5 w-3.5" />
+        {currentSourceLabel}
+        <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/15 animate-in fade-in slide-in-from-top-1 duration-150"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              if (currentSource !== 'policyhq') navigate('/business/policies');
+            }}
+            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[11px] font-black ${
+              currentSource === 'policyhq'
+                ? 'bg-slate-950 text-white'
+                : 'text-slate-700 transition hover:bg-slate-100'
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <FileText className="h-3.5 w-3.5" />
+              PolicyHQ Policies
+            </span>
+            {currentSource === 'policyhq' && <Check className="h-3.5 w-3.5 text-amber-300" />}
+          </button>
+          <p className="px-3 pb-1 pt-3 text-[8px] font-black uppercase tracking-[0.16em] text-slate-400">Carrier policies</p>
+          <div className="relative mx-2 mb-2">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={carrierSearch}
+              onChange={event => setCarrierSearch(event.target.value)}
+              placeholder="Search carriers..."
+              aria-label="Search carriers"
+              className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 text-[10px] font-bold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center gap-2 px-3 py-3 text-[10px] font-bold text-slate-400">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading carriers...
+              </div>
+            ) : filteredCarrierOptions.length > 0 ? filteredCarrierOptions.map(carrier => {
+              const isAmerico = carrier.label.trim().toLowerCase() === 'americo';
+              return (
+                <button
+                  key={carrier.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={!isAmerico}
+                  onClick={() => {
+                    if (!isAmerico) return;
+                    setOpen(false);
+                    if (currentSource !== 'americo') navigate('/business/policies/americo');
+                  }}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] font-bold transition ${
+                    isAmerico
+                      ? currentSource === 'americo'
+                        ? 'bg-violet-50 text-violet-700'
+                        : 'text-slate-800 hover:bg-violet-50 hover:text-violet-700'
+                      : 'cursor-not-allowed text-slate-400'
+                  }`}
+                >
+                  <span className="truncate pr-2">{carrier.label}</span>
+                  {isAmerico && currentSource === 'americo' ? (
+                    <Check className="h-3.5 w-3.5 text-violet-600" />
+                  ) : isAmerico ? (
+                    <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wide text-emerald-700">Available</span>
+                  ) : (
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wide text-slate-400">Soon</span>
+                  )}
+                </button>
+              );
+            }) : (
+              <p className="px-3 py-3 text-[10px] font-bold text-slate-400">
+                {carrierSearch ? 'No carriers match your search.' : 'No carriers available.'}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   agentIdsOverride,
@@ -1073,6 +1206,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   readOnlyRows = false,
   hideHeader = false,
   showDateRangeWhenHeaderHidden = false,
+  showPolicySourceSelector = false,
   initialTimeframe = 'all',
   enableNeedAttention = false,
   needAttentionScope = 'business',
@@ -1568,8 +1702,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   };
 
   const policyViewControls = enableNeedAttention ? (
-    <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-      <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Policy view">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="inline-flex rounded-lg bg-slate-100 p-0.5" aria-label="Policy view">
         {([
           { value: 'all', label: 'All Policies', icon: FileText },
           { value: 'attention', label: 'Need Attention', icon: AlertTriangle },
@@ -1588,11 +1722,11 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 setSelectedPolicy(null);
                 setSelectedIds(new Set());
               }}
-              className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-xs font-black transition-colors sm:flex-none ${
+              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-[10px] font-black transition-colors ${
                 active ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-3.5 w-3.5" />
               {option.label}
             </button>
           );
@@ -1600,7 +1734,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       </div>
 
       {policyWorkspaceView === 'attention' && (
-        <div className="inline-flex w-full rounded-xl border border-slate-200 bg-white p-1 sm:w-auto" aria-label="Attention type">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5" aria-label="Attention type">
           {([
             { value: 'missing', label: 'Missing Policy Number' },
             { value: 'duplicates', label: 'Duplicates' },
@@ -1615,7 +1749,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 setSelectedPolicy(null);
                 setSelectedIds(new Set());
               }}
-              className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-black transition-colors sm:flex-none ${
+              className={`inline-flex h-8 items-center justify-center rounded-md px-2.5 text-[9px] font-black transition-colors ${
                 policyAttentionView === option.value
                   ? 'bg-amber-400 text-slate-950'
                   : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
@@ -1667,9 +1801,13 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       )}
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
-      {hideHeader && showDateRangeWhenHeaderHidden && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
+      {hideHeader && (
+        (showDateRangeWhenHeaderHidden && (policyWorkspaceView === 'all' || policyAttentionView === 'missing'))
+        || showPolicySourceSelector
+      ) && (
         <WorkspaceToolbarPortal slotId={toolbarSlotId} fallbackClassName="mb-5 flex justify-start">
-          <div className="mr-auto">
+          <div className="flex w-full flex-wrap items-center gap-3">
+          {showDateRangeWhenHeaderHidden && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
             <PolicyDateRangeFilter
               timeframe={timeframe}
               startDate={startDate}
@@ -1680,18 +1818,12 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               description={policyWorkspaceView === 'attention' ? 'Filters by policy created date' : undefined}
               variant="inline"
             />
+          )}
+          {showPolicySourceSelector && (
+            <PolicySourceDropdown carrierOptions={carrierOptions} loading={filterOptionsLoading} />
+          )}
           </div>
         </WorkspaceToolbarPortal>
-      )}
-
-      {enableNeedAttention && (
-        toolbarSlotId ? (
-          <WorkspaceToolbarPortal slotId={toolbarSlotId}>
-            {policyViewControls}
-          </WorkspaceToolbarPortal>
-        ) : (
-          <div className="mb-5">{policyViewControls}</div>
-        )
       )}
 
       <div className="flex items-center justify-between mb-4">
@@ -1840,20 +1972,17 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       {/* Table card */}
       <div className={`flex-1 min-w-0 bg-white border shadow-sm overflow-hidden relative min-h-[600px] flex flex-col ${isDownlineVariant ? 'rounded-[1.75rem] border-amber-100' : 'rounded-[2.5rem] border-slate-100'}`}>
 
-        <div className="p-5 border-b border-slate-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-brand-50 rounded-2xl text-brand-600 border border-brand-100 shadow-sm">
-              <FileText className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-slate-100 px-4 py-3 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="min-w-fit">
+              <h3 className="text-sm font-black tracking-tight text-slate-900">
                 {policyWorkspaceView === 'all'
                   ? 'Policy Records'
                   : policyAttentionView === 'missing'
                   ? 'Missing Policy Numbers'
                   : 'Duplicate Policies'}
               </h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+              <p className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
                 {isDuplicateView
                   ? `${attentionDuplicateGroupCount.toLocaleString()} groups - ${duplicatePolicyItems.length.toLocaleString()} policies`
                   : `${(policyWorkspaceView === 'all'
@@ -1862,16 +1991,17 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   ).toLocaleString()} records matching current view`}
               </p>
             </div>
+            {policyViewControls}
           </div>
-          <div className="flex flex-col lg:flex-row lg:items-center gap-3 flex-1 min-w-0 xl:max-w-4xl">
+          <div className="ml-auto flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center xl:max-w-3xl">
             <div className="relative flex-1 min-w-60 group">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within:text-brand-500 transition-colors" />
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-brand-500" />
               <input
                 type="text"
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
                 placeholder="Search client, policy #, carrier..."
-                className="w-full pl-11 pr-3 py-4 text-sm rounded-2xl bg-slate-50 border border-slate-100 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition-all font-bold"
+                className="h-9 w-full rounded-xl border border-slate-100 bg-slate-50 pl-9 pr-3 text-xs font-bold text-slate-800 placeholder:text-slate-400 transition-all focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
               />
               {searchInput && (
                 <button onClick={() => setSearchInput('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
@@ -1884,7 +2014,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             {!isDuplicateView && <div className="relative group">
               <button
                 onClick={() => setShowFilters(true)}
-                className={`flex items-center gap-3 px-5 py-4 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all ${
+                className={`flex h-9 items-center gap-2 rounded-xl border px-3 text-[9px] font-black uppercase tracking-widest transition-all ${
                   activeFilters > 0
                     ? 'bg-slate-900 text-white border-slate-900 shadow-xl shadow-slate-900/10'
                     : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
@@ -1907,7 +2037,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   setSearchTerm('');
                   if (!isDuplicateView) clearFilters();
                 }}
-                className="px-5 py-4 rounded-2xl bg-slate-50 text-slate-400 hover:text-red-500 hover:bg-red-50 text-xs font-black uppercase tracking-widest transition-all"
+                className="h-9 rounded-xl bg-slate-50 px-3 text-[9px] font-black uppercase tracking-widest text-slate-400 transition-all hover:bg-red-50 hover:text-red-500"
               >
                 Reset View
               </button>
@@ -1918,7 +2048,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 else void load();
               }}
               disabled={viewLoading}
-              className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-50 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-white hover:border-slate-300 transition-all disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500 transition-all hover:border-slate-300 hover:bg-white hover:text-slate-800 disabled:opacity-40"
             >
               <RefreshCw className={`w-4 h-4 ${viewLoading ? 'animate-spin' : ''}`} />
             </button>
