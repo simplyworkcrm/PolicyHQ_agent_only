@@ -229,7 +229,7 @@ const SidebarGroup = ({
 
       {collapsed && flyoutMounted && !locked && (
         <div
-          className={`absolute left-full top-0 z-50 ml-2 w-56 overflow-hidden rounded-xl border p-2 shadow-2xl transition-all duration-200 ease-out ${
+          className={`absolute left-full top-0 z-[1100] ml-2 w-56 overflow-hidden rounded-xl border p-2 shadow-2xl transition-all duration-200 ease-out ${
             flyoutVisible ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-2 opacity-0'
           } ${
             dark
@@ -363,7 +363,7 @@ const SidebarItem = ({
       </Link>
 
       {collapsed && flyoutMounted && (
-        <div className={`pointer-events-none absolute left-full top-1/2 z-50 ml-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-bold shadow-xl transition-all duration-200 ease-out ${
+        <div className={`pointer-events-none absolute left-full top-1/2 z-[1100] ml-2 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-bold shadow-xl transition-all duration-200 ease-out ${
           flyoutVisible ? '-translate-y-1/2 translate-x-0 opacity-100' : '-translate-x-2 -translate-y-1/2 opacity-0'
         } ${
           dark ? 'border-white/10 bg-[#151522] text-white shadow-black/40' : 'border-slate-200 bg-white text-slate-800 shadow-slate-900/10'
@@ -3874,7 +3874,7 @@ const AgentLayout: React.FC = () => {
           ${isSidebarCompact ? 'w-16 px-2' : 'w-60 px-3'}
           ${isDarkRoute ? 'bg-[#0d0d1a] border-white/6' : 'bg-transparent border-transparent'}
           rounded-2xl flex flex-col transition-[width,padding,background-color,border-color] duration-300 ease-out
-          border relative z-20 shrink-0 py-4
+          border relative z-[1000] shrink-0 py-4
         `}
       >
         {/* Toggle Handle */}

@@ -27,6 +27,20 @@ export interface AmericoPolicyAgent {
   carrierAgentNumber: string;
 }
 
+export interface AmericoHqPolicy {
+  id: string;
+  client: string;
+  policyNumber: string;
+  carrierProduct: string;
+  annualPremium: number;
+  initialDraftDate: string | null;
+  carrier: string;
+  status: string;
+  paidStatus: string | null;
+  agentName: string;
+  sourceName: string;
+}
+
 export interface AmericoPolicy {
   id: string;
   createdAt: number;
@@ -41,7 +55,7 @@ export interface AmericoPolicy {
   terminatedDate: string | null;
   annualPremium: number;
   agents: AmericoPolicyAgent[];
-  hqPolicies: unknown[];
+  hqPolicies: AmericoHqPolicy[];
 }
 
 export interface AmericoPoliciesResponse {
@@ -111,7 +125,27 @@ const normalizePolicy = (row: any): AmericoPolicy => ({
         carrierAgentNumber: String(agent?.carrierAgent_number || agent?.carrier_agent_number || ''),
       }))
     : [],
-  hqPolicies: Array.isArray(row?.hqPolicy) ? row.hqPolicy : [],
+  hqPolicies: Array.isArray(row?.hqPolicy)
+    ? row.hqPolicy.map((hqPolicy: any) => ({
+        id: String(hqPolicy?.id || hqPolicy?.policy_id || ''),
+        client: String(hqPolicy?.client || ''),
+        policyNumber: String(hqPolicy?.policy_number || ''),
+        carrierProduct: String(hqPolicy?.carrier_product || hqPolicy?.product || ''),
+        annualPremium: Number(hqPolicy?.annual_premium || 0),
+        initialDraftDate: hqPolicy?.initial_draft_date
+          ? String(hqPolicy.initial_draft_date)
+          : hqPolicy?.effective_date
+            ? String(hqPolicy.effective_date)
+            : null,
+        carrier: String(hqPolicy?.ref_carrier_name || hqPolicy?.carrier || 'Americo'),
+        status: String(hqPolicy?.ref_policyStatus_name || hqPolicy?.policy_status || hqPolicy?.status || 'Unknown'),
+        paidStatus: hqPolicy?.meta_policy_paidstatus_name || hqPolicy?.policy_paidStatus || hqPolicy?.paid_status
+          ? String(hqPolicy.meta_policy_paidstatus_name || hqPolicy.policy_paidStatus || hqPolicy.paid_status)
+          : null,
+        agentName: String(hqPolicy?.ref_agent_owner_name || hqPolicy?.agent_name || ''),
+        sourceName: String(hqPolicy?.ref_metacontactsource_name || hqPolicy?.source_name || ''),
+      }))
+    : [],
 });
 
 const normalizePoliciesResponse = (payload: any): AmericoPoliciesResponse => {

@@ -5,9 +5,11 @@ import {
   ChevronRight,
   CircleAlert,
   FileText,
+  Link2,
   Loader2,
   RefreshCcw,
   Search,
+  X,
 } from 'lucide-react';
 import { useAgentContext } from '../context/AgentContext';
 import {
@@ -60,6 +62,21 @@ const writingAgentLabel = (policy: AmericoPolicy) => {
   return names.join(', ') || 'Not provided';
 };
 
+const agentInitials = (name: string) => {
+  const formattedName = formatCarrierName(name).trim();
+  const parts = formattedName.split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const agentAvatarTones = [
+  'bg-amber-400 text-slate-950',
+  'bg-sky-600 text-white',
+  'bg-violet-600 text-white',
+  'bg-emerald-600 text-white',
+];
+
 export const AmericoPoliciesWorkspace: React.FC<{
   agentId?: string;
   timeframe?: AmericoPoliciesTimeframe;
@@ -89,7 +106,28 @@ export const AmericoPoliciesWorkspace: React.FC<{
   const [sortField, setSortField] = React.useState<SortField>('received_date');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const [drawerPolicy, setDrawerPolicy] = React.useState<AmericoPolicy | null>(null);
+  const [drawerVisible, setDrawerVisible] = React.useState(false);
   const resolvedProfileStatus = profileStatus ?? localProfileStatus;
+
+  const openHqPolicyDrawer = (policy: AmericoPolicy) => {
+    setDrawerPolicy(policy);
+    window.requestAnimationFrame(() => setDrawerVisible(true));
+  };
+
+  const closeHqPolicyDrawer = React.useCallback(() => {
+    setDrawerVisible(false);
+    window.setTimeout(() => setDrawerPolicy(null), 300);
+  }, []);
+
+  React.useEffect(() => {
+    if (!drawerPolicy) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeHqPolicyDrawer();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [drawerPolicy, closeHqPolicyDrawer]);
 
   React.useEffect(() => {
     if (profileStatus !== undefined) return;
@@ -192,7 +230,14 @@ export const AmericoPoliciesWorkspace: React.FC<{
   );
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+    <div
+      className={`grid items-start gap-4 transition-[grid-template-columns] duration-300 ease-out ${
+        drawerPolicy
+          ? 'xl:grid-cols-[minmax(0,1fr)_24rem]'
+          : 'xl:grid-cols-[minmax(0,1fr)_0rem]'
+      }`}
+    >
+      <section className="min-w-0 overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
@@ -323,10 +368,53 @@ export const AmericoPoliciesWorkspace: React.FC<{
                   </div>
                   <div className="min-w-0">
                     <p className="truncate font-mono text-[11px] font-black text-slate-700">{policy.policyNumber || '—'}</p>
-                    {policy.hqPolicies.length > 0 && <span className="mt-1 inline-flex rounded-full bg-violet-50 px-1.5 py-0.5 text-[8px] font-black uppercase text-violet-700">HQ matched</span>}
+                    {policy.hqPolicies.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => openHqPolicyDrawer(policy)}
+                        aria-label={`View ${policy.hqPolicies.length} HQ matched ${policy.hqPolicies.length === 1 ? 'policy' : 'policies'} for ${policy.client}`}
+                        className="mt-1 inline-flex items-center gap-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[8px] font-black uppercase text-violet-700 ring-1 ring-inset ring-violet-200 transition hover:bg-violet-100"
+                      >
+                        <Link2 className="h-2.5 w-2.5" />
+                        HQ matched
+                        <span className="rounded-full bg-violet-600 px-1 text-[7px] text-white">{policy.hqPolicies.length}</span>
+                      </button>
+                    )}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-bold text-slate-700" title={writingAgentLabel(policy)}>{writingAgentLabel(policy)}</p>
+                    {policy.agents.length ? (
+                      <div className="flex min-h-8 items-center -space-x-2 pl-1" aria-label={`Writing agents: ${writingAgentLabel(policy)}`}>
+                        {policy.agents.slice(0, 4).map((agent, index) => {
+                          const fullName = formatCarrierName(agent.name) || 'Unknown agent';
+                          const producerNumber = agent.carrierAgentNumber || policy.agentNumbers[index] || 'No producer number';
+                          return (
+                            <span
+                              key={`${agent.carrierAgentNumber || agent.name}-${index}`}
+                              className="group relative inline-flex shrink-0 hover:z-30 focus-within:z-30"
+                            >
+                              <button
+                                type="button"
+                                aria-label={`${fullName}, ${producerNumber}`}
+                                className={`flex h-8 w-8 items-center justify-center rounded-full text-[9px] font-black ring-2 ring-white shadow-sm transition hover:-translate-y-0.5 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-violet-400 ${agentAvatarTones[index % agentAvatarTones.length]}`}
+                              >
+                                {agentInitials(agent.name)}
+                              </button>
+                              <span className="pointer-events-none absolute bottom-full left-1/2 z-40 mb-2 w-max max-w-52 -translate-x-1/2 translate-y-1 rounded-xl bg-slate-950 px-3 py-2 text-left opacity-0 shadow-xl transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+                                <span className="block truncate text-[10px] font-black text-white">{fullName}</span>
+                                <span className="mt-0.5 block font-mono text-[8px] font-bold text-slate-300">{producerNumber}</span>
+                              </span>
+                            </span>
+                          );
+                        })}
+                        {policy.agents.length > 4 && (
+                          <span className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-[9px] font-black text-slate-600 ring-2 ring-white">
+                            +{policy.agents.length - 4}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400">Not provided</span>
+                    )}
                     <p className="mt-0.5 truncate font-mono text-[9px] font-bold text-slate-400">{policy.agentNumbers.join(' · ') || '—'}</p>
                   </div>
                   <p className="min-w-0 truncate font-bold text-slate-700" title={policy.product}>{policy.product || '—'}</p>
@@ -372,7 +460,123 @@ export const AmericoPoliciesWorkspace: React.FC<{
           </button>
         </div>
       </div>
-    </section>
+
+      </section>
+
+      <div className="min-w-0 overflow-hidden">
+        {drawerPolicy && (
+          <aside
+            className={`sticky top-20 flex max-h-[calc(100vh-6rem)] min-h-[32rem] w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-xl transition-all duration-300 ease-out ${
+              drawerVisible ? 'translate-x-0' : 'translate-x-full'
+            }`}
+            role="complementary"
+            aria-label={`HQ matched policies for ${drawerPolicy.client}`}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-950 px-6 py-5 text-white">
+              <div className="min-w-0">
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-violet-300">Policy Match</p>
+                <h3 className="mt-1 truncate text-lg font-black">HQ policy details</h3>
+                <p className="mt-1 text-xs font-semibold text-slate-300">
+                  {drawerPolicy.hqPolicies.length} {drawerPolicy.hqPolicies.length === 1 ? 'record' : 'records'} linked to {drawerPolicy.policyNumber}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeHqPolicyDrawer}
+                aria-label="Close HQ policy drawer"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white transition hover:bg-white/20"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-200 bg-white px-6 py-4">
+              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Americo record</p>
+              <div className="mt-2 grid grid-cols-2 gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-700">Client</p>
+                  <p className="mt-1 truncate text-sm font-black text-slate-950">{drawerPolicy.client}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-700">Policy</p>
+                  <p className="mt-1 font-mono text-sm font-black text-slate-950">{drawerPolicy.policyNumber}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-700">Annual premium</p>
+                  <p className="mt-1 text-sm font-black text-slate-950">{formatMoney(drawerPolicy.annualPremium)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-700">Status</p>
+                  <p className="mt-1 truncate text-sm font-black text-slate-950">{drawerPolicy.status}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-3 overflow-y-auto p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-violet-600">PolicyHQ records</p>
+                  <h4 className="mt-1 text-sm font-black text-slate-950">Matched policies</h4>
+                </div>
+                <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[9px] font-black text-violet-700">
+                  {drawerPolicy.hqPolicies.length} matched
+                </span>
+              </div>
+
+              {drawerPolicy.hqPolicies.map((hqPolicy, index) => (
+                <article key={hqPolicy.id || `${hqPolicy.policyNumber}-${index}`} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-slate-950">{hqPolicy.client || drawerPolicy.client}</p>
+                      <p className="mt-1 font-mono text-[10px] font-bold text-slate-500">{hqPolicy.policyNumber || 'No policy number'}</p>
+                    </div>
+                    <span className={`inline-flex max-w-44 truncate rounded-full px-2 py-1 text-[8px] font-black ring-1 ring-inset ${statusTone(hqPolicy.status)}`}>
+                      {hqPolicy.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-4 p-4 text-xs">
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Carrier / product</p>
+                      <p className="mt-1 font-bold text-slate-800">{hqPolicy.carrier}{hqPolicy.carrierProduct ? ` · ${hqPolicy.carrierProduct}` : ''}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Annual premium</p>
+                      <p className="mt-1 font-black text-slate-950">{formatMoney(hqPolicy.annualPremium)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Writing agent</p>
+                      <p className="mt-1 font-bold text-slate-800">{hqPolicy.agentName || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Initial draft</p>
+                      <p className="mt-1 font-bold text-slate-800">{formatPolicyDate(hqPolicy.initialDraftDate)}</p>
+                    </div>
+                    <div className={`rounded-xl px-3 py-2 ring-1 ring-inset ${
+                      hqPolicy.paidStatus?.trim().toLowerCase() === 'paid'
+                        ? 'bg-emerald-50 ring-emerald-200'
+                        : 'bg-slate-50 ring-slate-200'
+                    }`}>
+                      <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Paid status</p>
+                      <p className={`mt-1 font-black ${
+                        hqPolicy.paidStatus?.trim().toLowerCase() === 'paid'
+                          ? 'text-emerald-700'
+                          : 'text-slate-700'
+                      }`}>
+                        {hqPolicy.paidStatus || 'Not set'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">Lead source</p>
+                      <p className="mt-1 font-bold text-slate-800">{hqPolicy.sourceName || 'Not provided'}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
   );
 };
 
