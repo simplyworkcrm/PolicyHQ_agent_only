@@ -18,6 +18,7 @@ import {
 } from '../services/americoReconciliationApi';
 
 type SortField = 'received_date' | 'effective_date' | 'annual_premium' | 'client' | 'policy_number';
+export type AmericoProfileStatus = 'checking' | 'available' | 'missing' | 'error';
 
 const formatCarrierName = (value: string) => {
   const [lastName, firstName] = value.split(',').map(part => part.trim());
@@ -64,9 +65,19 @@ export const AmericoPoliciesWorkspace: React.FC<{
   timeframe?: AmericoPoliciesTimeframe;
   startDate?: number;
   endDate?: number;
-}> = ({ agentId, timeframe = 'all', startDate, endDate }) => {
+  profileStatus?: AmericoProfileStatus;
+  profileErrorMessage?: string | null;
+}> = ({
+  agentId,
+  timeframe = 'all',
+  startDate,
+  endDate,
+  profileStatus,
+  profileErrorMessage,
+}) => {
   const { currentAgentId } = useAgentContext();
   const effectiveAgentId = agentId || currentAgentId;
+  const [localProfileStatus, setLocalProfileStatus] = React.useState<AmericoProfileStatus>('checking');
   const [data, setData] = React.useState<AmericoPoliciesResponse | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -78,6 +89,26 @@ export const AmericoPoliciesWorkspace: React.FC<{
   const [sortField, setSortField] = React.useState<SortField>('received_date');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const resolvedProfileStatus = profileStatus ?? localProfileStatus;
+
+  React.useEffect(() => {
+    if (profileStatus !== undefined) return;
+    if (!effectiveAgentId) {
+      setLocalProfileStatus('missing');
+      return;
+    }
+
+    const controller = new AbortController();
+    setLocalProfileStatus('checking');
+    americoReconciliationApi.getProfiles(effectiveAgentId, controller.signal)
+      .then(profiles => setLocalProfileStatus(profiles.length > 0 ? 'available' : 'missing'))
+      .catch(profileError => {
+        if (profileError instanceof DOMException && profileError.name === 'AbortError') return;
+        setLocalProfileStatus('error');
+      });
+
+    return () => controller.abort();
+  }, [effectiveAgentId, profileStatus]);
 
   React.useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -92,9 +123,10 @@ export const AmericoPoliciesWorkspace: React.FC<{
   }, [effectiveAgentId, timeframe, startDate, endDate, statusFilter, sortField, sortDirection, perPage]);
 
   React.useEffect(() => {
-    if (!effectiveAgentId) {
+    if (!effectiveAgentId || resolvedProfileStatus !== 'available') {
       setData(null);
       setError(null);
+      setLoading(false);
       return;
     }
     if (timeframe === 'custom' && (startDate === undefined || endDate === undefined)) {
@@ -130,7 +162,7 @@ export const AmericoPoliciesWorkspace: React.FC<{
     return () => controller.abort();
   }, [
     effectiveAgentId, page, perPage, search, sortField, sortDirection,
-    statusFilter, timeframe, startDate, endDate, refreshKey,
+    statusFilter, timeframe, startDate, endDate, refreshKey, resolvedProfileStatus,
   ]);
 
   const toggleSort = (field: SortField) => {
@@ -186,6 +218,7 @@ export const AmericoPoliciesWorkspace: React.FC<{
               type="search"
               value={searchInput}
               onChange={event => setSearchInput(event.target.value)}
+              disabled={resolvedProfileStatus !== 'available'}
               placeholder="Search client, policy, or agent..."
               aria-label="Search Americo policies"
               className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs font-semibold text-slate-900 outline-none transition focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100"
@@ -194,6 +227,7 @@ export const AmericoPoliciesWorkspace: React.FC<{
           <select
             value={statusFilter}
             onChange={event => setStatusFilter(event.target.value)}
+            disabled={resolvedProfileStatus !== 'available'}
             aria-label="Filter Americo policies by status"
             className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none transition focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
           >
@@ -209,7 +243,7 @@ export const AmericoPoliciesWorkspace: React.FC<{
           <button
             type="button"
             onClick={() => setRefreshKey(key => key + 1)}
-            disabled={loading || !effectiveAgentId}
+            disabled={loading || !effectiveAgentId || resolvedProfileStatus !== 'available'}
             aria-label="Refresh Americo policies"
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-950 disabled:opacity-50"
           >
@@ -230,7 +264,40 @@ export const AmericoPoliciesWorkspace: React.FC<{
             <span className="text-slate-400">Status</span>
           </div>
 
-          {loading && !data ? (
+          {resolvedProfileStatus === 'checking' ? (
+            <div className="flex min-h-64 items-center justify-center gap-2 text-sm font-bold text-slate-500">
+              <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
+              Checking Americo profile...
+            </div>
+          ) : resolvedProfileStatus === 'missing' ? (
+            <div className="flex min-h-64 items-center justify-center p-8">
+              <div className="max-w-sm text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-100 bg-amber-50 text-amber-600">
+                  <CircleAlert className="h-5 w-5" />
+                </div>
+                <h4 className="mt-3 text-sm font-black text-slate-950">No Americo producer profile</h4>
+                <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                  Policies are not requested until this agent has an Americo profile. If you are contracted with Americo, please contact support so we can connect your producer profile.
+                </p>
+                <a
+                  href="#/tickets"
+                  className="mt-4 inline-flex rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white transition hover:bg-slate-800"
+                >
+                  Contact Support
+                </a>
+              </div>
+            </div>
+          ) : resolvedProfileStatus === 'error' ? (
+            <div className="flex min-h-64 items-center justify-center p-8">
+              <div className="max-w-sm text-center">
+                <CircleAlert className="mx-auto h-7 w-7 text-rose-500" />
+                <h4 className="mt-3 text-sm font-black text-slate-950">Americo profile could not be checked</h4>
+                <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                  {profileErrorMessage || 'The policy request was skipped to prevent an invalid carrier lookup.'}
+                </p>
+              </div>
+            </div>
+          ) : loading && !data ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-sm font-bold text-slate-500">
               <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
               Loading Americo policies...

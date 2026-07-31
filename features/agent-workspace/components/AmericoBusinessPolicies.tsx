@@ -34,6 +34,7 @@ export const AmericoBusinessPolicies: React.FC<{ toolbarSlotId: string }> = ({ t
   const [profiles, setProfiles] = React.useState<AmericoAgentProfile[]>([]);
   const [profilesLoading, setProfilesLoading] = React.useState(false);
   const [profilesError, setProfilesError] = React.useState<string | null>(null);
+  const [profilesAgentId, setProfilesAgentId] = React.useState<string | null>(null);
   const [profileRefreshKey, setProfileRefreshKey] = React.useState(0);
   const [profileOpen, setProfileOpen] = React.useState(false);
   const [carrierOptions, setCarrierOptions] = React.useState<PolicyFilterOption[]>([]);
@@ -62,17 +63,24 @@ export const AmericoBusinessPolicies: React.FC<{ toolbarSlotId: string }> = ({ t
     if (!currentAgentId) {
       setProfiles([]);
       setProfilesError(null);
+      setProfilesAgentId(null);
       return;
     }
 
     const controller = new AbortController();
+    setProfiles([]);
+    setProfilesAgentId(null);
     setProfilesLoading(true);
     setProfilesError(null);
     americoReconciliationApi.getProfiles(currentAgentId, controller.signal)
-      .then(setProfiles)
+      .then(nextProfiles => {
+        setProfiles(nextProfiles);
+        setProfilesAgentId(currentAgentId);
+      })
       .catch(error => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         setProfiles([]);
+        setProfilesAgentId(currentAgentId);
         setProfilesError(error instanceof Error ? error.message : 'Failed to load Americo producer profiles');
       })
       .finally(() => {
@@ -87,6 +95,13 @@ export const AmericoBusinessPolicies: React.FC<{ toolbarSlotId: string }> = ({ t
   const sharedUpline = profiles.find(profile => profile.agentUplineName)?.agentUplineName || '';
   const activeProfileCount = profiles.filter(profile => profile.status.toLowerCase() === 'active').length;
   const producerNumbers = profiles.map(profile => profile.carrierAgentNumber).filter(Boolean);
+  const profileStatus = !currentAgentId || profilesLoading || profilesAgentId !== currentAgentId
+    ? 'checking'
+    : profilesError
+      ? 'error'
+      : profiles.length > 0
+        ? 'available'
+        : 'missing';
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
@@ -135,7 +150,11 @@ export const AmericoBusinessPolicies: React.FC<{ toolbarSlotId: string }> = ({ t
               <h2 className="mt-0.5 truncate text-sm font-black tracking-tight text-slate-950">{carrierAgentName}</h2>
               <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <p className="truncate text-[10px] font-semibold text-slate-500">
-                  {sharedUpline ? `Upline: ${formatCarrierName(sharedUpline)}` : 'Carrier profile and contract details'}
+                  {sharedUpline
+                    ? `Upline: ${formatCarrierName(sharedUpline)}`
+                    : profileStatus === 'missing'
+                      ? 'Contracted with Americo? Contact support to connect your profile.'
+                      : 'Carrier profile and contract details'}
                 </p>
                 {producerNumbers.map(agentNumber => (
                   <span key={agentNumber} className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[8px] font-black text-slate-600">
@@ -224,6 +243,8 @@ export const AmericoBusinessPolicies: React.FC<{ toolbarSlotId: string }> = ({ t
 
       <AmericoPoliciesWorkspace
         agentId={currentAgentId}
+        profileStatus={profileStatus}
+        profileErrorMessage={profilesError}
         timeframe={timeframe}
         startDate={startDate}
         endDate={endDate}
