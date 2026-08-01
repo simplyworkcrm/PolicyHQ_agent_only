@@ -80,6 +80,7 @@ import { SettingsPage } from './components/SettingsPage';
 import { ServicesPage } from './components/ServicesPage';
 import { AmericoReconciliation } from './components/AmericoReconciliation';
 import { AmericoBusinessPolicies } from './components/AmericoBusinessPolicies';
+import { AetnaBusinessPolicies, AflacBusinessPolicies } from './components/AetnaBusinessPolicies';
 import { ModuleSwitcher } from '../../shared/components/ModuleSwitcher';
 import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
@@ -3699,14 +3700,14 @@ const MyBusinessExpenseLog = ({
   );
 };
 
-type MyBusinessTab = 'gamification' | 'overview' | 'policies' | 'americo-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
+type MyBusinessTab = 'gamification' | 'overview' | 'policies' | 'americo-policies' | 'aetna-policies' | 'aflac-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
 
 const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
   const { currentAgentId, viewingAgentName } = useAgentContext();
   const selectedBusinessAgentId = currentAgentId;
   const selectedBusinessAgentLabel = viewingAgentName || 'My Workspace';
   const toolbarSlotId = 'my-business-toolbar-actions';
-  const hasToolbar = tab === 'gamification' || tab === 'overview' || tab === 'policies' || tab === 'americo-policies' || tab === 'activity' || tab === 'expenses' || tab === 'splits' || tab === 'commissions' || tab === 'debts';
+  const hasToolbar = tab === 'gamification' || tab === 'overview' || tab === 'policies' || tab === 'americo-policies' || tab === 'aetna-policies' || tab === 'aflac-policies' || tab === 'activity' || tab === 'expenses' || tab === 'splits' || tab === 'commissions' || tab === 'debts';
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -3720,6 +3721,10 @@ const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
         <MyBusinessGamification selectedAgentId={selectedBusinessAgentId} toolbarSlotId={toolbarSlotId} />
       ) : tab === 'americo-policies' ? (
         <AmericoBusinessPolicies toolbarSlotId={toolbarSlotId} />
+      ) : tab === 'aetna-policies' ? (
+        <AetnaBusinessPolicies toolbarSlotId={toolbarSlotId} />
+      ) : tab === 'aflac-policies' ? (
+        <AflacBusinessPolicies toolbarSlotId={toolbarSlotId} />
       ) : tab === 'policies' ? (
         <AgentPoliciesV2
           agentIdsOverride={selectedBusinessAgentId ? [selectedBusinessAgentId] : []}
@@ -4201,6 +4206,8 @@ const AgentLayout: React.FC = () => {
                   <Route path="/business/overview" element={<MyBusinessPage tab="overview" />} />
                   <Route path="/business/policies" element={<MyBusinessPage tab="policies" />} />
                   <Route path="/business/policies/americo" element={<MyBusinessPage tab="americo-policies" />} />
+                  <Route path="/business/policies/aetna" element={<MyBusinessPage tab="aetna-policies" />} />
+                  <Route path="/business/policies/aflac" element={<MyBusinessPage tab="aflac-policies" />} />
                   <Route path="/business/activity-log" element={<MyBusinessPage tab="activity" />} />
                   <Route path="/business/expense-log" element={<MyBusinessPage tab="expenses" />} />
                   <Route path="/business/splits" element={<MyBusinessPage tab="splits" />} />

@@ -25,6 +25,8 @@ export type AmericoPoliciesTimeframe = 'all' | 'today' | 'weekly' | 'monthly' | 
 export interface AmericoPolicyAgent {
   name: string;
   carrierAgentNumber: string;
+  splitLevel?: string;
+  split?: number | null;
 }
 
 export interface AmericoHqPolicy {
@@ -48,12 +50,16 @@ export interface AmericoPolicy {
   policyNumber: string;
   client: string;
   product: string;
+  productDescription?: string;
   status: string;
+  statusDescription?: string;
   statusDate: string | null;
   receivedDate: string | null;
   effectiveDate: string | null;
+  paidToDate?: string | null;
   terminatedDate: string | null;
   annualPremium: number;
+  hqMatch: boolean;
   agents: AmericoPolicyAgent[];
   hqPolicies: AmericoHqPolicy[];
 }
@@ -119,10 +125,13 @@ const normalizePolicy = (row: any): AmericoPolicy => ({
   effectiveDate: row?.effective_date ? String(row.effective_date) : null,
   terminatedDate: row?.terminated_date ? String(row.terminated_date) : null,
   annualPremium: Number(row?.annual_premium || 0),
+  hqMatch: row?.hq_match === true,
   agents: Array.isArray(row?.agent)
     ? row.agent.map((agent: any) => ({
         name: String(agent?.name || ''),
         carrierAgentNumber: String(agent?.carrierAgent_number || agent?.carrier_agent_number || ''),
+        splitLevel: String(agent?.split_level || ''),
+        split: agent?.split === null || agent?.split === undefined ? null : Number(agent.split),
       }))
     : [],
   hqPolicies: Array.isArray(row?.hqPolicy)

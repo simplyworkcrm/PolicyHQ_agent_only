@@ -1068,13 +1068,19 @@ interface AgentPoliciesV2Props {
 export const PolicySourceDropdown: React.FC<{
   carrierOptions: PolicyFilterOption[];
   loading: boolean;
-  currentSource?: 'policyhq' | 'americo';
+  currentSource?: 'policyhq' | 'americo' | 'aetna' | 'aflac';
 }> = ({ carrierOptions, loading, currentSource = 'policyhq' }) => {
   const [open, setOpen] = useState(false);
   const [carrierSearch, setCarrierSearch] = useState('');
   const sourceRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const currentSourceLabel = currentSource === 'americo' ? 'Americo Policies' : 'PolicyHQ Policies';
+  const currentSourceLabel = currentSource === 'americo'
+    ? 'Americo Policies'
+    : currentSource === 'aetna'
+      ? 'Aetna Policies'
+      : currentSource === 'aflac'
+        ? 'Aflac Policies'
+        : 'PolicyHQ Policies';
   const filteredCarrierOptions = useMemo(() => {
     const query = carrierSearch.trim().toLowerCase();
     if (!query) return carrierOptions;
@@ -1155,30 +1161,35 @@ export const PolicySourceDropdown: React.FC<{
                 Loading carriers...
               </div>
             ) : filteredCarrierOptions.length > 0 ? filteredCarrierOptions.map(carrier => {
-              const isAmerico = carrier.label.trim().toLowerCase() === 'americo';
+              const normalizedCarrier = carrier.label.trim().toLowerCase();
+              const isAmerico = normalizedCarrier === 'americo';
+              const isAetna = normalizedCarrier === 'aetna';
+              const isAflac = normalizedCarrier === 'aflac';
+              const isAvailable = isAmerico || isAetna || isAflac;
+              const source = isAmerico ? 'americo' : isAetna ? 'aetna' : isAflac ? 'aflac' : null;
               return (
                 <button
                   key={carrier.id}
                   type="button"
                   role="menuitem"
-                  disabled={!isAmerico}
+                  disabled={!isAvailable}
                   onClick={() => {
-                    if (!isAmerico) return;
+                    if (!source) return;
                     setOpen(false);
-                    if (currentSource !== 'americo') navigate('/business/policies/americo');
+                    if (currentSource !== source) navigate(`/business/policies/${source}`);
                   }}
                   className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] font-bold transition ${
-                    isAmerico
-                      ? currentSource === 'americo'
+                    isAvailable
+                      ? currentSource === source
                         ? 'bg-violet-50 text-violet-700'
                         : 'text-slate-800 hover:bg-violet-50 hover:text-violet-700'
                       : 'cursor-not-allowed text-slate-400'
                   }`}
                 >
                   <span className="truncate pr-2">{carrier.label}</span>
-                  {isAmerico && currentSource === 'americo' ? (
+                  {isAvailable && currentSource === source ? (
                     <Check className="h-3.5 w-3.5 text-violet-600" />
-                  ) : isAmerico ? (
+                  ) : isAvailable ? (
                     <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wide text-emerald-700">Available</span>
                   ) : (
                     <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-wide text-slate-400">Soon</span>
