@@ -36,8 +36,14 @@ const compactUsd = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 1,
 });
 
-export function BusinessGamification({ selectedAgentId }: { selectedAgentId: string }) {
-  const [activeTrack, setActiveTrack] = useState<TrackId>('hall-of-fame');
+export function BusinessGamification({
+  selectedAgentId,
+  view = 'agent',
+}: {
+  selectedAgentId: string;
+  view?: 'agent' | 'agency';
+}) {
+  const [activeTrack, setActiveTrack] = useState<TrackId>(view === 'agency' ? 'agency' : 'hall-of-fame');
   const [personalGoal, setPersonalGoal] = useState(250000);
   const [goalDraft, setGoalDraft] = useState('250000');
   const [editingGoal, setEditingGoal] = useState(false);
@@ -106,6 +112,15 @@ export function BusinessGamification({ selectedAgentId }: { selectedAgentId: str
     }),
     [issuePaid, personalGoal],
   );
+
+  const visibleTracks = view === 'agency'
+    ? [tracks.agency]
+    : [tracks['hall-of-fame']];
+
+  useEffect(() => {
+    if (view === 'agency' && activeTrack !== 'agency') setActiveTrack('agency');
+    if (view === 'agent' && activeTrack === 'agency') setActiveTrack('hall-of-fame');
+  }, [activeTrack, view]);
 
   const track = tracks[activeTrack];
   const completionPercent = Math.max(0, (track.current / Math.max(track.goal, 1)) * 100);
@@ -178,15 +193,20 @@ export function BusinessGamification({ selectedAgentId }: { selectedAgentId: str
           <div>
             <p className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600"><Sparkles className="h-3.5 w-3.5" /> Progress Center</p>
             <h2 className="mt-1 flex items-center gap-2 text-xl font-black text-slate-950">Race to HOF <Zap className="h-5 w-5 fill-amber-300 text-amber-500" /></h2>
-            <p className="mt-1 text-sm text-slate-500">Track personal production and Family First Life milestones.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {view === 'agency'
+                ? 'Track agency production and Family First Life milestones.'
+                : 'Track personal production and Family First Life milestones.'}
+            </p>
             {isLiveFflTrack && issuePaidError ? (
               <p className="mt-2 text-xs font-bold text-red-500">Unable to load live FFL data: {issuePaidError}</p>
             ) : isLiveFflTrack && issuePaid && (
               <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> Live FFL data{issuePaid.year ? ` · ${issuePaid.year}` : ''}</p>
             )}
           </div>
+          {visibleTracks.length > 1 && (
           <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-white/80 bg-white/70 p-1.5 shadow-lg shadow-slate-200/50 backdrop-blur dark:border-white/10 dark:bg-white/5" role="tablist" aria-label="Achievement tracks">
-            {Object.values(tracks).map((item) => {
+            {visibleTracks.map((item) => {
               const Icon = item.id === 'personal' ? Target : item.id === 'agency' ? Building2 : Trophy;
               return (
                 <button
@@ -215,6 +235,7 @@ export function BusinessGamification({ selectedAgentId }: { selectedAgentId: str
               );
             })}
           </div>
+          )}
         </div>
       </div>
 

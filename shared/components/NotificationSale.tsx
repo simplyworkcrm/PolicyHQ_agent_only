@@ -44,16 +44,15 @@ export const NotificationSale: React.FC = () => {
     <>
       <button 
         onClick={handleToggle}
-        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-sm border relative group z-50
-            ${isOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-amber-50 hover:bg-amber-100 text-amber-600 hover:text-amber-700 border-amber-200'}
+        className={`relative z-50 flex h-10 w-10 items-center justify-center rounded-full border border-transparent shadow-sm transition-all hover:-translate-y-px hover:shadow-md
+            ${isOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 hover:text-slate-700'}
         `}
         title="Sales Feed"
+        aria-label={unreadCount > 0 ? `Sales Feed, ${unreadCount} unread` : 'Sales Feed'}
       >
-        <Trophy className={`w-5 h-5 ${unreadCount > 0 ? 'animate-swing' : ''}`} />
+        <Trophy className="h-4 w-4" strokeWidth={2} />
         {unreadCount > 0 && (
-            <div className="absolute top-3 right-3 w-4 h-4 bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
-                <span className="text-[8px] font-black text-white">{unreadCount}</span>
-            </div>
+            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-brand-500 ring-2 ring-white" />
         )}
       </button>
 

@@ -1,6 +1,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BusinessGamification } from './components/BusinessGamification';
+import { BookOfBusinessDashboard } from './components/BookOfBusinessDashboard';
+import { StateProductionPanels } from './components/StateProductionPanels';
 import goalsUniverseBackground from './assets/goals-universe-background.jpg';
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -21,7 +23,10 @@ import {
   Loader2,
   MapPinned,
   ReceiptText,
+  RotateCcw,
   Users, 
+  UserRound,
+  Building2,
   Ticket,
   Trophy,
   Check, // Imported Check
@@ -36,6 +41,7 @@ import {
   Search,
   SlidersHorizontal,
   Sun,
+  Target,
   Trash2,
   Upload,
   X
@@ -561,20 +567,17 @@ const MyBusinessOverviewContent = ({
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
       <WorkspaceToolbarPortal slotId={toolbarSlotId}>
-        <>
-          <PolicyDateRangeFilter
-            timeframe={timeframe}
-            startDate={startDate}
-            endDate={endDate}
-            onTimeframeChange={handleTimeframeChange}
-            onDateChange={(start, end) => {
-              setStartDate(start);
-              setEndDate(end);
-            }}
-            variant="inline"
-          />
-          <BusinessViewToggle active="overview" />
-        </>
+        <PolicyDateRangeFilter
+          timeframe={timeframe}
+          startDate={startDate}
+          endDate={endDate}
+          onTimeframeChange={handleTimeframeChange}
+          onDateChange={(start, end) => {
+            setStartDate(start);
+            setEndDate(end);
+          }}
+          variant="inline"
+        />
       </WorkspaceToolbarPortal>
 
       <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-sm">
@@ -651,71 +654,7 @@ const MyBusinessOverviewContent = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">State Heat Map</p>
-                    <h3 className="text-lg font-black tracking-tight text-slate-950">Production by state</h3>
-                    <p className="text-xs font-semibold text-slate-500">Darker states carry higher annual premium.</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-right">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Top State</p>
-                    <p className="text-xs font-black text-slate-950">{totals.topState?.state || 'No state data'}</p>
-                  </div>
-                </div>
-
-                {states.length === 0 ? (
-                  <div className="flex h-80 items-center justify-center rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 text-sm font-bold text-slate-400">
-                    No state production returned for this range.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-11 gap-1.5 rounded-xl bg-slate-50 p-3">
-                    {stateTileRows.flatMap((row, rowIndex) => row.map((code, colIndex) => {
-                      const state = code ? statesByCode.get(code) : null;
-                      const title = state ? `${state.state}: ${currencyFormatter.format(state.total_ap)} · ${state.records} records` : code;
-                      return code ? (
-                        <div
-                          key={`${code}-${rowIndex}-${colIndex}`}
-                          title={title}
-                          className={`flex aspect-square min-h-8 items-center justify-center rounded-lg border text-[9px] font-black transition-all ${stateTileClass(state?.total_ap || 0)}`}
-                        >
-                          {code}
-                        </div>
-                      ) : (
-                        <div key={`empty-${rowIndex}-${colIndex}`} className="aspect-square min-h-8" />
-                      );
-                    }))}
-                  </div>
-                )}
-              </section>
-
-              <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">State Rundown</p>
-                <h3 className="text-lg font-black tracking-tight text-slate-950">Top markets</h3>
-                <div className="mt-3 max-h-[20rem] space-y-2 overflow-y-auto pr-1">
-                  {states.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm font-bold text-slate-400">No state data.</div>
-                  ) : states.slice(0, 12).map((item, index) => {
-                    const percent = Math.max(4, (item.total_ap / maxStatePremium) * 100);
-                    return (
-                      <div key={`${item.state}-rundown-${index}`} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-black text-slate-950">{index + 1}. {item.state}</p>
-                            <p className="text-[11px] font-bold text-slate-400">{item.records.toLocaleString()} records</p>
-                          </div>
-                          <p className="text-sm font-black text-slate-950">{currencyFormatter.format(item.total_ap)}</p>
-                        </div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white">
-                          <div className="h-full rounded-full bg-gradient-to-r from-slate-950 to-amber-400" style={{ width: `${percent}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            </div>
+            <StateProductionPanels states={states} />
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -1148,43 +1087,22 @@ const platformRundownColumns: Record<PlatformActivityName, Array<{ key: string; 
   ],
 };
 
-const BusinessViewToggle = ({ active }: { active: 'goals' | 'overview' }) => (
-  <div className="ml-auto inline-flex rounded-2xl bg-gradient-to-r from-fuchsia-500 via-violet-500 to-cyan-400 p-[2px] shadow-lg shadow-violet-300/40">
-    <div className="inline-flex items-center rounded-[14px] bg-slate-950/95 p-1" role="group" aria-label="Switch My Business view">
-      <Link
-        to="/business"
-        aria-current={active === 'goals' ? 'page' : undefined}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-[10px] px-3 text-[10px] font-black transition-all ${active === 'goals' ? 'bg-gradient-to-r from-amber-300 to-orange-400 text-slate-950 shadow-md' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}
-      >
-        <Trophy className="h-3.5 w-3.5" />
-        Goals
-      </Link>
-      <Link
-        to="/business/overview"
-        aria-current={active === 'overview' ? 'page' : undefined}
-        className={`inline-flex h-8 items-center gap-1.5 rounded-[10px] px-3 text-[10px] font-black transition-all ${active === 'overview' ? 'bg-gradient-to-r from-cyan-300 to-violet-400 text-slate-950 shadow-md' : 'text-white/60 hover:bg-white/10 hover:text-white'}`}
-      >
-        <BarChart3 className="h-3.5 w-3.5" />
-        Business Overview
-      </Link>
-    </div>
+const MyBusinessGamification = ({
+  selectedAgentId,
+  view = 'agent',
+}: {
+  selectedAgentId: string;
+  view?: 'agent' | 'agency';
+}) => (
+  <div className="space-y-5">
+    <BusinessGamification selectedAgentId={selectedAgentId} view={view} />
   </div>
 );
 
-const MyBusinessGamification = ({
-  selectedAgentId,
-  toolbarSlotId,
-}: {
-  selectedAgentId: string;
-  toolbarSlotId?: string;
-}) => (
-  <div className="space-y-5">
-    <WorkspaceToolbarPortal slotId={toolbarSlotId}>
-      <BusinessViewToggle active="goals" />
-    </WorkspaceToolbarPortal>
-    <BusinessGamification selectedAgentId={selectedAgentId} />
-  </div>
-);
+const AgencyHallOfFamePage = () => {
+  const { currentAgentId } = useAgentContext();
+  return <MyBusinessGamification selectedAgentId={currentAgentId} view="agency" />;
+};
 
 const ActivityMetricStepper = ({
   label,
@@ -3701,13 +3619,14 @@ const MyBusinessExpenseLog = ({
 };
 
 type MyBusinessTab = 'gamification' | 'overview' | 'policies' | 'americo-policies' | 'aetna-policies' | 'aflac-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
+type WorkspaceNavView = 'agent' | 'agency';
 
 const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
   const { currentAgentId, viewingAgentName } = useAgentContext();
   const selectedBusinessAgentId = currentAgentId;
   const selectedBusinessAgentLabel = viewingAgentName || 'My Workspace';
   const toolbarSlotId = 'my-business-toolbar-actions';
-  const hasToolbar = tab === 'gamification' || tab === 'overview' || tab === 'policies' || tab === 'americo-policies' || tab === 'aetna-policies' || tab === 'aflac-policies' || tab === 'activity' || tab === 'expenses' || tab === 'splits' || tab === 'commissions' || tab === 'debts';
+  const hasToolbar = tab === 'policies' || tab === 'americo-policies' || tab === 'aetna-policies' || tab === 'aflac-policies' || tab === 'activity' || tab === 'expenses' || tab === 'splits' || tab === 'commissions' || tab === 'debts';
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -3718,7 +3637,9 @@ const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
       )}
 
       {tab === 'gamification' ? (
-        <MyBusinessGamification selectedAgentId={selectedBusinessAgentId} toolbarSlotId={toolbarSlotId} />
+        <MyBusinessGamification selectedAgentId={selectedBusinessAgentId} />
+      ) : tab === 'overview' ? (
+        <BookOfBusinessDashboard agentId={selectedBusinessAgentId || ''} />
       ) : tab === 'americo-policies' ? (
         <AmericoBusinessPolicies toolbarSlotId={toolbarSlotId} />
       ) : tab === 'aetna-policies' ? (
@@ -3768,6 +3689,11 @@ const AgentLayout: React.FC = () => {
   } = useAgentContext();
   const location = useLocation();
   const navigate = useNavigate();
+  const [workspaceNavView, setWorkspaceNavView] = useState<WorkspaceNavView>(() => {
+    if (location.pathname.startsWith('/downlines')) return 'agency';
+    if (location.pathname.startsWith('/business') || location.pathname.startsWith('/policies')) return 'agent';
+    return localStorage.getItem('workspace_nav_view') === 'agency' ? 'agency' : 'agent';
+  });
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [agentSearch, setAgentSearch] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -3792,13 +3718,38 @@ const AgentLayout: React.FC = () => {
   const isActive = (path: string) => location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
   const isDarkRoute = isNightMode;
   const isBusinessPage = location.pathname.startsWith('/business') || location.pathname.startsWith('/policies');
+  const isAgencyPage = location.pathname.startsWith('/downlines');
   const isPoliciesPage = location.pathname.startsWith('/business/policies') || location.pathname === '/policies' || location.pathname === '/policies/v2';
+
+  useEffect(() => {
+    const routeView: WorkspaceNavView | null = isAgencyPage ? 'agency' : isBusinessPage ? 'agent' : null;
+    if (!routeView) return;
+
+    setWorkspaceNavView(current => current === routeView ? current : routeView);
+    localStorage.setItem('workspace_nav_view', routeView);
+  }, [isAgencyPage, isBusinessPage]);
+
+  const selectWorkspaceNavView = (nextView: WorkspaceNavView) => {
+    if (nextView === workspaceNavView) return;
+
+    setWorkspaceNavView(nextView);
+    localStorage.setItem('workspace_nav_view', nextView);
+    const isHallOfFamePage = location.pathname === '/business/hall-of-fame'
+      || location.pathname === '/business/goals'
+      || location.pathname === '/downlines/hall-of-fame';
+    navigate(
+      isHallOfFamePage
+        ? nextView === 'agency' ? '/downlines/hall-of-fame' : '/business/hall-of-fame'
+        : nextView === 'agency' ? '/downlines' : '/business/overview',
+    );
+  };
   const pageTitle = (() => {
     const path = location.pathname;
     if (path === '/' || path === '') return 'Global Performance';
     if (path.startsWith('/leaderboard/realtime')) return 'Realtime Leaderboard';
     if (path.startsWith('/leaderboard/trainer/')) return 'Trainer Performance';
-    if (path === '/business' || path === '/business/overview') return 'My Business';
+    if (path === '/business' || path === '/business/overview') return 'Book of Business';
+    if (path === '/business/hall-of-fame' || path === '/business/goals') return 'Hall of Fame';
     if (path.startsWith('/business/policies') || path === '/policies' || path === '/policies/v2') return 'Policies';
     if (path.startsWith('/business/activity-log')) return 'Daily Activity';
     if (path.startsWith('/business/expense-log')) return 'Expense Log';
@@ -3806,6 +3757,7 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/business/commissions')) return 'Commissions';
     if (path.startsWith('/business/debt-recovery')) return 'Debt Recovery';
     if (path.startsWith('/policies/details')) return 'Policy Details';
+    if (path === '/downlines/hall-of-fame') return 'Hall of Fame';
     if (['/downlines', '/downlines/team', '/downlines/production', '/downlines/expenses'].includes(path)) return 'My Agency';
     if (path.startsWith('/downlines/')) return 'Downline Profile';
     if (path.startsWith('/services')) return 'Services';
@@ -3855,6 +3807,14 @@ const AgentLayout: React.FC = () => {
   const isRestricted = featureKey && isLocked(featureKey);
 
   const currentSelectionLabel = viewingAgentName;
+  const activeAgentName = ((isImpersonating ? currentSelectionLabel : user?.name || currentSelectionLabel) || 'Agent').trim() || 'Agent';
+  const activeAgentInitials = activeAgentName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
   const filteredSubAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
     if (!query) return subAgents;
@@ -3877,7 +3837,7 @@ const AgentLayout: React.FC = () => {
       <aside 
         className={`
           ${isSidebarCompact ? 'w-16 px-2' : 'w-60 px-3'}
-          ${isDarkRoute ? 'bg-[#0d0d1a] border-white/6' : 'bg-transparent border-transparent'}
+          ${isDarkRoute ? 'bg-[#0d0d1a] border-white/6' : 'bg-white border-white'}
           rounded-2xl flex flex-col transition-[width,padding,background-color,border-color] duration-300 ease-out
           border relative z-[1000] shrink-0 py-4
         `}
@@ -3913,89 +3873,6 @@ const AgentLayout: React.FC = () => {
             </div>
         </div>
         
-        {/* Context Switcher - Collapsible */}
-        <div className="mb-5 relative z-40">
-            {!isSidebarCompact ? (
-              <>
-                <button 
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className={`w-full flex items-center justify-between text-xs font-semibold rounded-lg py-2.5 px-3 transition-colors ${isDarkRoute ? 'bg-white/5 border border-white/8 text-slate-300 hover:bg-white/8' : 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100'} ${isDropdownOpen ? 'ring-2 ring-brand-500/20 border-brand-500' : ''}`}
-                >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${isImpersonating ? 'bg-amber-500' : 'bg-emerald-500'}`}></div>
-                      <span className="truncate">{currentSelectionLabel}</span>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {/* Dropdown Menu */}
-                {isDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
-                    <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-300/30 z-50 p-1.5 animate-in fade-in zoom-in-95 duration-200 origin-top">
-                      <button
-                          onClick={() => {
-                            stopImpersonation();
-                            setIsDropdownOpen(false);
-                            setAgentSearch('');
-                          }}
-                          className={`w-full text-left px-3 py-2.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-between group ${!isImpersonating ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        <span>My Workspace</span>
-                        {!isImpersonating && <CheckCircleIcon />}
-                      </button>
-                      
-                      {subAgents.length > 0 && (
-                        <>
-                          <div className="relative mx-1.5 mt-2 mb-1.5">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                            <input
-                              type="search"
-                              value={agentSearch}
-                              onChange={event => setAgentSearch(event.target.value)}
-                              placeholder="Search team..."
-                              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs font-semibold text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white"
-                            />
-                          </div>
-                          <div className="max-h-60 overflow-y-auto pr-1">
-                            {filteredSubAgents.map(agent => {
-                              const isSelected = selectedAgentIds.includes(agent.agentId) && isImpersonating;
-                              return (
-                                <button
-                                  key={agent.agentId}
-                                  onClick={() => {
-                                    toggleAgentSelection(agent.agentId);
-                                    setIsDropdownOpen(false);
-                                    setAgentSearch('');
-                                  }}
-                                  className={`w-full text-left px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-between mb-0.5 ${isSelected ? 'bg-amber-50 text-amber-900 border border-amber-100' : 'text-slate-600 hover:bg-slate-50'}`}
-                                >
-                                  <span className="truncate">{agent.name}</span>
-                                  {isSelected && <Check className="h-4 w-4 text-amber-600" />}
-                                </button>
-                              );
-                            })}
-                            {filteredSubAgents.length === 0 && (
-                              <p className="px-3 py-4 text-center text-xs font-semibold text-slate-400">No agents found.</p>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-              </>
-            ) : (
-              <button 
-                onClick={() => setIsCollapsed(false)} 
-                className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-all mx-auto ${isImpersonating ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-900 hover:bg-white'}`}
-                title="Switch Context"
-              >
-                  <Briefcase size={20} strokeWidth={2.5} />
-              </button>
-            )}
-        </div>
-
         {/* Nav Items */}
         <nav className={`space-y-0.5 flex flex-col items-center w-full flex-1 min-h-0 scrollbar-hide ${isSidebarCompact ? 'overflow-visible' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className="w-full space-y-0.5">
@@ -4018,43 +3895,32 @@ const AgentLayout: React.FC = () => {
             </SidebarGroup>
           </div>
 
-          <div className="h-1 w-full shrink-0" />
-
-          <div className="w-full space-y-0.5">
-            <SidebarGroup
-              icon={<Briefcase size={16} />}
-              label="My Business"
-              active={isBusinessPage}
-              collapsed={isSidebarCompact}
-              dark={isDarkRoute}
-              defaultOpen
-            >
-                        <SidebarSubItem to="/business" label="Overview" active={location.pathname === '/business' || location.pathname === '/business/overview'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/policies" label="Policies" active={location.pathname.startsWith('/business/policies')} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/splits" label="Splits" active={location.pathname === '/business/splits'} dark={isDarkRoute} icon={<Split size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/commissions" label="Commissions" active={location.pathname === '/business/commissions'} dark={isDarkRoute} icon={<DollarSign size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/debt-recovery" label="Debts" active={location.pathname === '/business/debt-recovery'} dark={isDarkRoute} icon={<AlertCircle size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/activity-log" label="Daily Tracker" active={location.pathname === '/business/activity-log'} dark={isDarkRoute} icon={<History size={13} strokeWidth={1.8} />} />
-                        <SidebarSubItem to="/business/expense-log" label="Expense Log" active={location.pathname === '/business/expense-log'} dark={isDarkRoute} icon={<ReceiptText size={13} strokeWidth={1.8} />} />
-            </SidebarGroup>
-          </div>
-
-          <div className="h-1 w-full shrink-0" />
-
-          <div className="w-full space-y-0.5">
-            <SidebarGroup
-              icon={<Users size={16} />}
-              label="Team Agency"
-              active={location.pathname.startsWith('/downlines')}
-              collapsed={isSidebarCompact}
-              dark={isDarkRoute}
-            >
-              <SidebarSubItem to="/downlines" label="Overview" active={location.pathname === '/downlines'} dark={isDarkRoute} icon={<BarChart3 size={13} strokeWidth={1.8} />} />
-              <SidebarSubItem to="/downlines/team" label="Team List" active={location.pathname === '/downlines/team'} dark={isDarkRoute} icon={<Users size={13} strokeWidth={1.8} />} />
-              <SidebarSubItem to="/downlines/production" label="Production" active={location.pathname === '/downlines/production'} dark={isDarkRoute} icon={<FileCheck size={13} strokeWidth={1.8} />} />
-              <SidebarSubItem to="/downlines/expenses" label="Expense Management" active={location.pathname === '/downlines/expenses'} dark={isDarkRoute} icon={<ReceiptText size={13} strokeWidth={1.8} />} />
-            </SidebarGroup>
-          </div>
+          {workspaceNavView === 'agent' ? (
+            <>
+              <div className="h-1 w-full shrink-0" />
+              <div className="w-full space-y-0.5">
+                <SidebarItem to="/business/overview" label="Book of Business" active={location.pathname === '/business' || location.pathname === '/business/overview'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<BarChart3 size={16} />} />
+                <SidebarItem to="/business/hall-of-fame" label="Hall of Fame" active={location.pathname === '/business/hall-of-fame' || location.pathname === '/business/goals'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Trophy size={16} />} />
+                <SidebarItem to="/business/policies" label="Policies" active={location.pathname.startsWith('/business/policies')} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<FileCheck size={16} />} />
+                <SidebarItem to="/business/splits" label="Splits" active={location.pathname === '/business/splits'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Split size={16} />} />
+                <SidebarItem to="/business/commissions" label="Commissions" active={location.pathname === '/business/commissions'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<DollarSign size={16} />} />
+                <SidebarItem to="/business/debt-recovery" label="Debts" active={location.pathname === '/business/debt-recovery'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<AlertCircle size={16} />} />
+                <SidebarItem to="/business/activity-log" label="Daily Tracker" active={location.pathname === '/business/activity-log'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<History size={16} />} />
+                <SidebarItem to="/business/expense-log" label="Expense Log" active={location.pathname === '/business/expense-log'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<ReceiptText size={16} />} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="h-1 w-full shrink-0" />
+              <div className="w-full space-y-0.5">
+                <SidebarItem to="/downlines" label="Book of Business" active={location.pathname === '/downlines'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<BarChart3 size={16} />} />
+                <SidebarItem to="/downlines/hall-of-fame" label="Hall of Fame" active={location.pathname === '/downlines/hall-of-fame'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Trophy size={16} />} />
+                <SidebarItem to="/downlines/team" label="Team List" active={location.pathname === '/downlines/team'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Users size={16} />} />
+                <SidebarItem to="/downlines/production" label="Production" active={location.pathname === '/downlines/production'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<FileCheck size={16} />} />
+                <SidebarItem to="/downlines/expenses" label="Expense Management" active={location.pathname === '/downlines/expenses'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<ReceiptText size={16} />} />
+              </div>
+            </>
+          )}
 
           <div className="h-1 w-full shrink-0" />
 
@@ -4062,6 +3928,32 @@ const AgentLayout: React.FC = () => {
             <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isSidebarCompact} dark={isDarkRoute} />
           </div>
         </nav>
+
+        {/* Daily AP goal shortcut */}
+        <button
+          type="button"
+          onClick={() => navigate(workspaceNavView === 'agency' ? '/downlines' : '/business/overview')}
+          className={`group mb-3 mt-3 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-left text-white shadow-lg shadow-slate-300/40 transition-all hover:-translate-y-0.5 hover:shadow-xl ${
+            isSidebarCompact ? 'flex h-12 items-center justify-center p-2' : 'w-full p-3.5'
+          }`}
+          aria-label={`Open ${workspaceNavView === 'agency' ? 'Agency' : 'Agent'} Overview`}
+          title={`Daily AP Goal — open ${workspaceNavView === 'agency' ? 'Agency' : 'Agent'} Overview`}
+        >
+          <div className={`flex items-center ${isSidebarCompact ? 'justify-center' : 'gap-3'}`}>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 shadow-md shadow-amber-950/20 transition-transform group-hover:scale-105">
+              <Target className="h-4 w-4" />
+            </span>
+            {!isSidebarCompact && (
+              <div className="min-w-0">
+                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/45">Daily AP Goal</p>
+                <p className="mt-0.5 text-lg font-black leading-none">$1,200</p>
+              </div>
+            )}
+          </div>
+          {!isSidebarCompact && (
+            <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">Contract 115% · 75% advance</p>
+          )}
+        </button>
 
         {/* Bottom utilities and user account */}
         <div className={`mt-auto w-full pt-3 border-t ${isDarkRoute ? 'border-white/8' : 'border-slate-300/60'}`}>
@@ -4107,7 +3999,7 @@ const AgentLayout: React.FC = () => {
       </aside>
 
       {/* Main Content - Floating Panel */}
-      <main className={`flex-1 min-w-0 h-full overflow-hidden flex flex-col relative border transition-colors duration-500 ${isRestricted ? 'bg-slate-950 border-slate-900' : isDarkRoute ? 'bg-[#08080f] rounded-2xl border-white/5' : 'bg-white/40 rounded-2xl border-white'}`}>
+      <main className={`flex-1 min-w-0 h-full overflow-hidden flex flex-col relative border transition-colors duration-500 ${isRestricted ? 'bg-slate-950 border-slate-900' : isDarkRoute ? 'bg-[#08080f] rounded-2xl border-white/5' : 'bg-transparent rounded-2xl border-transparent'}`}>
         {isRestricted ? (
             <div className="flex-1 h-full flex flex-col items-center justify-center relative overflow-hidden text-center p-8 animate-in fade-in duration-500 rounded-[2.5rem]">
                 <div className="w-24 h-24 rounded-[2rem] bg-slate-900 border border-slate-800 flex items-center justify-center mb-8 shadow-2xl shadow-black/50 ring-1 ring-white/5 relative group">
@@ -4132,38 +4024,184 @@ const AgentLayout: React.FC = () => {
                 backgroundAttachment: 'fixed',
               } : undefined}
             >
-            <header className={`sticky top-0 z-[100] flex h-14 items-center justify-between gap-3 border-b px-4 transition-colors duration-500 ${isDarkRoute ? 'border-white/5 bg-slate-950/70 backdrop-blur-xl' : 'border-slate-200/70 bg-white/75 backdrop-blur-xl'}`}>
-                <h1 className={`min-w-0 truncate text-base font-semibold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
-                  {pageTitle}
-                </h1>
-                <div className="flex items-center gap-2">
+            <header
+              className={`sticky top-0 z-[100] flex h-14 items-center justify-between gap-3 border-b px-4 transition-colors duration-500 ${isDarkRoute ? 'border-white/5 bg-slate-950/70 backdrop-blur-xl' : 'border-transparent'}`}
+              style={!isDarkRoute ? { backgroundColor: isPoliciesPage ? '#F3F4F6' : '#E9EDF2' } : undefined}
+            >
+                <div className="flex min-w-0 items-center gap-4">
+                  <h1 className={`min-w-0 truncate text-base font-semibold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
+                    {pageTitle}
+                  </h1>
+                  <div
+                    role="tablist"
+                    aria-label="Workspace view"
+                    className={`hidden items-center gap-0.5 rounded-full p-0.5 sm:flex ${isDarkRoute ? 'bg-white/5' : 'bg-slate-100/90'}`}
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={workspaceNavView === 'agent'}
+                      onClick={() => selectWorkspaceNavView('agent')}
+                      className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-[9px] font-semibold leading-none transition-all active:scale-[0.98] ${
+                        workspaceNavView === 'agent'
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : isDarkRoute
+                            ? 'text-slate-400 hover:text-white'
+                            : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      <UserRound className={`h-3 w-3 ${workspaceNavView === 'agent' ? 'text-brand-400' : 'text-slate-400'}`} strokeWidth={2.2} />
+                      Agent View
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={workspaceNavView === 'agency'}
+                      onClick={() => selectWorkspaceNavView('agency')}
+                      className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-[9px] font-semibold leading-none transition-all active:scale-[0.98] ${
+                        workspaceNavView === 'agency'
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : isDarkRoute
+                            ? 'text-slate-400 hover:text-white'
+                            : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      <Building2 className={`h-3 w-3 ${workspaceNavView === 'agency' ? 'text-brand-400' : 'text-slate-400'}`} strokeWidth={2.2} />
+                      Agency View
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2.5">
                     <ModuleSwitcher />
                     <button
                       type="button"
                       onClick={() => setIsNightMode(current => !current)}
                       aria-label={isNightMode ? 'Switch to light mode' : 'Switch to night mode'}
                       title={isNightMode ? 'Switch to light mode' : 'Switch to night mode'}
-                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-transparent bg-white shadow-sm transition-all hover:-translate-y-px hover:shadow-md ${
                         isNightMode
-                          ? 'border-amber-400/40 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
-                          : 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                          ? 'text-amber-500 hover:text-amber-600'
+                          : 'text-slate-400 hover:text-slate-700'
                       }`}
                     >
-                      {isNightMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                      {isNightMode ? <Sun className="h-4 w-4" strokeWidth={2} /> : <Moon className="h-4 w-4" strokeWidth={2} />}
                     </button>
                     <button
                       type="button"
                       disabled
                       title="I am coming soon and currently under training. Hope to meet you soon!"
-                      className="inline-flex h-8 cursor-not-allowed items-center gap-1.5 rounded-xl border border-amber-200/80 bg-amber-50/80 px-2.5 text-[9px] font-semibold text-amber-700 opacity-80"
+                      aria-label="AI assistant coming soon"
+                      className="inline-flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-transparent bg-white text-slate-300 shadow-sm"
                     >
-                      <Bot className="h-3.5 w-3.5 text-amber-600" />
-                      <span className="hidden lg:inline">AI Soon</span>
+                      <Bot className="h-4 w-4" strokeWidth={2} />
                     </button>
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center gap-2.5">
                         <NotificationDirect />
                         <NotificationBell />
                         <NotificationSale />
+                    </div>
+                    <div className="relative z-50 ml-1 hidden sm:block">
+                      <button
+                        type="button"
+                      onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                      aria-haspopup="menu"
+                      aria-expanded={isDropdownOpen}
+                      aria-label={`Switch agent context. Current agent: ${activeAgentName}`}
+                      className={`flex max-w-64 items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-3.5 text-left shadow-sm transition-all active:scale-[0.98] ${
+                        isDarkRoute
+                          ? 'bg-white/10 text-white ring-1 ring-white/10 hover:bg-white/15'
+                          : 'bg-white text-slate-900 hover:bg-slate-50'
+                      } ${isDropdownOpen ? 'ring-2 ring-brand-500/40' : ''}`}
+                    >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-black text-brand-400">
+                          {activeAgentInitials}
+                        </span>
+                        <span className="min-w-0 flex-1 leading-tight">
+                          <span className="block truncate text-xs font-bold">{activeAgentName}</span>
+                          <span className="mt-0.5 block text-[8px] font-semibold uppercase tracking-wider text-slate-400">
+                            Producer
+                          </span>
+                        </span>
+                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {isDropdownOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
+                          <div className={`absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border p-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-200 origin-top-right ${
+                            isDarkRoute
+                              ? 'border-white/10 bg-slate-900 shadow-black/30'
+                              : 'border-slate-200 bg-white shadow-slate-300/30'
+                          }`}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                stopImpersonation();
+                                setIsDropdownOpen(false);
+                                setAgentSearch('');
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-all ${
+                                !isImpersonating
+                                  ? 'bg-slate-900 text-white'
+                                  : isDarkRoute
+                                    ? 'text-slate-300 hover:bg-white/5'
+                                    : 'text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>My Workspace</span>
+                              {!isImpersonating && <CheckCircleIcon />}
+                            </button>
+
+                            {subAgents.length > 0 && (
+                              <>
+                                <div className="relative mx-1.5 mb-1.5 mt-2">
+                                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                                  <input
+                                    type="search"
+                                    value={agentSearch}
+                                    onChange={event => setAgentSearch(event.target.value)}
+                                    placeholder="Search team..."
+                                    className={`h-9 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition-colors placeholder:text-slate-400 focus:border-brand-400 ${
+                                      isDarkRoute
+                                        ? 'border-white/10 bg-white/5 text-white focus:bg-white/10'
+                                        : 'border-slate-200 bg-slate-50 text-slate-700 focus:bg-white'
+                                    }`}
+                                  />
+                                </div>
+                                <div className="max-h-60 overflow-y-auto pr-1">
+                                  {filteredSubAgents.map(agent => {
+                                    const isSelected = selectedAgentIds.includes(agent.agentId) && isImpersonating;
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={agent.agentId}
+                                        onClick={() => {
+                                          toggleAgentSelection(agent.agentId);
+                                          setIsDropdownOpen(false);
+                                          setAgentSearch('');
+                                        }}
+                                        className={`mb-0.5 flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-semibold transition-all ${
+                                          isSelected
+                                            ? 'border border-amber-100 bg-amber-50 text-amber-900'
+                                            : isDarkRoute
+                                              ? 'text-slate-300 hover:bg-white/5'
+                                              : 'text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        <span className="truncate">{agent.name}</span>
+                                        {isSelected && <Check className="h-4 w-4 text-amber-600" />}
+                                      </button>
+                                    );
+                                  })}
+                                  {filteredSubAgents.length === 0 && (
+                                    <p className="px-3 py-4 text-center text-xs font-semibold text-slate-400">No agents found.</p>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                 </div>
             </header>
@@ -4202,8 +4240,10 @@ const AgentLayout: React.FC = () => {
                   <Route path="/my-profile" element={<MyProfilePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/services" element={<ServicesPage />} />
-                  <Route path="/business" element={<MyBusinessPage tab="gamification" />} />
+                  <Route path="/business" element={<Navigate to="/business/overview" replace />} />
                   <Route path="/business/overview" element={<MyBusinessPage tab="overview" />} />
+                  <Route path="/business/hall-of-fame" element={<MyBusinessPage tab="gamification" />} />
+                  <Route path="/business/goals" element={<Navigate to="/business/hall-of-fame" replace />} />
                   <Route path="/business/policies" element={<MyBusinessPage tab="policies" />} />
                   <Route path="/business/policies/americo" element={<MyBusinessPage tab="americo-policies" />} />
                   <Route path="/business/policies/aetna" element={<MyBusinessPage tab="aetna-policies" />} />
@@ -4217,6 +4257,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/policies/v2" element={<Navigate to="/business/policies" replace />} />
                   <Route path="/policies/details" element={<AgentPolicyDetails />} />
                   <Route path="/downlines" element={<AgentDownlines viewMode="overview" />} />
+                  <Route path="/downlines/hall-of-fame" element={<AgencyHallOfFamePage />} />
                   <Route path="/downlines/team" element={<AgentDownlines viewMode="team" />} />
                   <Route path="/downlines/production" element={<AgentDownlines viewMode="policies" />} />
                   <Route path="/downlines/expenses" element={<AgentDownlines viewMode="expenses" />} />

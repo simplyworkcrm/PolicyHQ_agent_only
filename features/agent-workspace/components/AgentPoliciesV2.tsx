@@ -39,6 +39,7 @@ import {
 } from '../services/agentPoliciesV2Api';
 import { useAgentContext } from '../context/AgentContext';
 import { WorkspaceToolbarPortal } from './WorkspaceToolbarPortal';
+import { AgentPolicyDetails } from './AgentPolicyDetails';
 
 // ── Date Range Picker ─────────────────────────────────────────────────────────
 
@@ -269,7 +270,7 @@ const SortBtn: React.FC<{
 }> = ({ field, current, dir, onSort, children, className = '' }) => (
   <button
     onClick={() => onSort(field)}
-    className={`group flex items-center gap-1 text-left font-semibold text-xs uppercase tracking-wider text-slate-400 hover:text-slate-700 transition-colors ${className}`}
+    className={`group flex items-center gap-1 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-400 transition-colors hover:text-slate-700 ${className}`}
   >
     {children}
     <span className="shrink-0 ml-0.5">
@@ -289,7 +290,7 @@ const SortBtn: React.FC<{
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
   const s = STATUS_STYLES[status] ?? { bg: 'bg-slate-100', text: 'text-slate-500', dot: 'bg-slate-400' };
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${s.bg} ${s.text}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-bold ${s.bg} ${s.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
       {status}
     </span>
@@ -300,7 +301,7 @@ const PaidBadge: React.FC<{ paid: string | null }> = ({ paid }) => {
   if (!paid) return <span className="text-xs text-slate-300">—</span>;
   const s = PAID_STYLES[paid] ?? { bg: 'bg-slate-50', text: 'text-slate-400' };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${s.bg} ${s.text}`}>
+    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[8px] font-semibold ${s.bg} ${s.text}`}>
       {paid}
     </span>
   );
@@ -1063,6 +1064,8 @@ interface AgentPoliciesV2Props {
   teamAgentFilterRootId?: string;
   hideAgentFilter?: boolean;
   toolbarSlotId?: string;
+  initialWorkspaceView?: PolicyWorkspaceView;
+  attentionOnly?: boolean;
 }
 
 export const PolicySourceDropdown: React.FC<{
@@ -1224,6 +1227,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   teamAgentFilterRootId,
   hideAgentFilter = false,
   toolbarSlotId,
+  initialWorkspaceView = 'all',
+  attentionOnly = false,
 }) => {
   const { currentAgentId, selectedAgentIds, subAgents, viewingAgentName } = useAgentContext();
   const navigate = useNavigate();
@@ -1254,7 +1259,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyV2 | null>(null);
-  const [policyWorkspaceView, setPolicyWorkspaceView] = useState<PolicyWorkspaceView>('all');
+  const [policyWorkspaceView, setPolicyWorkspaceView] = useState<PolicyWorkspaceView>(initialWorkspaceView);
   const [policyAttentionView, setPolicyAttentionView] = useState<PolicyAttentionView>('missing');
   const [missingAttentionData, setMissingAttentionData] = useState<PoliciesV2Response | null>(null);
   const [attentionDuplicateGroups, setAttentionDuplicateGroups] = useState<DuplicatePolicyGroup[]>([]);
@@ -1262,6 +1267,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const [attentionLoading, setAttentionLoading] = useState(false);
   const [attentionError, setAttentionError] = useState<string | null>(null);
   const [attentionRefreshKey, setAttentionRefreshKey] = useState(0);
+  const [detailModalPolicyId, setDetailModalPolicyId] = useState<string | null>(null);
   const effectiveAgentIds = useMemo(
     () => (agentIdsOverride && agentIdsOverride.length > 0 ? agentIdsOverride : selectedAgentIds).filter(Boolean),
     [agentIdsOverride, selectedAgentIds],
@@ -1496,6 +1502,10 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
     () => duplicatePolicyGroups.flatMap(group => group.policies),
     [duplicatePolicyGroups],
   );
+  const paginatedDuplicatePolicyItems = useMemo(
+    () => duplicatePolicyItems.slice((page - 1) * perPage, page * perPage),
+    [duplicatePolicyItems, page, perPage],
+  );
   const duplicateReasonByPolicyId = useMemo(() => {
     const reasons = new Map<string, DuplicatePolicyGroup>();
     duplicatePolicyGroups.forEach(group => group.policies.forEach(policy => reasons.set(policy.policy_id, group)));
@@ -1512,16 +1522,27 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   const displayItems = policyWorkspaceView === 'attention'
     ? policyAttentionView === 'missing'
       ? missingPolicyNumberItems
-      : duplicatePolicyItems
+      : paginatedDuplicatePolicyItems
     : items;
   const viewLoading = policyWorkspaceView === 'attention' ? attentionLoading : isLoading;
   const viewError = policyWorkspaceView === 'attention' ? attentionError : error;
   const isDuplicateView = policyWorkspaceView === 'attention' && policyAttentionView === 'duplicates';
-  const paginationData = policyWorkspaceView === 'all'
+  const duplicatePageTotal = Math.max(1, Math.ceil(duplicatePolicyItems.length / perPage));
+  const paginationData: PoliciesV2Response | null = policyWorkspaceView === 'all'
     ? data
     : policyAttentionView === 'missing'
     ? missingAttentionData
-    : null;
+    : {
+        itemsReceived: paginatedDuplicatePolicyItems.length,
+        curPage: page,
+        nextPage: page < duplicatePageTotal ? page + 1 : null,
+        prevPage: page > 1 ? page - 1 : null,
+        offset: (page - 1) * perPage,
+        perPage,
+        itemsTotal: duplicatePolicyItems.length,
+        pageTotal: duplicatePageTotal,
+        items: paginatedDuplicatePolicyItems,
+      };
   const stats = data?.policy_stats ?? null;
   const statsLoading = false;
   const isPageSelected = displayItems.length > 0 && displayItems.every(policy => selectedIds.has(policy.selectionKey));
@@ -1714,7 +1735,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
 
   const policyViewControls = enableNeedAttention ? (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-lg bg-slate-100 p-0.5" aria-label="Policy view">
+      {!attentionOnly && <div className="inline-flex rounded-lg bg-slate-100 p-0.5" aria-label="Policy view">
         {([
           { value: 'all', label: 'All Policies', icon: FileText },
           { value: 'attention', label: 'Need Attention', icon: AlertTriangle },
@@ -1742,7 +1763,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {policyWorkspaceView === 'attention' && (
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5" aria-label="Attention type">
@@ -1981,10 +2002,10 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
       <div className={`flex gap-4 items-start transition-all duration-300`}>
 
       {/* Table card */}
-      <div className={`flex-1 min-w-0 bg-white border shadow-sm overflow-hidden relative min-h-[600px] flex flex-col ${isDownlineVariant ? 'rounded-[1.75rem] border-amber-100' : 'rounded-[2.5rem] border-slate-100'}`}>
+      <div className={`relative flex min-w-0 flex-1 flex-col overflow-hidden border bg-white shadow-sm ${attentionOnly ? 'min-h-[480px] rounded-[2rem] border-white' : 'min-h-[600px]'} ${isDownlineVariant ? 'rounded-[1.75rem] border-amber-100' : attentionOnly ? '' : 'rounded-[2.5rem] border-slate-100'}`}>
 
-        <div className="flex shrink-0 flex-col gap-3 border-b border-slate-100 px-4 py-3 xl:flex-row xl:items-center">
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex shrink-0 flex-col gap-4 border-b border-slate-100 px-6 py-5 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
             <div className="min-w-fit">
               <h3 className="text-sm font-black tracking-tight text-slate-900">
                 {policyWorkspaceView === 'all'
@@ -2004,7 +2025,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             </div>
             {policyViewControls}
           </div>
-          <div className="ml-auto flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center xl:max-w-3xl">
+          <div className="ml-auto flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-center xl:max-w-3xl">
             <div className="relative flex-1 min-w-60 group">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-brand-500" />
               <input
@@ -2087,26 +2108,26 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
             </button>
           )}
           {isDuplicateView
-            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Client & Created</span>
+            ? <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Client & Created</span>
             : <SortableTableHeader label="Client & Created" options={[{ key: 'client', label: 'Client' }, { key: 'created_at', label: 'Created' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
           {isTeamSource && (
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Agent</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Agent</span>
           )}
           {isDuplicateView
-            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Policy Number</span>
+            ? <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Policy Number</span>
             : <SortableTableHeader label="Policy Number" options={[{ key: 'policy_number', label: 'Policy #' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
           {isDuplicateView
-            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Carrier / Product</span>
+            ? <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Carrier / Product</span>
             : <SortableTableHeader label="Carrier / Product" options={[{ key: 'carrier_product', label: 'Product' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
           {isDuplicateView
-            ? <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Effective Date</span>
+            ? <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Effective Date</span>
             : <SortableTableHeader label="Effective Date" options={[{ key: 'initial_draft_date', label: 'Eff. Date' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} />}
           {isDuplicateView
-            ? <span className="text-right text-xs font-semibold uppercase tracking-wider text-slate-400">Premium</span>
+            ? <span className="text-right text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Premium</span>
             : <SortableTableHeader label="Premium" options={[{ key: 'annual_premium', label: 'Premium' }]} sortConfig={sortConfig} onSort={handleSort} onSelectSort={handleSelectSortField} onSetSort={handleSetSort} className="justify-end" />}
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Status</span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Paid</span>
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Source</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Status</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Paid</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">Source</span>
         </div>
 
         {/* Loading */}
@@ -2180,7 +2201,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 onClick={() => {
                   if (!readOnlyRows) setSelectedPolicy(isSelected ? null : policy);
                 }}
-                className={`px-6 py-4 grid ${tableGridClass} gap-3 items-center border-b border-slate-50 transition-colors ${
+                className={`grid ${tableGridClass} items-center gap-3 border-b border-slate-50 px-6 py-2.5 transition-colors ${
                   readOnlyRows
                     ? (idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20')
                     : isSelected
@@ -2215,8 +2236,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                     }
                   </div>
                   <div className="min-w-0">
-                    <p className={`text-sm font-semibold truncate ${isSelected ? 'text-white' : 'text-slate-800'}`}>{policy.client}</p>
-                    <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{fmtMountainDate(policy.created_at)}</p>
+                    <p className={`truncate text-[10px] font-bold ${isSelected ? 'text-white' : 'text-slate-800'}`}>{policy.client}</p>
+                    <p className={`truncate text-[7px] font-semibold ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{fmtMountainDate(policy.created_at)}</p>
                   </div>
                 </div>
 
@@ -2242,15 +2263,15 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
 
                 {/* Carrier / Product */}
                 <div className="min-w-0">
-                  <p className={`text-xs font-semibold truncate ${isSelected ? 'text-white' : 'text-slate-700'}`}>{policy.carrier}</p>
-                  <p className={`text-[11px] truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.carrier_product}</p>
+                  <p className={`truncate text-[9px] font-bold ${isSelected ? 'text-white' : 'text-slate-700'}`}>{policy.carrier}</p>
+                  <p className={`truncate text-[7px] font-semibold ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.carrier_product}</p>
                 </div>
 
                 {/* Draft Date */}
-                <p className={`text-xs font-medium ${isSelected ? 'text-white/80' : 'text-slate-500'}`}>{fmtDate(policy.initial_draft_date)}</p>
+                <p className={`text-[9px] font-semibold ${isSelected ? 'text-white/80' : 'text-slate-500'}`}>{fmtDate(policy.initial_draft_date)}</p>
 
                 {/* Premium */}
-                <p className={`text-sm font-bold text-right tabular-nums ${isSelected ? 'text-white' : 'text-slate-800'}`}>{fmtCurrency(policy.annual_premium)}</p>
+                <p className={`text-right text-[10px] font-black tabular-nums ${isSelected ? 'text-white' : 'text-slate-800'}`}>{fmtCurrency(policy.annual_premium)}</p>
 
                 {/* Status */}
                 <div>{isSelected
@@ -2265,7 +2286,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                 </div>
 
                 {/* Source */}
-                <p className={`text-[11px] font-medium truncate ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.source_name}</p>
+                <p className={`truncate text-[9px] font-semibold ${isSelected ? 'text-white/60' : 'text-slate-400'}`}>{policy.source_name}</p>
               </div>
               </React.Fragment>
               );
@@ -2274,7 +2295,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
         )}
 
         {/* Pagination */}
-        {paginationData && !viewLoading && !viewError && (policyWorkspaceView === 'all' || policyAttentionView === 'missing') && (
+        {paginationData && !viewLoading && !viewError && (
           <Pagination
             cur={paginationData.curPage}
             next={paginationData.nextPage}
@@ -2372,7 +2393,7 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
               {!isTeamSource && (
                 <div className="px-5 pb-5">
                   <button
-                    onClick={() => navigate('/policies/details', { state: { queue: [selectedPolicy.policy_id], startIndex: 0 } })}
+                    onClick={() => setDetailModalPolicyId(selectedPolicy.policy_id)}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 transition-colors"
                   >
                     View Full Details
@@ -2386,6 +2407,25 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
         )}
 
       </div>{/* end flex row */}
+
+      {detailModalPolicyId && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Policy details">
+          <button
+            type="button"
+            aria-label="Close policy details"
+            onClick={() => setDetailModalPolicyId(null)}
+            className="absolute inset-0 cursor-default"
+          />
+          <div className="relative z-10 max-h-[94vh] w-full max-w-[92rem] overflow-y-auto rounded-[2rem] border border-white/70 bg-slate-100 shadow-2xl">
+            <AgentPolicyDetails
+              queueOverride={[detailModalPolicyId]}
+              startIndexOverride={0}
+              modal
+              onClose={() => setDetailModalPolicyId(null)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Filter Side Dock ───────────────────────────────────────────── */}
       {/* Backdrop */}

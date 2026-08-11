@@ -498,11 +498,25 @@ const InputDisplay = ({
     );
 };
 
-export const AgentPolicyDetails: React.FC = () => {
+interface AgentPolicyDetailsProps {
+    queueOverride?: string[];
+    startIndexOverride?: number;
+    onClose?: () => void;
+    modal?: boolean;
+}
+
+export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
+    queueOverride,
+    startIndexOverride,
+    onClose,
+    modal = false,
+}) => {
     const { user } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
-    const { queue = [], startIndex = 0 } = location.state || {};
+    const routeState = location.state || {};
+    const queue = queueOverride ?? routeState.queue ?? [];
+    const startIndex = startIndexOverride ?? routeState.startIndex ?? 0;
 
     const [currentIndex, setCurrentIndex] = useState(startIndex);
     
@@ -551,9 +565,10 @@ export const AgentPolicyDetails: React.FC = () => {
 
     useEffect(() => {
         if (!queue || queue.length === 0) {
-            navigate('/policies');
+            if (onClose) onClose();
+            else navigate('/policies');
         }
-    }, [queue, navigate]);
+    }, [queue, navigate, onClose]);
 
     // Fetch Meta Data
     useEffect(() => {
@@ -935,7 +950,9 @@ export const AgentPolicyDetails: React.FC = () => {
             setIsDeleteModalOpen(false);
             setDeleteReason('');
             
-            if (queue.length > 1) {
+            if (onClose) {
+                onClose();
+            } else if (queue.length > 1) {
                 // Remove from local queue if possible and move index
                 const nextQueue = queue.filter((id: string) => id !== policyId);
                 const nextIndex = currentIndex >= nextQueue.length ? nextQueue.length - 1 : currentIndex;
@@ -962,7 +979,7 @@ export const AgentPolicyDetails: React.FC = () => {
     const hasSplits = splits.length > 0 || (isEditingSplits && (splitsForm.length > 0 || draftSplits.length > 0));
 
     return (
-        <div className="min-h-[calc(100vh-6rem)] -m-6 p-8 font-sans">
+        <div className={`${modal ? 'min-h-full bg-slate-100/80 p-5 sm:p-6' : 'min-h-[calc(100vh-6rem)] -m-6 p-8'} font-sans`}>
             {/* Delete Modal */}
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -1011,11 +1028,11 @@ export const AgentPolicyDetails: React.FC = () => {
                 {/* Header Navigation */}
                 <div className="flex items-center justify-between mb-8">
                     <button 
-                        onClick={() => navigate('/policies')}
+                        onClick={() => onClose ? onClose() : navigate('/policies')}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-all shadow-sm"
                     >
                         <ChevronLeft className="w-4 h-4" />
-                        Back to Portfolio
+                        {modal ? 'Close Details' : 'Back to Portfolio'}
                     </button>
 
                     <div className="flex items-center gap-4">
