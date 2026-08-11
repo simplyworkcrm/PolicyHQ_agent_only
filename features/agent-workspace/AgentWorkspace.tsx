@@ -3817,8 +3817,10 @@ const AgentLayout: React.FC = () => {
     .toUpperCase();
   const filteredSubAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
-    if (!query) return subAgents;
-    return subAgents.filter(agent => agent.name.toLowerCase().includes(query));
+    return subAgents
+      .filter(agent => !query || agent.name.toLowerCase().includes(query))
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
   }, [agentSearch, subAgents]);
 
   // Extract agency initials for fallback logo

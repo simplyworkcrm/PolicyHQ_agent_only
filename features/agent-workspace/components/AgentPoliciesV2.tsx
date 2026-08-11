@@ -1858,10 +1858,27 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
         </WorkspaceToolbarPortal>
       )}
 
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-          {policyWorkspaceView === 'all' ? 'Overview' : 'Policy Review'}
-        </p>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+            {policyWorkspaceView === 'all' ? 'Overview' : 'Policy Review'}
+          </p>
+          {policyWorkspaceView === 'attention' && (
+            <p className="mt-1 text-[10px] font-medium text-slate-500">
+              Resolve policies requiring attention to maintain accurate and complete records.
+            </p>
+          )}
+        </div>
+        {attentionOnly && (
+          <button
+            type="button"
+            onClick={() => navigate(needAttentionScope === 'agency' ? '/downlines/production' : '/business/policies')}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 text-[9px] font-black uppercase tracking-[0.12em] text-slate-600 transition hover:border-slate-300 hover:text-slate-950 sm:self-auto"
+          >
+            Open Policies
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       {policyWorkspaceView === 'all' ? (
       <div className={`grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6 ${isDownlineVariant ? 'px-1' : ''}`}>

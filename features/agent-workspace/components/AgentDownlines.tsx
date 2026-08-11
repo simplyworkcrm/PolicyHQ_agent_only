@@ -25,7 +25,7 @@ import { useAgentContext } from '../context/AgentContext';
 import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/agentDownlineApi';
 import { agencyExpenseManagementApi, AgencyExpenseLogRow, AgencyExpenseLogSummary, AgencyExpenseOverviewResponse, AgencyExpenseRiskAgent, AgencyExpenseRiskAgency } from '../services/agencyExpenseManagementApi';
 import { AgentPoliciesV2, PolicyDateRangeFilter } from './AgentPoliciesV2';
-import { BusinessOverviewDashboard } from './BusinessOverviewDashboard';
+import { BookOfBusinessDashboard } from './BookOfBusinessDashboard';
 import { Policy } from '../../../shared/types/index';
 
 type DownlineSortKey = 'first_name' | 'direct_upline_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
@@ -1336,26 +1336,18 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
 
   return (
     <div className="font-sans w-full animate-in fade-in duration-300">
-      <div className="mb-6 flex min-h-11 justify-end">
-        <div id={toolbarSlotId} className="flex min-h-11 w-full flex-wrap items-center justify-end gap-3">
-          {viewMode === 'expenses' && (
-            <AgencyDateRangeFilter value={dateRange} onChange={setDateRange} />
-          )}
+      {viewMode !== 'overview' && (
+        <div className="mb-6 flex min-h-11 justify-end">
+          <div id={toolbarSlotId} className="flex min-h-11 w-full flex-wrap items-center justify-end gap-3">
+            {viewMode === 'expenses' && (
+              <AgencyDateRangeFilter value={dateRange} onChange={setDateRange} />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {viewMode === 'overview' ? (
-        <BusinessOverviewDashboard
-          mode="agency"
-          activeAgentId={selectedAgentId}
-          scopeEyebrow="Agency Scope"
-          overviewEyebrow="Agency Overview"
-          title="Agency Analytics Dashboard"
-          subtitlePrefix="Agency production signals for"
-          loadingLabel="Loading agency overview..."
-          initialTimeframe="weekly"
-          toolbarSlotId={toolbarSlotId}
-        />
+        <BookOfBusinessDashboard agentId={selectedAgentId} scope="agency" />
       ) : viewMode === 'policies' ? (
         <AgentPoliciesV2
           agentIdsOverride={[selectedAgentId]}

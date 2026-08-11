@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
+  Building2,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -16,7 +17,7 @@ import {
   BookOfBusinessPolicy,
   BookOfBusinessSummary,
 } from '../services/bookOfBusinessApi';
-import { MyBusinessSourceBreakdown, myBusinessOverviewApi, MyBusinessStateBreakdown } from '../services/myBusinessOverviewApi';
+import { MyBusinessAgencyProfile, MyBusinessSourceBreakdown, myBusinessOverviewApi, MyBusinessStateBreakdown } from '../services/myBusinessOverviewApi';
 import { PolicyV2 } from '../services/agentPoliciesV2Api';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { StateProductionPanels } from './StateProductionPanels';
@@ -196,7 +197,13 @@ const getDayTone = (day: DayPerformance, metric: CalendarMetric) => {
   return 'border-rose-200 bg-rose-50/75 text-rose-800';
 };
 
-export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId }) => {
+type BookOfBusinessDashboardProps = {
+  agentId: string;
+  scope?: 'agent' | 'agency';
+};
+
+export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = ({ agentId, scope = 'agent' }) => {
+  const isAgencyScope = scope === 'agency';
   const [metric, setMetric] = useState<CalendarMetric>('submitted');
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const today = new Date();
@@ -218,6 +225,8 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
   const [leadSourceProduction, setLeadSourceProduction] = useState<MyBusinessSourceBreakdown[]>([]);
   const [stateProductionLoading, setStateProductionLoading] = useState(true);
   const [stateProductionError, setStateProductionError] = useState(false);
+  const [agencyProfile, setAgencyProfile] = useState<MyBusinessAgencyProfile | null>(null);
+  const [canEditAgencyGoal, setCanEditAgencyGoal] = useState(false);
   const [attentionPolicies, setAttentionPolicies] = useState<AttentionPolicy[]>([]);
   const [attentionPoliciesLoading, setAttentionPoliciesLoading] = useState(true);
   const [attentionPoliciesError, setAttentionPoliciesError] = useState(false);
@@ -251,11 +260,15 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
     }
 
     setSummaryLoading(true);
-    bookOfBusinessApi.getSummary(agentId, controller.signal)
+    const summaryRequest = isAgencyScope
+      ? bookOfBusinessApi.getAgencySummary(agentId, controller.signal)
+      : bookOfBusinessApi.getSummary(agentId, controller.signal);
+
+    summaryRequest
       .then(setSummary)
       .catch(error => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        console.error('Unable to load Book of Business summary', error);
+        console.error(`Unable to load ${isAgencyScope ? 'Agency ' : ''}Book of Business summary`, error);
         setSummaryError(true);
       })
       .finally(() => {
@@ -263,13 +276,17 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
       });
 
     return () => controller.abort();
-  }, [agentId]);
+  }, [agentId, isAgencyScope]);
 
   useEffect(() => {
     let cancelled = false;
     setStateProduction([]);
     setLeadSourceProduction([]);
     setStateProductionError(false);
+    if (isAgencyScope) {
+      setAgencyProfile(null);
+      setCanEditAgencyGoal(false);
+    }
 
     if (!agentId) {
       setStateProductionLoading(false);
@@ -284,11 +301,16 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
       timeframe: 'yearly',
       startDate: null,
       endDate: null,
+      mode: isAgencyScope ? 'agency' : 'business',
     })
       .then(result => {
         if (!cancelled) {
           setStateProduction(result.by_state || []);
           setLeadSourceProduction(result.by_source || []);
+          if (isAgencyScope) {
+            setAgencyProfile(result.ffl_agency || null);
+            setCanEditAgencyGoal(result.isAgency_manager === true);
+          }
         }
       })
       .catch(error => {
@@ -303,7 +325,11 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
     return () => {
       cancelled = true;
     };
-  }, [agentId]);
+  }, [agentId, isAgencyScope]);
+
+  const agencyLogoUrl = typeof agencyProfile?.logo === 'string'
+    ? agencyProfile.logo
+    : agencyProfile?.logo?.url || '';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -322,12 +348,21 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
     }
 
     setMonthlyLoading(true);
-    bookOfBusinessApi.getMonthlyPerformance({
+    const monthlyRequest = isAgencyScope
+      ? bookOfBusinessApi.getAgencyMonthlyPerformance({
+          agentId,
+          startDate: monthRange.requestStartDate,
+          endDate: monthRange.requestEndDate,
+          scope: metric === 'issued' ? 'issued_paid' : 'submitted',
+        }, controller.signal)
+      : bookOfBusinessApi.getMonthlyPerformance({
       agentId,
       startDate: monthRange.requestStartDate,
       endDate: monthRange.requestEndDate,
       scope: metric === 'issued' ? 'issued_paid' : 'submitted',
-    }, controller.signal)
+        }, controller.signal);
+
+    monthlyRequest
       .then(rows => {
         setMonthlyPerformance(rows);
         if (!isCurrentMonth) {
@@ -341,7 +376,7 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
       })
       .catch(error => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        console.error('Unable to load monthly Book of Business performance', error);
+        console.error(`Unable to load monthly ${isAgencyScope ? 'Agency ' : ''}Book of Business performance`, error);
         setMonthlyError(true);
       })
       .finally(() => {
@@ -349,7 +384,7 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
       });
 
     return () => controller.abort();
-  }, [agentId, metric, monthRange.endDate, monthRange.requestEndDate, monthRange.requestStartDate, monthRange.startDate]);
+  }, [agentId, isAgencyScope, metric, monthRange.endDate, monthRange.requestEndDate, monthRange.requestStartDate, monthRange.startDate]);
 
   const bookKpis = useMemo(() => {
     const pendingValue = summaryLoading ? 'Loading...' : '—';
@@ -459,6 +494,31 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
 
   return (
     <div className="animate-in fade-in duration-300">
+      {isAgencyScope && agencyProfile && (
+        <section className="mb-4 rounded-2xl border border-slate-100/80 bg-white/55 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-100 bg-white text-slate-400">
+                {agencyLogoUrl ? (
+                  <img src={agencyLogoUrl} alt={agencyProfile.name || 'Agency'} className="h-full w-full object-cover" />
+                ) : (
+                  <Building2 className="h-4 w-4" />
+                )}
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div className="min-w-0">
+                  <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-slate-400">Agency</p>
+                  <p className="truncate text-sm font-semibold text-slate-700">{agencyProfile.name || 'Agency'}</p>
+                </div>
+                {canEditAgencyGoal && (
+                  <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-1 text-[8px] font-bold uppercase tracking-[0.1em] text-amber-700">
+                    Manager
+                  </span>
+                )}
+              </div>
+          </div>
+        </section>
+      )}
+
       <section className="mb-5 grid grid-cols-1 overflow-visible rounded-[2rem] border border-white bg-white shadow-sm sm:grid-cols-2 xl:grid-cols-3">
         {bookKpis.map((kpi, index) => (
           <div key={kpi.label} className={`px-6 py-5 ${index > 0 ? 'xl:border-l xl:border-slate-100' : ''} ${index > 1 ? 'sm:border-t xl:border-t-0' : ''}`}>
@@ -689,6 +749,11 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
                           <p className="mt-1 truncate text-[9px] font-semibold text-slate-400" title={[policy.carrier, policy.product].filter(Boolean).join(' · ')}>
                             {[policy.carrier, policy.product].filter(Boolean).join(' · ') || 'Policy details'}
                           </p>
+                          {isAgencyScope && policy.agentName && (
+                            <p className="mt-1 truncate text-[8px] font-semibold uppercase tracking-[0.08em] text-amber-700" title={policy.agentName}>
+                              Agent · {policy.agentName}
+                            </p>
+                          )}
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-xs font-black text-slate-900">{usd.format(policy.annualPremium)}</p>
@@ -796,9 +861,10 @@ export const BookOfBusinessDashboard: React.FC<{ agentId: string }> = ({ agentId
       <div className="mt-5">
         <AgentPoliciesV2
           agentIdsOverride={[agentId]}
-          dataSource="policies"
+          dataSource={isAgencyScope ? 'team' : 'policies'}
           hideHeader
           enableNeedAttention
+          needAttentionScope={isAgencyScope ? 'agency' : 'business'}
           initialWorkspaceView="attention"
           attentionOnly
           initialTimeframe="all"

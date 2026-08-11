@@ -5,6 +5,8 @@ const BOOK_OF_BUSINESS_API_BASE = import.meta.env.DEV
   : 'https://api1.simplyworkcrm.com/api:SZgR1JsR';
 const BOOK_OF_BUSINESS_SUMMARY_URL = `${BOOK_OF_BUSINESS_API_BASE}/my_business/book-of-business/summary`;
 const BOOK_OF_BUSINESS_MONTHLY_PERFORMANCE_URL = `${BOOK_OF_BUSINESS_API_BASE}/my_business/book-of-business/monthly_performance`;
+const AGENCY_BOOK_OF_BUSINESS_SUMMARY_URL = `${BOOK_OF_BUSINESS_API_BASE}/my_agency/book-of-business/summary`;
+const AGENCY_BOOK_OF_BUSINESS_MONTHLY_PERFORMANCE_URL = `${BOOK_OF_BUSINESS_API_BASE}/my_agency/book-of-business/monthly_performance`;
 const POLICIES_BY_ID_URL = `${BOOK_OF_BUSINESS_API_BASE}/policies/by_id`;
 
 export type BookOfBusinessSummary = {
@@ -25,6 +27,7 @@ export type BookOfBusinessMonthlyPerformance = {
 export type BookOfBusinessPolicy = {
   id: string;
   client: string;
+  agentName: string;
   policyNumber: string;
   carrier: string;
   product: string;
@@ -92,6 +95,7 @@ const normalizePolicies = (payload: any): BookOfBusinessPolicy[] => {
   return rows.map((row: any) => ({
     id: String(row?.id || ''),
     client: String(row?.client || 'Unnamed client'),
+    agentName: String(row?.ref_agent_owner_name || row?.agent_name || row?.agent || ''),
     policyNumber: String(row?.policy_number || ''),
     carrier: String(row?.ref_carrier_name || ''),
     product: String(row?.carrier_product || row?.ref_metacontacttype_name || ''),
@@ -119,6 +123,21 @@ export const bookOfBusinessApi = {
     return normalizeSummary(await response.json());
   },
 
+  getAgencySummary: async (agentId: string, signal?: AbortSignal): Promise<BookOfBusinessSummary> => {
+    const response = await fetch(AGENCY_BOOK_OF_BUSINESS_SUMMARY_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent_id: agentId }),
+      signal,
+    });
+
+    if (!response.ok) throw new ApiError(`Failed to fetch Agency Book of Business summary (${response.status})`, response.status);
+    return normalizeSummary(await response.json());
+  },
+
   getMonthlyPerformance: async (input: {
     agentId: string;
     startDate: string;
@@ -141,6 +160,31 @@ export const bookOfBusinessApi = {
     });
 
     if (!response.ok) throw new ApiError(`Failed to fetch monthly performance (${response.status})`, response.status);
+    return normalizeMonthlyPerformance(await response.json());
+  },
+
+  getAgencyMonthlyPerformance: async (input: {
+    agentId: string;
+    startDate: string;
+    endDate: string;
+    scope?: 'submitted' | 'issued_paid';
+  }, signal?: AbortSignal): Promise<BookOfBusinessMonthlyPerformance[]> => {
+    const response = await fetch(AGENCY_BOOK_OF_BUSINESS_MONTHLY_PERFORMANCE_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        agent_id: input.agentId,
+        start_date: input.startDate,
+        end_date: input.endDate,
+        scope: input.scope || 'submitted',
+      }),
+      signal,
+    });
+
+    if (!response.ok) throw new ApiError(`Failed to fetch Agency monthly performance (${response.status})`, response.status);
     return normalizeMonthlyPerformance(await response.json());
   },
 
