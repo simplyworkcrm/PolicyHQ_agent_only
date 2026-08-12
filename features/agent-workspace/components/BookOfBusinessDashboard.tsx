@@ -620,7 +620,7 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
                   onClick={() => setMetric('submitted')}
                   className={`rounded-full px-4 py-2 text-xs font-black transition ${metric === 'submitted' ? 'bg-slate-950 text-white shadow-md' : 'text-slate-500 hover:text-slate-950'}`}
                 >
-                  Submitted Business
+                  Submitted · Date Created
                 </button>
                 <button
                   type="button"
@@ -629,9 +629,15 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
                   onClick={() => setMetric('issued')}
                   className={`rounded-full px-4 py-2 text-xs font-black transition ${metric === 'issued' ? 'bg-slate-950 text-white shadow-md' : 'text-slate-500 hover:text-slate-950'}`}
                 >
-                  Issued &amp; Paid
+                  Effective Draft Date
                 </button>
               </div>
+
+              <p className="max-w-xs text-[9px] font-semibold leading-4 text-slate-400">
+                {metric === 'submitted'
+                  ? 'Policies are grouped by the date the record was created.'
+                  : 'Policies are grouped by their initial draft date.'}
+              </p>
 
               <div className="flex items-center gap-3 rounded-full border border-slate-100 bg-white px-3 py-2 shadow-sm">
                 <button
@@ -657,7 +663,7 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
 
           <div className="grid grid-cols-2 border-b border-slate-100 sm:grid-cols-4">
             {[
-              { label: 'Month AP', value: monthlyLoading ? 'Loading...' : monthlyError ? '—' : usd.format(monthlyAp), helper: metric === 'submitted' ? 'submitted premium' : 'issued and paid premium' },
+              { label: 'Month AP', value: monthlyLoading ? 'Loading...' : monthlyError ? '—' : usd.format(monthlyAp), helper: metric === 'submitted' ? 'premium by date created' : 'premium by initial draft date' },
               { label: 'Goal attainment', value: monthlyLoading || incomePlanLoading || goalAttainment === null ? '—' : `${goalAttainment}%`, helper: incomePlanError ? 'goal temporarily unavailable' : hasSubmittedGoal ? `against ${usd.format(Number(monthlyGoal))} monthly target` : 'set an Income Game Plan', accent: true },
               { label: 'Days hit', value: monthlyLoading || incomePlanLoading || !hasSubmittedGoal ? '—' : `${daysHit} / ${daysWorked}`, helper: incomePlanError ? 'goal temporarily unavailable' : hasSubmittedGoal ? 'goal days / production days' : 'set an Income Game Plan' },
               { label: 'Best day', value: monthlyLoading || !monthlyAp ? '—' : compactUsd.format(getMetric(bestDay, metric).ap), helper: monthlyError ? 'Unable to load' : monthlyAp ? monthDayFormatter.format(new Date(`${bestDay.date}T00:00:00Z`)) : 'No production yet' },
@@ -712,7 +718,7 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
         <aside className="h-fit overflow-hidden rounded-[2rem] border border-white bg-white shadow-sm xl:flex xl:h-0 xl:min-h-full xl:flex-col">
           <div className="shrink-0 border-b border-slate-100 p-6">
             <p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
-              <CalendarDays className="h-3.5 w-3.5" /> {metric === 'submitted' ? 'Submitted' : 'Issued & paid'} · {dayFormatter.format(new Date(`${selectedDay.date}T00:00:00Z`))}
+              <CalendarDays className="h-3.5 w-3.5" /> {metric === 'submitted' ? 'Date created' : 'Initial draft date'} · {dayFormatter.format(new Date(`${selectedDay.date}T00:00:00Z`))}
             </p>
             <p className="mt-4 text-4xl font-black tracking-tight text-slate-950">{usd.format(selectedMetric.ap)}</p>
             <p className="mt-1 text-xs font-semibold text-slate-400">{selectedMetric.policies} {selectedMetric.policies === 1 ? 'policy' : 'policies'}{selectedDateHasGoal ? ` · goal ${usd.format(Number(dailyGoal))}` : ''}</p>
