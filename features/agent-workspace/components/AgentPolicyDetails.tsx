@@ -410,7 +410,8 @@ const InputDisplay = ({
     customInput,
     onDropdownChange,
     tooltip,
-    step
+    step,
+    subtle = false
 }: { 
     label: string; 
     value: React.ReactNode; 
@@ -426,6 +427,7 @@ const InputDisplay = ({
     onDropdownChange?: (val: any) => void;
     tooltip?: string;
     step?: string;
+    subtle?: boolean;
 }) => {
     // Determine display value for read-only mode
     let displayValue = value;
@@ -442,8 +444,8 @@ const InputDisplay = ({
 
     return (
         <div className={`w-full ${fullWidth ? 'col-span-2' : ''}`}>
-            <div className="flex items-center gap-1.5 ml-1 mb-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-left">{label}</label>
+            <div className="mb-1 ml-0.5 flex items-center gap-1.5">
+                <label className="block text-left text-[7px] font-semibold uppercase tracking-wider text-slate-400">{label}</label>
                 {tooltip && isEditing && (
                     <div className="relative flex items-center">
                         <Info className="peer w-3 h-3 text-slate-300 hover:text-brand-500 cursor-help transition-colors" />
@@ -454,7 +456,7 @@ const InputDisplay = ({
                     </div>
                 )}
             </div>
-            <div className={`w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 flex items-center gap-3 transition-colors min-h-[54px] ${isEditing ? 'ring-2 ring-brand-500/20 bg-white border-brand-500' : 'hover:border-slate-200 hover:bg-white group'}`}>
+            <div className={`flex min-h-[32px] w-full items-center gap-1.5 px-2 py-1 text-[9px] font-semibold text-slate-700 transition-colors ${isEditing ? 'rounded-lg border border-brand-500 bg-white ring-2 ring-brand-500/20' : subtle ? 'border-0 bg-transparent' : 'group rounded-lg border border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-white'}`}>
                 {icon && <span className={`transition-colors shrink-0 ${isEditing ? 'text-brand-500' : 'text-slate-400 group-hover:text-brand-500'}`}>{icon}</span>}
                 <div className="flex-1 w-full min-w-0 h-full flex items-center">
                     {isEditing ? (
@@ -530,6 +532,11 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
     // Edit State
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [isEditingCoverage, setIsEditingCoverage] = useState(false);
+    const [detailSection, setDetailSection] = useState<'policy' | 'splits' | 'activity'>('policy');
+
+    useEffect(() => {
+        setDetailSection('policy');
+    }, [currentIndex]);
     const [coverageForm, setCoverageForm] = useState<Partial<CoverageData>>({});
 
     // Deletion State
@@ -979,7 +986,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
     const hasSplits = splits.length > 0 || (isEditingSplits && (splitsForm.length > 0 || draftSplits.length > 0));
 
     return (
-        <div className={`${modal ? 'min-h-full bg-slate-100/80 p-5 sm:p-6' : 'min-h-[calc(100vh-6rem)] -m-6 p-8'} font-sans`}>
+        <div className={`${modal ? 'bg-slate-100/80 p-3' : 'min-h-[calc(100vh-6rem)] -m-6 p-8'} font-sans`}>
             {/* Delete Modal */}
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -1024,28 +1031,28 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                 </div>
             )}
 
-            <div className="max-w-[1800px] mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className={`${modal ? 'max-w-[72rem]' : 'max-w-[1800px]'} mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500`}>
                 {/* Header Navigation */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="mb-3 flex items-center justify-between">
                     <button 
                         onClick={() => onClose ? onClose() : navigate('/policies')}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-all shadow-sm"
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[9px] font-bold text-slate-600 shadow-sm transition-all hover:bg-slate-50"
                     >
                         <ChevronLeft className="w-4 h-4" />
                         {modal ? 'Close Details' : 'Back to Portfolio'}
                     </button>
 
-                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                         {!isLocked && (
                             <button 
                                 onClick={() => setIsDeleteModalOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-red-100 text-red-500 font-bold text-xs hover:bg-red-50 shadow-sm transition-all group"
+                                className="group flex items-center gap-1.5 rounded-lg border border-red-100 bg-white px-3 py-1.5 text-[9px] font-bold text-red-500 shadow-sm transition-all hover:bg-red-50"
                             >
                                 <Trash2 className="w-4 h-4 group-hover:scale-110 transition-transform" />
                                 <span>Delete Policy</span>
                             </button>
                         )}
-                        <div className="flex items-center gap-3 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm">
+                        {queue.length > 1 && <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
                             <button 
                                 onClick={handlePrev} 
                                 disabled={currentIndex === 0}
@@ -1053,7 +1060,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
-                            <div className="flex flex-col items-center px-4 min-w-[100px]">
+                            <div className="flex min-w-[84px] flex-col items-center px-3">
                                 <span className="text-xs font-black text-slate-900">POLICY {currentIndex + 1}</span>
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">OF {queue.length}</span>
                             </div>
@@ -1064,7 +1071,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                             >
                                 <ChevronRight className="w-4 h-4" />
                             </button>
-                        </div>
+                        </div>}
                     </div>
                 </div>
 
@@ -1087,12 +1094,12 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                     </div>
                 ) : coverage && clientProfile ? (
                     <>
-                        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                        <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-12">
                             
                             {/* COLUMN 1: CLIENT PROFILE */}
-                            <div className="xl:col-span-3 space-y-6">
+                            <div className="hidden">
                                 {/* Profile Card - same as before */}
-                                <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 flex flex-col items-center relative group">
+                                <div className="group relative flex flex-col gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm md:flex-row md:items-center">
                                     {!isLocked && (
                                         <div className="absolute top-4 right-4 z-20 flex gap-2">
                                             {isEditingProfile ? (
@@ -1105,27 +1112,26 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                                     </button>
                                                 </>
                                             ) : (
-                                                <button onClick={() => setIsEditingProfile(true)} className="p-2.5 rounded-full bg-white/80 hover:bg-white text-slate-400 hover:text-brand-500 transition-all shadow-sm border border-slate-100">
-                                                    <Pencil className="w-4 h-4" />
+                                                <button onClick={() => setIsEditingProfile(true)} className="p-1.5 text-slate-300 opacity-0 transition-all hover:text-brand-500 group-hover:opacity-100 focus:opacity-100" aria-label="Edit client details">
+                                                    <Pencil className="h-3.5 w-3.5" />
                                                 </button>
                                             )}
                                         </div>
                                     )}
-                                    <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-slate-50 to-white rounded-t-[2.5rem]"></div>
-                                    <div className="relative z-10 w-24 h-24 rounded-[2rem] bg-slate-900 text-white flex items-center justify-center text-3xl font-black shadow-xl shadow-slate-900/10 border-4 border-white mb-6">
+                                    <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-[10px] font-bold text-white shadow-sm">
                                         {(profileName || '').substring(0,2).toUpperCase()}
                                     </div>
-                                    <h2 className="relative z-10 text-2xl font-black text-slate-900 tracking-tight mb-8 text-center w-full">
+                                    <h2 className="relative z-10 min-w-0 text-[10px] font-semibold text-slate-800 md:w-32">
                                         {isEditingProfile ? (
                                             <input 
-                                                className="w-full text-center bg-slate-50 border border-slate-200 rounded-lg p-1 outline-none focus:ring-2 focus:ring-brand-500/20"
+                                                className="w-full rounded-lg border border-slate-200 bg-slate-50 p-1 text-left outline-none focus:ring-2 focus:ring-brand-500/20"
                                                 name="name"
                                                 value={profileName}
                                                 onChange={handleProfileInputChange}
                                             />
                                         ) : profileName}
                                     </h2>
-                                    <div className="w-full space-y-3 relative z-10">
+                                    <div className="relative z-10 grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
                                         <InputDisplay 
                                             label="Mobile" 
                                             value={profilePhone} 
@@ -1133,6 +1139,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                             onChange={handleProfileInputChange}
                                             isEditing={isEditingProfile}
                                             icon={<Phone className="w-4 h-4"/>} 
+                                            subtle
                                         />
                                         <InputDisplay 
                                             label="State" 
@@ -1144,8 +1151,9 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                             options={US_STATE_DATA.map(s => ({ name: s.name, value: s.name }))} 
                                             onDropdownChange={(val) => handleProfileDropdownChange('state', val)}
                                             icon={<MapPin className="w-4 h-4"/>} 
+                                            subtle
                                         />
-                                        <div className="space-y-3">
+                                        <div className="contents">
                                             <InputDisplay 
                                                 label="Source" 
                                                 value={isEditingProfile ? (clientProfileForm?.source?.id || '') : displayProfileSource} 
@@ -1157,6 +1165,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                                 onDropdownChange={(val) => handleProfileDropdownChange('source', val)}
                                                 icon={<Globe className="w-4 h-4"/>} 
                                                 tooltip="Where did this lead originate?"
+                                                subtle
                                             />
                                             <InputDisplay 
                                                 label="Type" 
@@ -1169,176 +1178,109 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                                 onDropdownChange={(val) => handleProfileDropdownChange('type', val)}
                                                 icon={<Tag className="w-4 h-4"/>} 
                                                 tooltip="Lead category (e.g. Life, Health)"
+                                                subtle
                                             />
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
+                            <div className="rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-sm xl:col-span-12">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-slate-400">Client Information</p>
+                                        <p className="mt-1 truncate text-[11px] font-bold text-slate-800">{profileName}</p>
+                                    </div>
+                                    {!isLocked && <button onClick={() => setIsEditingProfile(true)} className="rounded-md p-1.5 text-slate-300 transition hover:bg-slate-50 hover:text-brand-500" title="Edit client"><Pencil className="h-3.5 w-3.5" /></button>}
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
+                                    {[
+                                        { label: 'Mobile', value: profilePhone },
+                                        { label: 'State', value: profileState },
+                                        { label: 'Source', value: displayProfileSource },
+                                        { label: 'Type', value: displayProfileType },
+                                    ].map(item => (
+                                        <div key={item.label} className="min-w-0"><p className="text-[7px] font-semibold uppercase tracking-wider text-slate-400">{item.label}</p><p className="mt-0.5 truncate text-[9px] font-semibold text-slate-700">{item.value || '—'}</p></div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="xl:col-span-12">
+                                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Policy detail section">
+                                    {([
+                                        { id: 'policy', label: 'Policy', icon: <Shield className="h-3 w-3" /> },
+                                        { id: 'splits', label: 'Splits', icon: <Split className="h-3 w-3" /> },
+                                        { id: 'activity', label: 'Activity', icon: <Folder className="h-3 w-3" /> },
+                                    ] as const).map(section => (
+                                        <button
+                                            key={section.id}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={detailSection === section.id}
+                                            onClick={() => setDetailSection(section.id)}
+                                            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[9px] font-bold transition-colors ${detailSection === section.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700'}`}
+                                        >
+                                            {section.icon}
+                                            {section.label}
+                                            {section.id === 'splits' && splits.length > 0 && (
+                                                <span className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[7px] font-bold ${detailSection === 'splits' ? 'bg-white/15 text-white' : 'bg-amber-100 text-amber-700'}`}>
+                                                    {splits.length}
+                                                </span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             {/* COLUMN 2: COVERAGE DETAILS */}
-                            <div className="xl:col-span-6 space-y-6">
-                                {/* Coverage Card */}
-                                <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 relative">
-                                    {!isLocked && (
-                                        <div className="absolute top-8 right-8 z-20 flex gap-2">
-                                            {isEditingCoverage ? (
-                                                <>
-                                                    <button onClick={handleSaveCoverage} className="p-2 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white transition-all shadow-md">
-                                                        <Check className="w-4 h-4" />
-                                                    </button>
-                                                    <button onClick={handleCancelCoverage} className="p-2 rounded-full bg-red-50 hover:bg-red-100 text-red-500 transition-all shadow-sm">
-                                                        <X className="w-4 h-4" />
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <button onClick={() => setIsEditingCoverage(true)} className="p-2.5 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-brand-500 transition-all shadow-sm border border-slate-200/50">
-                                                    <Pencil className="w-4 h-4" />
-                                                </button>
+                            <div className={`${detailSection === 'policy' ? 'space-y-4' : 'hidden'} xl:col-span-12`}>
+                                <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                                    <div className="bg-slate-900 p-4 text-white">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="text-[8px] font-bold uppercase tracking-[0.16em] text-white/45">Policy Details</p>
+                                                <p className="mt-2 truncate text-xs font-bold">{coverage.product || 'Policy'}</p>
+                                                <p className="mt-0.5 truncate text-[9px] text-white/55">{coverage.carrier.label}</p>
+                                                <span className="mt-2 inline-flex rounded-md bg-white/10 px-2 py-1 font-mono text-[8px] font-semibold text-white/80">{coverage.policy_number || 'No policy number'}</span>
+                                            </div>
+                                            {!isLocked && (
+                                                <button onClick={() => setIsEditingCoverage(true)} className="rounded-md p-1.5 text-white/40 transition hover:bg-white/10 hover:text-white" title="Edit policy"><Pencil className="h-3.5 w-3.5" /></button>
                                             )}
                                         </div>
-                                    )}
-                                    <div className="flex items-center gap-4 mb-8">
-                                        <div className="w-14 h-14 rounded-2xl bg-brand-50 text-brand-500 flex items-center justify-center border border-brand-100 shadow-sm">
-                                            <Shield className="w-7 h-7" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-xl font-black text-slate-900 tracking-tight">Policy Coverage</h3>
-                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mt-0.5">Details & Benefits</p>
-                                        </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <InputDisplay 
-                                            label="Carrier" 
-                                            value={isEditingCoverage ? coverageForm.carrier?.id : coverage.carrier.label} 
-                                            name="carrier"
-                                            isEditing={isEditingCoverage}
-                                            type="select"
-                                            options={carrierOptions}
-                                            onDropdownChange={(val) => handleCoverageDropdownChange('carrier', val)}
-                                            icon={<Briefcase className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Product" 
-                                            value={isEditingCoverage ? coverageForm.product : coverage.product} 
-                                            name="product"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            icon={<Tag className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Policy Number" 
-                                            value={isEditingCoverage ? coverageForm.policy_number : coverage.policy_number} 
-                                            name="policy_number"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            icon={<Hash className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Status" 
-                                            value={isEditingCoverage ? coverageForm.status?.id : coverage.status.label} 
-                                            name="status"
-                                            isEditing={isEditingCoverage}
-                                            type="select"
-                                            options={statusOptions}
-                                            onDropdownChange={(val) => handleCoverageDropdownChange('status', val)}
-                                            icon={<Activity className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Paid Status" 
-                                            value={isEditingCoverage ? coverageForm.paidstatus?.id : coverage.paidstatus.label} 
-                                            name="paidstatus"
-                                            isEditing={isEditingCoverage}
-                                            type="select"
-                                            options={paidStatusOptions}
-                                            onDropdownChange={(val) => handleCoverageDropdownChange('paidstatus', val)}
-                                            icon={<CreditCard className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Beneficiary" 
-                                            value={isEditingCoverage ? coverageForm.beneficiary : coverage.beneficiary} 
-                                            name="beneficiary"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            icon={<User className="w-4 h-4"/>} 
-                                        />
-                                        <div className="col-span-2 h-px bg-slate-100 my-2"></div>
-                                        <InputDisplay 
-                                            label="Face Amount" 
-                                            value={isEditingCoverage ? coverageForm.face_amount : `$${coverage.face_amount?.toLocaleString()}`} 
-                                            name="face_amount"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            type="number"
-                                            step="0.01"
-                                            icon={<Shield className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Monthly Premium" 
-                                            value={isEditingCoverage ? coverageForm.monthly_premium : `$${coverage.monthly_premium?.toLocaleString()}`} 
-                                            name="monthly_premium"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            type="number"
-                                            step="0.01"
-                                            icon={<DollarSign className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Annual Premium" 
-                                            value={isEditingCoverage ? `$${(coverageForm.annual_premium || 0).toLocaleString()}` : `$${coverage.annual_premium?.toLocaleString()}`} 
-                                            name="annual_premium"
-                                            isEditing={false} 
-                                            icon={<DollarSign className="w-4 h-4"/>} 
-                                        />
-                                        <InputDisplay 
-                                            label="Draft Day" 
-                                            value={isEditingCoverage ? coverageForm.recurring_draft_day : coverage.recurring_draft_day} 
-                                            name="recurring_draft_day"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            icon={<Calendar className="w-4 h-4"/>} 
-                                            type="number"
-                                        />
-                                        <InputDisplay 
-                                            label="Initial Draft Date" 
-                                            value={isEditingCoverage ? coverageForm.initial_draft_date : formatDate(coverage.initial_draft_date)} 
-                                            name="initial_draft_date"
-                                            isEditing={isEditingCoverage}
-                                            customInput={
-                                                <SingleDatePicker 
-                                                    value={coverageForm.initial_draft_date || ''}
-                                                    onChange={handleInitialDraftDateChange}
-                                                />
-                                            }
-                                            icon={<Calendar className="w-4 h-4"/>} 
-                                            fullWidth
-                                        />
-                                        <div className="col-span-2 h-px bg-slate-100 my-2"></div>
-                                        <InputDisplay 
-                                            label="Highlights" 
-                                            value={isEditingCoverage ? coverageForm.appointment_highlights : coverage.appointment_highlights} 
-                                            name="appointment_highlights"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            icon={<FileText className="w-4 h-4"/>} 
-                                            fullWidth
-                                        />
-                                        <InputDisplay 
-                                            label="Pending Follow Up" 
-                                            value={isEditingCoverage ? coverageForm.pending_follow_up : coverage.pending_follow_up} 
-                                            name="pending_follow_up"
-                                            onChange={handleCoverageInputChange}
-                                            isEditing={isEditingCoverage}
-                                            icon={<Clock className="w-4 h-4"/>} 
-                                            fullWidth
-                                        />
+                                    <div className="flex items-start justify-between border-b border-slate-100 px-4 py-3">
+                                        <div><p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Annual Premium</p><p className="mt-0.5 text-base font-bold text-slate-900">${coverage.annual_premium?.toLocaleString()}</p></div>
+                                        <div className="text-right"><p className="text-[9px] font-bold text-emerald-600">{coverage.status.label}</p><p className="mt-1 text-[8px] font-semibold text-slate-400">{coverage.paidstatus.label || 'Paid status unavailable'}</p></div>
+                                    </div>
+                                    <div className="space-y-3 px-4 py-4">
+                                        {[
+                                            { icon: <Briefcase className="h-3 w-3" />, label: 'Carrier', value: coverage.carrier.label },
+                                            { icon: <Tag className="h-3 w-3" />, label: 'Product', value: coverage.product },
+                                            { icon: <Hash className="h-3 w-3" />, label: 'Policy Number', value: coverage.policy_number },
+                                            { icon: <Activity className="h-3 w-3" />, label: 'Status', value: coverage.status.label },
+                                            { icon: <CreditCard className="h-3 w-3" />, label: 'Paid Status', value: coverage.paidstatus.label },
+                                            { icon: <User className="h-3 w-3" />, label: 'Beneficiary', value: coverage.beneficiary },
+                                            { icon: <Shield className="h-3 w-3" />, label: 'Face Amount', value: `$${coverage.face_amount?.toLocaleString()}` },
+                                            { icon: <DollarSign className="h-3 w-3" />, label: 'Monthly Premium', value: `$${coverage.monthly_premium?.toLocaleString()}` },
+                                            { icon: <DollarSign className="h-3 w-3" />, label: 'Annual Premium', value: `$${coverage.annual_premium?.toLocaleString()}` },
+                                            { icon: <Calendar className="h-3 w-3" />, label: 'Draft Day', value: coverage.recurring_draft_day },
+                                            { icon: <Calendar className="h-3 w-3" />, label: 'Initial Draft Date', value: formatDate(coverage.initial_draft_date) },
+                                            { icon: <FileText className="h-3 w-3" />, label: 'Highlights', value: coverage.appointment_highlights },
+                                            { icon: <Clock className="h-3 w-3" />, label: 'Pending Follow Up', value: coverage.pending_follow_up },
+                                        ].map(item => (
+                                            <div key={item.label} className="flex items-center gap-2.5">
+                                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-50 text-slate-400">{item.icon}</span>
+                                                <div className="min-w-0"><p className="text-[7px] font-semibold uppercase tracking-wider text-slate-400">{item.label}</p><p className="truncate text-[9px] font-semibold text-slate-700">{item.value || '—'}</p></div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
 
                             {/* COLUMN 3: SPLITS & NOTES */}
-                            <div className="xl:col-span-3 space-y-6">
+                            <div className="space-y-3 xl:col-span-12">
                                 {/* Splits Card - same as before */}
-                                <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 relative group">
+                                <div className={`${detailSection === 'splits' ? 'group relative rounded-xl border border-slate-100 bg-white p-3 shadow-sm' : 'hidden'}`}>
                                     {!isLocked && (
                                         <div className="absolute top-4 right-4 z-20 flex gap-2">
                                             {isEditingSplits ? (
@@ -1483,7 +1425,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                 </div>
 
                                 {/* Comments / Notes Card */}
-                                <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-slate-100 flex flex-col h-[500px]">
+                                <div className={`${detailSection === 'activity' ? 'flex h-[420px] flex-col rounded-xl border border-slate-100 bg-white p-3 shadow-sm' : 'hidden'}`}>
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center border border-blue-100">
                                             <Folder className="w-5 h-5" />
@@ -1579,6 +1521,59 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                     </>
                 ) : null}
             </div>
+
+            {isEditingProfile && clientProfileForm && (
+                <div className="fixed inset-0 z-[2400] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Edit client details">
+                    <button className="absolute inset-0" onClick={handleCancelProfile} aria-label="Close client editor" />
+                    <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+                        <div className="mb-4 flex items-start justify-between">
+                            <div><p className="text-[8px] font-bold uppercase tracking-[0.16em] text-slate-400">Client Details</p><h3 className="mt-1 text-sm font-bold text-slate-900">Edit client information</h3></div>
+                            <button onClick={handleCancelProfile} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700"><X className="h-4 w-4" /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <InputDisplay label="Name" value={clientProfileForm.name} name="name" onChange={handleProfileInputChange} isEditing icon={<User className="h-4 w-4" />} fullWidth />
+                            <InputDisplay label="Mobile" value={clientProfileForm.phone} name="phone" onChange={handleProfileInputChange} isEditing icon={<Phone className="h-4 w-4" />} />
+                            <InputDisplay label="State" value={clientProfileForm.state} name="state" isEditing type="select" options={US_STATE_DATA.map(state => ({ name: state.name, value: state.name }))} onDropdownChange={(value) => handleProfileDropdownChange('state', value)} icon={<MapPin className="h-4 w-4" />} />
+                            <InputDisplay label="Source" value={clientProfileForm.source?.id || ''} name="source" isEditing type="select" options={sourceOptions} onDropdownChange={(value) => handleProfileDropdownChange('source', value)} icon={<Globe className="h-4 w-4" />} />
+                            <InputDisplay label="Type" value={clientProfileForm.type?.id || ''} name="type" isEditing type="select" options={typeOptions} onDropdownChange={(value) => handleProfileDropdownChange('type', value)} icon={<Tag className="h-4 w-4" />} />
+                        </div>
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button onClick={handleCancelProfile} className="rounded-lg border border-slate-200 px-4 py-2 text-[10px] font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                            <button onClick={handleSaveProfile} className="rounded-lg bg-slate-900 px-4 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Save Client</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isEditingCoverage && (
+                <div className="fixed inset-0 z-[2400] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Edit policy details">
+                    <button className="absolute inset-0" onClick={handleCancelCoverage} aria-label="Close policy editor" />
+                    <div className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+                        <div className="mb-4 flex items-start justify-between">
+                            <div><p className="text-[8px] font-bold uppercase tracking-[0.16em] text-slate-400">Policy Coverage</p><h3 className="mt-1 text-sm font-bold text-slate-900">Edit policy details</h3></div>
+                            <button onClick={handleCancelCoverage} className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-700"><X className="h-4 w-4" /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <InputDisplay label="Carrier" value={coverageForm.carrier?.id} name="carrier" isEditing type="select" options={carrierOptions} onDropdownChange={(value) => handleCoverageDropdownChange('carrier', value)} icon={<Briefcase className="h-4 w-4" />} />
+                            <InputDisplay label="Product" value={coverageForm.product} name="product" onChange={handleCoverageInputChange} isEditing icon={<Tag className="h-4 w-4" />} />
+                            <InputDisplay label="Policy Number" value={coverageForm.policy_number} name="policy_number" onChange={handleCoverageInputChange} isEditing icon={<Hash className="h-4 w-4" />} />
+                            <InputDisplay label="Status" value={coverageForm.status?.id} name="status" isEditing type="select" options={statusOptions} onDropdownChange={(value) => handleCoverageDropdownChange('status', value)} icon={<Activity className="h-4 w-4" />} />
+                            <InputDisplay label="Paid Status" value={coverageForm.paidstatus?.id} name="paidstatus" isEditing type="select" options={paidStatusOptions} onDropdownChange={(value) => handleCoverageDropdownChange('paidstatus', value)} icon={<CreditCard className="h-4 w-4" />} />
+                            <InputDisplay label="Beneficiary" value={coverageForm.beneficiary} name="beneficiary" onChange={handleCoverageInputChange} isEditing icon={<User className="h-4 w-4" />} />
+                            <InputDisplay label="Face Amount" value={coverageForm.face_amount} name="face_amount" onChange={handleCoverageInputChange} isEditing type="number" step="0.01" icon={<Shield className="h-4 w-4" />} />
+                            <InputDisplay label="Monthly Premium" value={coverageForm.monthly_premium} name="monthly_premium" onChange={handleCoverageInputChange} isEditing type="number" step="0.01" icon={<DollarSign className="h-4 w-4" />} />
+                            <InputDisplay label="Draft Day" value={coverageForm.recurring_draft_day} name="recurring_draft_day" onChange={handleCoverageInputChange} isEditing type="number" icon={<Calendar className="h-4 w-4" />} />
+                            <InputDisplay label="Initial Draft Date" value={coverageForm.initial_draft_date} name="initial_draft_date" isEditing customInput={<SingleDatePicker value={coverageForm.initial_draft_date || ''} onChange={handleInitialDraftDateChange} />} icon={<Calendar className="h-4 w-4" />} />
+                            <InputDisplay label="Highlights" value={coverageForm.appointment_highlights} name="appointment_highlights" onChange={handleCoverageInputChange} isEditing icon={<FileText className="h-4 w-4" />} fullWidth />
+                            <InputDisplay label="Pending Follow Up" value={coverageForm.pending_follow_up} name="pending_follow_up" onChange={handleCoverageInputChange} isEditing icon={<Clock className="h-4 w-4" />} fullWidth />
+                        </div>
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button onClick={handleCancelCoverage} className="rounded-lg border border-slate-200 px-4 py-2 text-[10px] font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                            <button onClick={handleSaveCoverage} className="rounded-lg bg-slate-900 px-4 py-2 text-[10px] font-bold text-white hover:bg-slate-800">Save Policy</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

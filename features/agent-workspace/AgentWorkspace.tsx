@@ -4017,7 +4017,7 @@ const AgentLayout: React.FC = () => {
             </div>
         ) : (
             <div
-              className="flex-1 overflow-y-auto scroll-smooth scrollbar-hide relative"
+              className="relative flex-1 overflow-x-hidden overflow-y-auto scroll-smooth scrollbar-hide"
               style={location.pathname === '/business' ? {
                 backgroundImage: `linear-gradient(rgba(3, 7, 18, 0.42), rgba(15, 6, 38, 0.68)), url(${goalsUniverseBackground})`,
                 backgroundPosition: 'center',
