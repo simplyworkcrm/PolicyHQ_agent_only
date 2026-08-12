@@ -26,6 +26,7 @@ import { agentDownlineApi, DownlineAgent, DownlineHierarchy } from '../services/
 import { agencyExpenseManagementApi, AgencyExpenseLogRow, AgencyExpenseLogSummary, AgencyExpenseOverviewResponse, AgencyExpenseRiskAgent, AgencyExpenseRiskAgency } from '../services/agencyExpenseManagementApi';
 import { AgentPoliciesV2, PolicyDateRangeFilter } from './AgentPoliciesV2';
 import { BookOfBusinessDashboard } from './BookOfBusinessDashboard';
+import { myBusinessOverviewApi } from '../services/myBusinessOverviewApi';
 import { Policy } from '../../../shared/types/index';
 
 type DownlineSortKey = 'first_name' | 'direct_upline_name' | 'ref_ffl_agency_name' | 'phone' | 'npn' | 'direct_downlines' | 'status';
@@ -1247,6 +1248,7 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
 
   // Main View State
   const [selectedAgentId, setSelectedAgentId] = useState<string>(workspaceAgentId);
+  const [isAgencyManager, setIsAgencyManager] = useState(false);
   const [selectedHierarchyData, setSelectedHierarchyData] = useState<DownlineHierarchy | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
   
@@ -1281,6 +1283,26 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
       setPage(1);
     }
   }, [currentAgentId, selectedAgentId, workspaceAgentId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsAgencyManager(false);
+    if (!selectedAgentId) return () => { cancelled = true; };
+
+    myBusinessOverviewApi.getOverview({
+      agentId: selectedAgentId,
+      timeframe: 'yearly',
+      startDate: null,
+      endDate: null,
+      mode: 'agency',
+    }).then(result => {
+      if (!cancelled) setIsAgencyManager(result.isAgency_manager === true);
+    }).catch(() => {
+      if (!cancelled) setIsAgencyManager(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [selectedAgentId]);
 
   // 2. Fetch Selected Agent Hierarchy Data
   useEffect(() => {
@@ -1361,6 +1383,8 @@ export const AgentDownlines: React.FC<{ viewMode?: AgencyViewMode }> = ({ viewMo
           needAttentionScope="agency"
           teamAgentFilterRootId={selectedAgentId}
           toolbarSlotId={toolbarSlotId}
+          viewOnly
+          showClientPhone={isAgencyManager}
         />
       ) : viewMode === 'expenses' ? (
         <AgencyExpenseManagement

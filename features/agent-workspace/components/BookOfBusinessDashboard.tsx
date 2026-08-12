@@ -868,6 +868,8 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
           initialWorkspaceView="attention"
           attentionOnly
           initialTimeframe="all"
+          viewOnly={isAgencyScope}
+          showClientPhone={!isAgencyScope || canEditAgencyGoal}
         />
       </div>
 

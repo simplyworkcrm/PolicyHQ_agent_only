@@ -3737,9 +3737,15 @@ const AgentLayout: React.FC = () => {
     const isHallOfFamePage = location.pathname === '/business/hall-of-fame'
       || location.pathname === '/business/goals'
       || location.pathname === '/downlines/hall-of-fame';
+    const isProductionPage = location.pathname.startsWith('/business/policies')
+      || location.pathname === '/policies'
+      || location.pathname === '/policies/v2'
+      || location.pathname === '/downlines/production';
     navigate(
       isHallOfFamePage
         ? nextView === 'agency' ? '/downlines/hall-of-fame' : '/business/hall-of-fame'
+        : isProductionPage
+          ? nextView === 'agency' ? '/downlines/production' : '/business/policies'
         : nextView === 'agency' ? '/downlines' : '/business/overview',
     );
   };

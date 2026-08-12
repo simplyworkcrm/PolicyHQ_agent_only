@@ -505,6 +505,8 @@ interface AgentPolicyDetailsProps {
     startIndexOverride?: number;
     onClose?: () => void;
     modal?: boolean;
+    readOnly?: boolean;
+    showClientPhone?: boolean;
 }
 
 export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
@@ -512,6 +514,8 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
     startIndexOverride,
     onClose,
     modal = false,
+    readOnly = false,
+    showClientPhone = true,
 }) => {
     const { user } = useAuth();
     const location = useLocation();
@@ -982,7 +986,8 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
     const profileName = isEditingProfile ? clientProfileForm?.name : clientProfile?.name;
     const profilePhone = clientProfileForm?.phone;
     const profileState = clientProfileForm?.state;
-    const isLocked = coverage?.isLocked || false;
+    const isLocked = coverage?.isLocked === true;
+    const canEdit = !isLocked && !readOnly;
     const hasSplits = splits.length > 0 || (isEditingSplits && (splitsForm.length > 0 || draftSplits.length > 0));
 
     return (
@@ -1043,7 +1048,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                     </button>
 
                         <div className="flex items-center gap-3">
-                        {!isLocked && (
+                        {canEdit && (
                             <button 
                                 onClick={() => setIsDeleteModalOpen(true)}
                                 className="group flex items-center gap-1.5 rounded-lg border border-red-100 bg-white px-3 py-1.5 text-[9px] font-bold text-red-500 shadow-sm transition-all hover:bg-red-50"
@@ -1100,7 +1105,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                             <div className="hidden">
                                 {/* Profile Card - same as before */}
                                 <div className="group relative flex flex-col gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm md:flex-row md:items-center">
-                                    {!isLocked && (
+                                    {canEdit && (
                                         <div className="absolute top-4 right-4 z-20 flex gap-2">
                                             {isEditingProfile ? (
                                                 <>
@@ -1191,11 +1196,11 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                         <p className="text-[7px] font-bold uppercase tracking-[0.16em] text-slate-400">Client Information</p>
                                         <p className="mt-1 truncate text-[11px] font-bold text-slate-800">{profileName}</p>
                                     </div>
-                                    {!isLocked && <button onClick={() => setIsEditingProfile(true)} className="rounded-md p-1.5 text-slate-300 transition hover:bg-slate-50 hover:text-brand-500" title="Edit client"><Pencil className="h-3.5 w-3.5" /></button>}
+                                    {canEdit && <button onClick={() => setIsEditingProfile(true)} className="rounded-md p-1.5 text-slate-300 transition hover:bg-slate-50 hover:text-brand-500" title="Edit client"><Pencil className="h-3.5 w-3.5" /></button>}
                                 </div>
                                 <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
                                     {[
-                                        { label: 'Mobile', value: profilePhone },
+                                        ...(showClientPhone ? [{ label: 'Mobile', value: profilePhone }] : []),
                                         { label: 'State', value: profileState },
                                         { label: 'Source', value: displayProfileSource },
                                         { label: 'Type', value: displayProfileType },
@@ -1243,7 +1248,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                                                 <p className="mt-0.5 truncate text-[9px] text-white/55">{coverage.carrier.label}</p>
                                                 <span className="mt-2 inline-flex rounded-md bg-white/10 px-2 py-1 font-mono text-[8px] font-semibold text-white/80">{coverage.policy_number || 'No policy number'}</span>
                                             </div>
-                                            {!isLocked && (
+                                            {canEdit && (
                                                 <button onClick={() => setIsEditingCoverage(true)} className="rounded-md p-1.5 text-white/40 transition hover:bg-white/10 hover:text-white" title="Edit policy"><Pencil className="h-3.5 w-3.5" /></button>
                                             )}
                                         </div>
@@ -1281,7 +1286,7 @@ export const AgentPolicyDetails: React.FC<AgentPolicyDetailsProps> = ({
                             <div className="space-y-3 xl:col-span-12">
                                 {/* Splits Card - same as before */}
                                 <div className={`${detailSection === 'splits' ? 'group relative rounded-xl border border-slate-100 bg-white p-3 shadow-sm' : 'hidden'}`}>
-                                    {!isLocked && (
+                                    {canEdit && (
                                         <div className="absolute top-4 right-4 z-20 flex gap-2">
                                             {isEditingSplits ? (
                                                 <>

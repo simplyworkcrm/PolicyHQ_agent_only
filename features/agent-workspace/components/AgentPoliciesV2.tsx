@@ -1055,6 +1055,8 @@ interface AgentPoliciesV2Props {
   dataSource?: 'policies' | 'team';
   variant?: 'default' | 'downline';
   readOnlyRows?: boolean;
+  viewOnly?: boolean;
+  showClientPhone?: boolean;
   hideHeader?: boolean;
   showDateRangeWhenHeaderHidden?: boolean;
   showPolicySourceSelector?: boolean;
@@ -1218,6 +1220,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
   dataSource = 'policies',
   variant = 'default',
   readOnlyRows = false,
+  viewOnly = false,
+  showClientPhone = true,
   hideHeader = false,
   showDateRangeWhenHeaderHidden = false,
   showPolicySourceSelector = false,
@@ -2347,6 +2351,8 @@ export const AgentPoliciesV2: React.FC<AgentPoliciesV2Props> = ({
                   queueOverride={[detailModalPolicyId]}
                   startIndexOverride={0}
                   modal
+                  readOnly={viewOnly}
+                  showClientPhone={showClientPhone}
                   onClose={() => {
                     setDetailModalPolicyId(null);
                     setSelectedPolicy(null);
