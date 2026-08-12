@@ -21,6 +21,7 @@ import { MyBusinessAgencyProfile, MyBusinessSourceBreakdown, myBusinessOverviewA
 import { PolicyV2 } from '../services/agentPoliciesV2Api';
 import { AgentPoliciesV2 } from './AgentPoliciesV2';
 import { StateProductionPanels } from './StateProductionPanels';
+import { useAgentContext } from '../context/AgentContext';
 
 type CalendarMetric = 'submitted' | 'issued';
 
@@ -66,8 +67,6 @@ const compactUsd = new Intl.NumberFormat('en-US', {
   notation: 'compact',
   maximumFractionDigits: 1,
 });
-
-const dailyGoal = 1200;
 
 const pipeline = [
   { label: 'Submitted', policies: 2, ap: 1047, color: '#94A3B8' },
@@ -189,10 +188,11 @@ const getMetric = (day: DayPerformance, metric: CalendarMetric) => metric === 's
   ? { ap: day.submittedAp, policies: day.submittedPolicies }
   : { ap: day.issuedAp, policies: day.issuedPolicies };
 
-const getDayTone = (day: DayPerformance, metric: CalendarMetric) => {
+const getDayTone = (day: DayPerformance, metric: CalendarMetric, dailyGoal: number | null, isPlanDate: boolean) => {
   const { ap } = getMetric(day, metric);
   if (!day.inMonth) return 'border-transparent bg-white/45 text-slate-300';
   if (ap === 0) return 'border-slate-100 bg-white text-slate-300';
+  if (metric !== 'submitted' || !dailyGoal || !isPlanDate) return 'border-slate-200 bg-slate-50 text-slate-800';
   if (ap >= dailyGoal) return 'border-emerald-200 bg-emerald-50/80 text-emerald-900';
   return 'border-rose-200 bg-rose-50/75 text-rose-800';
 };
@@ -204,6 +204,13 @@ type BookOfBusinessDashboardProps = {
 
 export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = ({ agentId, scope = 'agent' }) => {
   const isAgencyScope = scope === 'agency';
+  const { incomePlan, incomePlanLoading, incomePlanError } = useAgentContext();
+  const activeIncomePlan = isAgencyScope ? null : incomePlan;
+  const dailyGoal = activeIncomePlan ? Number(activeIncomePlan.daily_ap_target) : null;
+  const monthlyGoal = activeIncomePlan ? Number(activeIncomePlan.monthly_ap_target) : null;
+  const isWithinPlan = (date: string) => Boolean(activeIncomePlan
+    && (!activeIncomePlan.plan_start_date || date >= activeIncomePlan.plan_start_date)
+    && (!activeIncomePlan.plan_end_date || date <= activeIncomePlan.plan_end_date));
   const [metric, setMetric] = useState<CalendarMetric>('submitted');
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const today = new Date();
@@ -447,9 +454,13 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
   const selectedDay = calendarDays.find(day => day.date === selectedDate) || inMonthDays[0];
   const selectedMetric = getMetric(selectedDay, metric);
   const monthlyAp = inMonthDays.reduce((total, day) => total + getMetric(day, metric).ap, 0);
-  const daysWorked = inMonthDays.filter(day => getMetric(day, metric).ap > 0).length;
-  const daysHit = inMonthDays.filter(day => getMetric(day, metric).ap >= dailyGoal).length;
-  const goalAttainment = daysWorked ? Math.round((monthlyAp / (daysWorked * dailyGoal)) * 100) : 0;
+  const planDays = inMonthDays.filter(day => isWithinPlan(day.date));
+  const planPeriodAp = planDays.reduce((total, day) => total + getMetric(day, metric).ap, 0);
+  const daysWorked = planDays.filter(day => getMetric(day, metric).ap > 0).length;
+  const hasSubmittedGoal = metric === 'submitted' && Boolean(dailyGoal && monthlyGoal && planDays.length);
+  const daysHit = hasSubmittedGoal ? planDays.filter(day => getMetric(day, metric).ap >= Number(dailyGoal)).length : 0;
+  const goalAttainment = hasSubmittedGoal ? Math.round((planPeriodAp / Number(monthlyGoal)) * 100) : null;
+  const selectedDateHasGoal = metric === 'submitted' && Boolean(dailyGoal) && isWithinPlan(selectedDay.date);
   const bestDay = inMonthDays.reduce(
     (best, day) => getMetric(day, metric).ap > getMetric(best, metric).ap ? day : best,
     inMonthDays[0],
@@ -647,8 +658,8 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
           <div className="grid grid-cols-2 border-b border-slate-100 sm:grid-cols-4">
             {[
               { label: 'Month AP', value: monthlyLoading ? 'Loading...' : monthlyError ? '—' : usd.format(monthlyAp), helper: metric === 'submitted' ? 'submitted premium' : 'issued and paid premium' },
-              { label: 'Goal attainment', value: monthlyLoading ? '—' : `${goalAttainment}%`, helper: 'against days worked', accent: true },
-              { label: 'Days hit', value: monthlyLoading ? '—' : `${daysHit} / ${daysWorked}`, helper: 'goal days / days worked' },
+              { label: 'Goal attainment', value: monthlyLoading || incomePlanLoading || goalAttainment === null ? '—' : `${goalAttainment}%`, helper: incomePlanError ? 'goal temporarily unavailable' : hasSubmittedGoal ? `against ${usd.format(Number(monthlyGoal))} monthly target` : 'set an Income Game Plan', accent: true },
+              { label: 'Days hit', value: monthlyLoading || incomePlanLoading || !hasSubmittedGoal ? '—' : `${daysHit} / ${daysWorked}`, helper: incomePlanError ? 'goal temporarily unavailable' : hasSubmittedGoal ? 'goal days / production days' : 'set an Income Game Plan' },
               { label: 'Best day', value: monthlyLoading || !monthlyAp ? '—' : compactUsd.format(getMetric(bestDay, metric).ap), helper: monthlyError ? 'Unable to load' : monthlyAp ? monthDayFormatter.format(new Date(`${bestDay.date}T00:00:00Z`)) : 'No production yet' },
             ].map((stat, index) => (
               <div key={stat.label} className={`px-6 py-5 ${index > 0 ? 'border-l border-slate-100' : ''}`}>
@@ -670,25 +681,26 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
               {calendarDays.map(day => {
                 const value = getMetric(day, metric);
                 const selected = selectedDate === day.date;
-                const percent = Math.round((value.ap / dailyGoal) * 100);
+                const dayHasGoal = metric === 'submitted' && Boolean(dailyGoal) && isWithinPlan(day.date);
+                const percent = dayHasGoal ? Math.round((value.ap / Number(dailyGoal)) * 100) : null;
                 return (
                   <button
                     key={day.date}
                     type="button"
                     onClick={() => setSelectedDate(day.date)}
-                    className={`relative min-h-[5.4rem] rounded-xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${getDayTone(day, metric)} ${selected ? 'ring-2 ring-amber-400 ring-offset-2' : ''}`}
+                    className={`relative min-h-[5.4rem] rounded-xl border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${getDayTone(day, metric, dailyGoal, dayHasGoal)} ${selected ? 'ring-2 ring-amber-400 ring-offset-2' : ''}`}
                     aria-label={`${day.date}: ${usd.format(value.ap)}`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-[10px] font-black opacity-70">{day.day}</span>
                       {value.policies > 0 && (
-                        <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-black text-white ${value.ap >= dailyGoal ? 'bg-emerald-500' : 'bg-rose-400'}`}>{value.policies}</span>
+                        <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-black text-white ${dayHasGoal ? value.ap >= Number(dailyGoal) ? 'bg-emerald-500' : 'bg-rose-400' : 'bg-slate-400'}`}>{value.policies}</span>
                       )}
                     </div>
                     <p className={`mt-2 text-sm font-black ${value.ap === 0 ? 'text-slate-300' : ''}`}>{value.ap ? compactUsd.format(value.ap) : '—'}</p>
-                    {value.ap > 0 && <p className="mt-0.5 text-[8px] font-bold opacity-55">{percent}% of goal</p>}
-                    {value.ap > 0 && (
-                      <span className={`absolute inset-x-2 bottom-1.5 h-0.5 rounded-full ${value.ap >= dailyGoal ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                    {value.ap > 0 && percent !== null && <p className="mt-0.5 text-[8px] font-bold opacity-55">{percent}% of goal</p>}
+                    {value.ap > 0 && dayHasGoal && (
+                      <span className={`absolute inset-x-2 bottom-1.5 h-0.5 rounded-full ${value.ap >= Number(dailyGoal) ? 'bg-emerald-400' : 'bg-rose-400'}`} />
                     )}
                   </button>
                 );
@@ -703,15 +715,15 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
               <CalendarDays className="h-3.5 w-3.5" /> {metric === 'submitted' ? 'Submitted' : 'Issued & paid'} · {dayFormatter.format(new Date(`${selectedDay.date}T00:00:00Z`))}
             </p>
             <p className="mt-4 text-4xl font-black tracking-tight text-slate-950">{usd.format(selectedMetric.ap)}</p>
-            <p className="mt-1 text-xs font-semibold text-slate-400">{selectedMetric.policies} {selectedMetric.policies === 1 ? 'policy' : 'policies'} · goal {usd.format(dailyGoal)}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-400">{selectedMetric.policies} {selectedMetric.policies === 1 ? 'policy' : 'policies'}{selectedDateHasGoal ? ` · goal ${usd.format(Number(dailyGoal))}` : ''}</p>
           </div>
 
           <div className="p-6 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${selectedMetric.ap >= dailyGoal ? 'bg-emerald-100 text-emerald-600' : selectedMetric.ap > 0 ? 'bg-rose-100 text-rose-500' : 'bg-slate-100 text-slate-400'}`}>
+            <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${selectedDateHasGoal && selectedMetric.ap >= Number(dailyGoal) ? 'bg-emerald-100 text-emerald-600' : selectedDateHasGoal && selectedMetric.ap > 0 ? 'bg-rose-100 text-rose-500' : 'bg-slate-100 text-slate-400'}`}>
               {selectedMetric.ap > 0 ? <CircleDollarSign className="h-5 w-5" /> : <BookOpen className="h-5 w-5" />}
             </div>
             <p className="mt-4 text-sm font-black text-slate-950">
-              {selectedMetric.ap >= dailyGoal ? 'Daily goal cleared' : selectedMetric.ap > 0 ? `${usd.format(dailyGoal - selectedMetric.ap)} short of goal` : 'No business recorded'}
+              {selectedDateHasGoal && selectedMetric.ap >= Number(dailyGoal) ? 'Daily goal cleared' : selectedDateHasGoal && selectedMetric.ap > 0 ? `${usd.format(Number(dailyGoal) - selectedMetric.ap)} short of goal` : selectedMetric.ap > 0 ? 'Business recorded' : 'No business recorded'}
             </p>
             <p className="mt-2 text-xs font-semibold leading-5 text-slate-400">
               {selectedMetric.ap > 0

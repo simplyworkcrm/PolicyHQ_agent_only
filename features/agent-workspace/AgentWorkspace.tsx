@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BusinessGamification } from './components/BusinessGamification';
 import { BookOfBusinessDashboard } from './components/BookOfBusinessDashboard';
+import { IncomeGamePlanManagerPage, IncomeGamePlanPage } from './components/income-game-plan/IncomeGamePlan';
 import { StateProductionPanels } from './components/StateProductionPanels';
 import goalsUniverseBackground from './assets/goals-universe-background.jpg';
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
@@ -3618,7 +3619,7 @@ const MyBusinessExpenseLog = ({
   );
 };
 
-type MyBusinessTab = 'gamification' | 'overview' | 'policies' | 'americo-policies' | 'aetna-policies' | 'aflac-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
+type MyBusinessTab = 'gamification' | 'overview' | 'income-game-plan' | 'policies' | 'americo-policies' | 'aetna-policies' | 'aflac-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
 type WorkspaceNavView = 'agent' | 'agency';
 
 const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
@@ -3638,6 +3639,8 @@ const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
 
       {tab === 'gamification' ? (
         <MyBusinessGamification selectedAgentId={selectedBusinessAgentId} />
+      ) : tab === 'income-game-plan' ? (
+        <IncomeGamePlanPage />
       ) : tab === 'overview' ? (
         <BookOfBusinessDashboard agentId={selectedBusinessAgentId || ''} />
       ) : tab === 'americo-policies' ? (
@@ -3685,7 +3688,10 @@ const AgentLayout: React.FC = () => {
     availableFeatures,
     subAgents,
     viewingAgentName,
-    hasAgentProfile
+    hasAgentProfile,
+    incomePlan,
+    incomePlanLoading,
+    incomePlanError,
   } = useAgentContext();
   const location = useLocation();
   const navigate = useNavigate();
@@ -3755,6 +3761,7 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/leaderboard/realtime')) return 'Realtime Leaderboard';
     if (path.startsWith('/leaderboard/trainer/')) return 'Trainer Performance';
     if (path === '/business' || path === '/business/overview') return 'Book of Business';
+    if (path === '/business/income-game-plan') return 'Income Game Plan';
     if (path === '/business/hall-of-fame' || path === '/business/goals') return 'Hall of Fame';
     if (path.startsWith('/business/policies') || path === '/policies' || path === '/policies/v2') return 'Policies';
     if (path.startsWith('/business/activity-log')) return 'Daily Activity';
@@ -3785,7 +3792,7 @@ const AgentLayout: React.FC = () => {
   const featureKey = (() => {
     const path = location.pathname;
     if (path === '/' || path === '') return 'overview';
-    if (path === '/business' || path === '/business/overview' || path.startsWith('/business/activity-log') || path.startsWith('/business/expense-log')) return 'overview';
+    if (path === '/business' || path === '/business/overview' || path === '/business/income-game-plan' || path.startsWith('/business/activity-log') || path.startsWith('/business/expense-log')) return 'overview';
     if (path.startsWith('/business/splits')) return 'splits';
     if (path.startsWith('/business/commissions')) return 'commissions';
     if (path.startsWith('/business/debt-recovery')) return 'debts';
@@ -3940,12 +3947,12 @@ const AgentLayout: React.FC = () => {
         {/* Daily AP goal shortcut */}
         <button
           type="button"
-          onClick={() => navigate(workspaceNavView === 'agency' ? '/downlines' : '/business/overview')}
+          onClick={() => navigate(workspaceNavView === 'agency' ? '/downlines' : '/business/income-game-plan')}
           className={`group mb-3 mt-3 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-left text-white shadow-lg shadow-slate-300/40 transition-all hover:-translate-y-0.5 hover:shadow-xl ${
             isSidebarCompact ? 'flex h-12 items-center justify-center p-2' : 'w-full p-3.5'
           }`}
-          aria-label={`Open ${workspaceNavView === 'agency' ? 'Agency' : 'Agent'} Overview`}
-          title={`Daily AP Goal — open ${workspaceNavView === 'agency' ? 'Agency' : 'Agent'} Overview`}
+          aria-label={workspaceNavView === 'agency' ? 'Open Agency Overview' : 'Open Income Game Plan'}
+          title={workspaceNavView === 'agency' ? 'Daily AP Goal — open Agency Overview' : 'Daily AP Goal — open Income Game Plan'}
         >
           <div className={`flex items-center ${isSidebarCompact ? 'justify-center' : 'gap-3'}`}>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 shadow-md shadow-amber-950/20 transition-transform group-hover:scale-105">
@@ -3953,13 +3960,13 @@ const AgentLayout: React.FC = () => {
             </span>
             {!isSidebarCompact && (
               <div className="min-w-0">
-                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/45">Daily AP Goal</p>
-                <p className="mt-0.5 text-lg font-black leading-none">$1,200</p>
+                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/45">{incomePlan ? 'Daily AP Goal' : 'Income Plan'}</p>
+                <p className="mt-0.5 text-lg font-black leading-none">{incomePlanLoading ? 'Loading…' : incomePlanError ? 'Goal unavailable' : incomePlan ? currencyFormatter.format(Number(incomePlan.daily_ap_target)) : 'Set your AP target'}</p>
               </div>
             )}
           </div>
           {!isSidebarCompact && (
-            <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">Contract 115% · 75% advance</p>
+            <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">{incomePlanLoading ? 'Checking for your current plan' : incomePlanError ? 'Open to retry loading your plan' : incomePlan ? `${Number(incomePlan.commission_level)}% commission` : 'Build and lock in your income plan'}</p>
           )}
         </button>
 
@@ -4250,6 +4257,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/services" element={<ServicesPage />} />
                   <Route path="/business" element={<Navigate to="/business/overview" replace />} />
                   <Route path="/business/overview" element={<MyBusinessPage tab="overview" />} />
+                  <Route path="/business/income-game-plan" element={<MyBusinessPage tab="income-game-plan" />} />
                   <Route path="/business/hall-of-fame" element={<MyBusinessPage tab="gamification" />} />
                   <Route path="/business/goals" element={<Navigate to="/business/hall-of-fame" replace />} />
                   <Route path="/business/policies" element={<MyBusinessPage tab="policies" />} />
@@ -4269,6 +4277,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/downlines/team" element={<AgentDownlines viewMode="team" />} />
                   <Route path="/downlines/production" element={<AgentDownlines viewMode="policies" />} />
                   <Route path="/downlines/expenses" element={<AgentDownlines viewMode="expenses" />} />
+                  <Route path="/downlines/:agentId/income-game-plan" element={<IncomeGamePlanManagerPage />} />
                   <Route path="/downlines/:agentId" element={<DownlineAgentDetails />} />
                   <Route path="/commissions" element={<Navigate to="/business/commissions" replace />} />
                   <Route path="/splits" element={<Navigate to="/business/splits" replace />} />

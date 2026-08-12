@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { SubAgent } from '../../../shared/types/index';
+import { publishedIncomePlanApi } from '../services/incomeGamePlanApi';
+import { IncomePlanPublishedSnapshot } from '../types/incomeGamePlan';
 
 interface AgentContextType {
   primaryAgentId: string;
@@ -15,6 +17,10 @@ interface AgentContextType {
   viewingAgentName: string;
   hasAgentProfile: boolean;
   checkAgentFeature: (agentId: string, feature: string) => boolean;
+  incomePlan: IncomePlanPublishedSnapshot | null;
+  incomePlanLoading: boolean;
+  incomePlanError: boolean;
+  refreshIncomePlan: () => Promise<IncomePlanPublishedSnapshot | null>;
 }
 
 const AgentContext = createContext<AgentContextType | undefined>(undefined);
@@ -55,6 +61,41 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Maintain backward compatibility for single-agent features
   const impersonatedId = selectedImpersonatedIds.length === 1 ? selectedImpersonatedIds[0] : null;
   const currentAgentId = isImpersonating ? selectedImpersonatedIds[0] : (primaryAgent?.agentId || '');
+  const [incomePlan, setIncomePlan] = useState<IncomePlanPublishedSnapshot | null>(null);
+  const [incomePlanLoading, setIncomePlanLoading] = useState(true);
+  const [incomePlanError, setIncomePlanError] = useState(false);
+  const [incomePlanAgentId, setIncomePlanAgentId] = useState('');
+
+  const refreshIncomePlan = useCallback(async () => {
+    if (!currentAgentId) {
+      setIncomePlan(null);
+      setIncomePlanAgentId('');
+      setIncomePlanLoading(false);
+      setIncomePlanError(false);
+      return null;
+    }
+    setIncomePlanLoading(true);
+    setIncomePlanError(false);
+    try {
+      const plan = await publishedIncomePlanApi.get(currentAgentId);
+      setIncomePlan(plan);
+      setIncomePlanAgentId(currentAgentId);
+      setIncomePlanError(false);
+      return plan;
+    } catch (error) {
+      console.error('Unable to load the current Income Game Plan', error);
+      setIncomePlan(null);
+      setIncomePlanAgentId(currentAgentId);
+      setIncomePlanError(true);
+      return null;
+    } finally {
+      setIncomePlanLoading(false);
+    }
+  }, [currentAgentId]);
+
+  useEffect(() => { void refreshIncomePlan(); }, [refreshIncomePlan]);
+  const currentIncomePlan = incomePlanAgentId === currentAgentId ? incomePlan : null;
+  const currentIncomePlanLoading = incomePlanLoading || incomePlanAgentId !== currentAgentId;
   
   // For multi-select aware features
   const selectedAgentIds = isImpersonating ? [...selectedImpersonatedIds] : [primaryAgent?.agentId || ''];
@@ -104,7 +145,11 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       subAgents,
       viewingAgentName,
       hasAgentProfile,
-      checkAgentFeature
+      checkAgentFeature,
+      incomePlan: currentIncomePlan,
+      incomePlanLoading: currentIncomePlanLoading,
+      incomePlanError,
+      refreshIncomePlan,
     }}>
       {children}
     </AgentContext.Provider>
