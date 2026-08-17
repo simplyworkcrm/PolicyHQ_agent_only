@@ -56,8 +56,8 @@ export const NotificationBell: React.FC = () => {
         className={`relative z-50 flex h-10 w-10 items-center justify-center rounded-full border border-transparent shadow-sm transition-all hover:-translate-y-px hover:shadow-md
             ${isOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 hover:text-slate-700'}
         `}
-        title="System Announcements"
-        aria-label={unreadCount > 0 ? `System Announcements, ${unreadCount} unread` : 'System Announcements'}
+        title="Internal notification"
+        aria-label={unreadCount > 0 ? `Internal notification, ${unreadCount} unread` : 'Internal notification'}
       >
         <Bell className="h-4 w-4" strokeWidth={2} />
         {unreadCount > 0 && (
@@ -75,7 +75,7 @@ export const NotificationBell: React.FC = () => {
                           <div className="p-2 bg-blue-50 rounded-xl text-blue-600">
                              <Megaphone className="w-5 h-5" />
                           </div>
-                          <h3 className="font-black text-slate-900 text-lg tracking-tight">Announcements</h3>
+                          <h3 className="font-black text-slate-900 text-lg tracking-tight">Internal notification</h3>
                       </div>
                       <div className="flex items-center gap-2">
                           {notifications.some(n => n.type === type && !n.isRead) && (
@@ -83,7 +83,7 @@ export const NotificationBell: React.FC = () => {
                                   <CheckCheck className="w-4 h-4" />
                               </button>
                           )}
-                          <button onClick={handleClear} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-xl transition-colors" title="Clear announcements">
+                          <button onClick={handleClear} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-xl transition-colors" title="Clear internal notifications">
                               <Trash2 className="w-4 h-4" />
                           </button>
                           <button onClick={handleClose} className="p-2 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-xl transition-colors">
@@ -102,7 +102,7 @@ export const NotificationBell: React.FC = () => {
                           </div>
                           <div className="relative">
                               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search announcements..." className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 pl-10 pr-9 text-[11px] font-bold text-slate-700 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-brand-500/10 focus:border-brand-200 transition-all shadow-inner" />
+                              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search internal notifications..." className="w-full bg-slate-50 border border-slate-100 rounded-xl py-2.5 pl-10 pr-9 text-[11px] font-bold text-slate-700 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-brand-500/10 focus:border-brand-200 transition-all shadow-inner" />
                               {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"><X className="w-3 h-3" /></button>}
                           </div>
                       </div>
@@ -131,7 +131,7 @@ export const NotificationBell: React.FC = () => {
                       ) : (
                           <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4 opacity-60">
                               <div className="w-16 h-16 rounded-3xl bg-slate-100 flex items-center justify-center"><Megaphone className="w-7 h-7 text-slate-200" /></div>
-                              <p className="text-xs font-bold uppercase tracking-wider">{searchQuery ? `No results for "${searchQuery}"` : 'No announcements'}</p>
+                              <p className="text-xs font-bold uppercase tracking-wider">{searchQuery ? `No results for "${searchQuery}"` : 'No internal notifications'}</p>
                           </div>
                       )}
                   </div>

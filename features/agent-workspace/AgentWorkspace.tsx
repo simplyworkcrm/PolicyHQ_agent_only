@@ -37,7 +37,6 @@ import {
   Store,
   Settings,
   CircleHelp,
-  Bot,
   Moon,
   Search,
   SlidersHorizontal,
@@ -75,7 +74,7 @@ import { AgentSplits } from './components/AgentSplits';
 import { AgentDebtRecovery } from './components/AgentDebtRecovery';
 import { AgentDownlines } from './components/AgentDownlines';
 import { DownlineAgentDetails } from './components/DownlineAgentDetails';
-import { AgentTickets } from './components/AgentTickets';
+import { AgentTickets } from './components/TicketDeskWorkspace';
 import { AgentleaderboardRealtime, TrainerDetailPage } from './components/AgentleaderboardRealtime';
 import { CallReportPolicytek } from './components/CallReportPolicytek';
 import { CallReportWavv } from './components/CallReportWavv';
@@ -91,7 +90,6 @@ import { AetnaBusinessPolicies, AflacBusinessPolicies } from './components/Aetna
 import { ModuleSwitcher } from '../../shared/components/ModuleSwitcher';
 import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
-import { NotificationSale } from '../../shared/components/NotificationSale';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
 import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myBusinessActivityApi } from './services/myBusinessActivityApi';
 import { AssistPolicySplit, MyBusinessExpenseRow, UtilityAgent, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
@@ -3726,6 +3724,7 @@ const AgentLayout: React.FC = () => {
   const isBusinessPage = location.pathname.startsWith('/business') || location.pathname.startsWith('/policies');
   const isAgencyPage = location.pathname.startsWith('/downlines');
   const isPoliciesPage = location.pathname.startsWith('/business/policies') || location.pathname === '/policies' || location.pathname === '/policies/v2';
+  const isTicketPage = location.pathname.startsWith('/tickets');
 
   useEffect(() => {
     const routeView: WorkspaceNavView | null = isAgencyPage ? 'agency' : isBusinessPage ? 'agent' : null;
@@ -4047,7 +4046,7 @@ const AgentLayout: React.FC = () => {
                   <h1 className={`min-w-0 truncate text-base font-semibold tracking-tight ${isDarkRoute ? 'text-white' : 'text-slate-900'}`}>
                     {pageTitle}
                   </h1>
-                  <div
+                  {!isTicketPage && <div
                     role="tablist"
                     aria-label="Workspace view"
                     className={`hidden items-center gap-0.5 rounded-full p-0.5 sm:flex ${isDarkRoute ? 'bg-white/5' : 'bg-slate-100/90'}`}
@@ -4084,7 +4083,7 @@ const AgentLayout: React.FC = () => {
                       <Building2 className={`h-3 w-3 ${workspaceNavView === 'agency' ? 'text-brand-400' : 'text-slate-400'}`} strokeWidth={2.2} />
                       Agency View
                     </button>
-                  </div>
+                  </div>}
                 </div>
                 <div className="flex items-center gap-2.5">
                     <ModuleSwitcher />
@@ -4101,19 +4100,9 @@ const AgentLayout: React.FC = () => {
                     >
                       {isNightMode ? <Sun className="h-4 w-4" strokeWidth={2} /> : <Moon className="h-4 w-4" strokeWidth={2} />}
                     </button>
-                    <button
-                      type="button"
-                      disabled
-                      title="I am coming soon and currently under training. Hope to meet you soon!"
-                      aria-label="AI assistant coming soon"
-                      className="inline-flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-transparent bg-white text-slate-300 shadow-sm"
-                    >
-                      <Bot className="h-4 w-4" strokeWidth={2} />
-                    </button>
                     <div className="flex items-center gap-2.5">
                         <NotificationDirect />
                         <NotificationBell />
-                        <NotificationSale />
                     </div>
                     <div className="relative z-50 ml-1 hidden sm:block">
                       <button

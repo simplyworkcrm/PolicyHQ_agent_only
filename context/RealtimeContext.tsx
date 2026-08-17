@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { XanoClient } from '@xano/js-sdk';
 import { useAuth } from './AuthContext';
 
@@ -86,25 +86,31 @@ const playNotificationSound = () => {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
-    if (ctx.state === 'suspended') ctx.resume();
-    const t = ctx.currentTime;
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    osc1.type = 'sine';
-    osc2.type = 'sine';
-    osc1.frequency.setValueAtTime(1046.50, t); 
-    osc2.frequency.setValueAtTime(1318.51, t);
-    osc1.connect(gainNode);
-    osc2.connect(gainNode);
-    gainNode.connect(ctx.destination);
-    gainNode.gain.setValueAtTime(0, t);
-    gainNode.gain.linearRampToValueAtTime(0.1, t + 0.01);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-    osc1.start(t);
-    osc2.start(t);
-    osc1.stop(t + 1.5);
-    osc2.stop(t + 1.5);
+    const play = () => {
+      const t = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(1046.50, t);
+      osc2.frequency.setValueAtTime(1318.51, t);
+      osc1.connect(gainNode);
+      osc2.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      gainNode.gain.setValueAtTime(0, t);
+      gainNode.gain.linearRampToValueAtTime(0.1, t + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+      osc1.start(t);
+      osc2.start(t);
+      osc1.stop(t + 1.5);
+      osc2.stop(t + 1.5);
+    };
+    if (ctx.state === 'suspended') {
+      void ctx.resume().then(play).catch(error => console.error('Audio resume failed', error));
+    } else {
+      play();
+    }
   } catch (error) {
     console.error("Failed to play notification sound:", error);
   }
@@ -177,6 +183,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [hasNew, setHasNew] = useState(false);
   const [latestSale, setLatestSale] = useState<SaleEvent | null>(null);
   const [realtimeSetupAttempt, setRealtimeSetupAttempt] = useState(0);
+  const seenSaleIds = useRef(new Set<string>());
 
   useEffect(() => {
     setNotifications(prev => {
@@ -244,6 +251,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let userChannel: any = null;
     let broadcastChannel: any = null;
     let leaderBoardChannel: any = null;
+    let personalUserChannel: any = null;
     let retryTimer: number | undefined;
     let isCancelled = false;
 
@@ -252,6 +260,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       userChannel = xanoClient.channel(`notification_channel/${user.id}`);
       broadcastChannel = xanoClient.channel(`notification_channel/*`);
       leaderBoardChannel = xanoClient.channel(`vipaleaderboard`);
+      personalUserChannel = xanoClient.channel(`user/${user.id}`);
       setIsConnected(true);
     } catch (e) {
       setIsConnected(false);
@@ -290,7 +299,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       const record = payload.data || payload;
       const saleEvent: SaleEvent = {
-          id: record.id,
+          id: String(record.id || ''),
           created_at: record.created_at,
           annual_premium: Number(record.annual_premium) || 0,
           agentOwner_name: record.agentOwner_name,
@@ -302,6 +311,8 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           policyCarrier: record.policyCarrier
       };
       if (saleEvent.agentOwner_name) {
+          if (saleEvent.id && seenSaleIds.current.has(saleEvent.id)) return;
+          if (saleEvent.id) seenSaleIds.current.add(saleEvent.id);
           setLatestSale(saleEvent);
           const saleNotification: Notification = {
               id: Date.now(),
@@ -316,9 +327,19 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     };
 
+    const personalChannelListener = (message: any) => {
+      notificationListener(message, 'direct');
+    };
+
+    const personalChannelErrorListener = (error: unknown) => {
+      let detail = '';
+      try { detail = JSON.stringify(error); } catch { detail = String(error); }
+      console.error(`Personal realtime channel error: ${detail}`);
+    };
     if (userChannel && typeof userChannel.on === 'function') userChannel.on((msg: any) => notificationListener(msg, 'direct'));
     if (broadcastChannel && typeof broadcastChannel.on === 'function') broadcastChannel.on((msg: any) => notificationListener(msg, 'broadcast'));
     if (leaderBoardChannel && typeof leaderBoardChannel.on === 'function') leaderBoardChannel.on(saleListener);
+    if (personalUserChannel && typeof personalUserChannel.on === 'function') personalUserChannel.on(personalChannelListener, personalChannelErrorListener);
 
     return () => {
       isCancelled = true;
@@ -335,6 +356,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       safeUnsubscribe(userChannel);
       safeUnsubscribe(broadcastChannel);
       safeUnsubscribe(leaderBoardChannel);
+      safeUnsubscribe(personalUserChannel);
     };
   }, [xanoClient, token, user, realtimeSetupAttempt]);
 
