@@ -93,6 +93,7 @@ import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
 import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myBusinessActivityApi } from './services/myBusinessActivityApi';
 import { AssistPolicySplit, MyBusinessExpenseRow, UtilityAgent, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
+import { agentTicketsApi, type ImageMetadata } from './services/agentTicketsApi';
 
 const useDelayedHover = (enabled: boolean, closeDelay = 400) => {
   const [mounted, setMounted] = React.useState(false);
@@ -2281,7 +2282,16 @@ interface ExpenseFormState {
   notes: string;
   type: 'personal' | 'assist';
   agentOnAssist: string;
-  receipt: File | null;
+}
+
+interface ExpenseReceiptDraft {
+  key: string;
+  name: string;
+  size: number | null;
+  previewUrl: string | null;
+  metadata: ImageMetadata | null;
+  uploading: boolean;
+  error: string | null;
 }
 
 const emptyExpenseForm = (): ExpenseFormState => ({
@@ -2291,7 +2301,6 @@ const emptyExpenseForm = (): ExpenseFormState => ({
   notes: '',
   type: 'personal',
   agentOnAssist: '',
-  receipt: null,
 });
 
 const toExpenseNumber = (value: unknown) => {
@@ -2301,8 +2310,21 @@ const toExpenseNumber = (value: unknown) => {
 
 const formatExpenseCurrency = (value: unknown) => currencyFormatter.format(toExpenseNumber(value));
 
-const getExpenseReceiptDisplay = (receipt: unknown) => {
+interface ExpenseReceiptDisplay {
+  label: string;
+  url: string | null;
+}
+
+const getExpenseReceiptDisplay = (receipt: unknown): ExpenseReceiptDisplay | null => {
   if (!receipt) return null;
+
+  if (Array.isArray(receipt)) {
+    const displays = receipt.map(item => getExpenseReceiptDisplay(item)).filter(Boolean);
+    return {
+      label: `${receipt.length} receipt image${receipt.length === 1 ? '' : 's'}`,
+      url: displays.find(display => display?.url)?.url || null,
+    };
+  }
 
   if (typeof receipt === 'string') {
     return {
@@ -2322,6 +2344,30 @@ const getExpenseReceiptDisplay = (receipt: unknown) => {
   }
 
   return null;
+};
+
+const normalizeExpenseReceiptMetadata = (receipt: unknown): ImageMetadata[] => {
+  if (Array.isArray(receipt)) {
+    return receipt.filter(item => item && typeof item === 'object' && !Array.isArray(item)) as ImageMetadata[];
+  }
+
+  if (receipt && typeof receipt === 'object') return [receipt as ImageMetadata];
+  return [];
+};
+
+const expenseReceiptFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
+
+const expenseReceiptDraftFromMetadata = (metadata: ImageMetadata, index: number): ExpenseReceiptDraft => {
+  const display = getExpenseReceiptDisplay(metadata);
+  return {
+    key: `existing:${index}:${display?.label || 'receipt'}`,
+    name: display?.label || `Receipt ${index + 1}`,
+    size: null,
+    previewUrl: display?.url || null,
+    metadata,
+    uploading: false,
+    error: null,
+  };
 };
 
 const normalizeExpenseDate = (value?: string | null) => {
@@ -2535,6 +2581,7 @@ const MyBusinessExpenseLog = ({
   const [formOpen, setFormOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<MyBusinessExpenseRow | null>(null);
   const [form, setForm] = useState<ExpenseFormState>(() => emptyExpenseForm());
+  const [receiptDrafts, setReceiptDrafts] = useState<ExpenseReceiptDraft[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
@@ -2553,6 +2600,7 @@ const MyBusinessExpenseLog = ({
   const [splitSearch, setSplitSearch] = useState('');
   const datePickerRef = useRef<HTMLDivElement>(null);
   const assistAgentPickerRef = useRef<HTMLDivElement>(null);
+  const receiptDraftsRef = useRef<ExpenseReceiptDraft[]>([]);
   const selectedAssistAgent = useMemo(
     () => assistAgents.find(agent => agent.id === form.agentOnAssist) || null,
     [assistAgents, form.agentOnAssist],
@@ -2588,6 +2636,72 @@ const MyBusinessExpenseLog = ({
     totals.splitPremium += annualPremium * (splitPercent / 100);
     return totals;
   }, { annualPremium: 0, splitPremium: 0 }), [splitPolicies]);
+
+  useEffect(() => {
+    receiptDraftsRef.current = receiptDrafts;
+  }, [receiptDrafts]);
+
+  useEffect(() => () => {
+    receiptDraftsRef.current.forEach(draft => {
+      if (draft.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(draft.previewUrl);
+    });
+  }, []);
+
+  const replaceReceiptDrafts = useCallback((next: ExpenseReceiptDraft[]) => {
+    setReceiptDrafts(current => {
+      current.forEach(draft => {
+        if (draft.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(draft.previewUrl);
+      });
+      return next;
+    });
+  }, []);
+
+  const selectExpenseReceipts = useCallback(async (files: File[]) => {
+    const imageFiles = files.filter(file => file.type.toLowerCase().startsWith('image/'));
+    if (imageFiles.length !== files.length) {
+      setFormError('Only image files can be used as receipts.');
+    } else {
+      setFormError(null);
+    }
+
+    const existingKeys = new Set(receiptDraftsRef.current.map(draft => draft.key));
+    const newFiles = imageFiles.filter(file => !existingKeys.has(expenseReceiptFileKey(file)));
+    if (!newFiles.length) return;
+
+    const drafts = newFiles.map<ExpenseReceiptDraft>(file => ({
+      key: expenseReceiptFileKey(file),
+      name: file.name,
+      size: file.size,
+      previewUrl: URL.createObjectURL(file),
+      metadata: null,
+      uploading: true,
+      error: null,
+    }));
+    setReceiptDrafts(current => [...current, ...drafts]);
+
+    await Promise.all(newFiles.map(async file => {
+      const key = expenseReceiptFileKey(file);
+      try {
+        const metadata = await agentTicketsApi.createImageMetadata(file);
+        setReceiptDrafts(current => current.map(draft => (
+          draft.key === key ? { ...draft, metadata, uploading: false, error: null } : draft
+        )));
+      } catch (err) {
+        const uploadError = err instanceof Error ? err.message : 'Unable to process this image.';
+        setReceiptDrafts(current => current.map(draft => (
+          draft.key === key ? { ...draft, uploading: false, error: uploadError } : draft
+        )));
+      }
+    }));
+  }, []);
+
+  const removeExpenseReceipt = useCallback((key: string) => {
+    setReceiptDrafts(current => {
+      const target = current.find(draft => draft.key === key);
+      if (target?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(target.previewUrl);
+      return current.filter(draft => draft.key !== key);
+    });
+  }, []);
 
   useEffect(() => {
     if (!formOpen || form.type !== 'assist' || assistAgents.length > 0) return;
@@ -2728,6 +2842,7 @@ const MyBusinessExpenseLog = ({
   };
 
   const openCreateForm = () => {
+    replaceReceiptDrafts([]);
     setEditingRow(null);
     setForm(emptyExpenseForm());
     setFormError(null);
@@ -2739,6 +2854,7 @@ const MyBusinessExpenseLog = ({
   };
 
   const openEditForm = (row: MyBusinessExpenseRow) => {
+    replaceReceiptDrafts(normalizeExpenseReceiptMetadata(row.receipt).map(expenseReceiptDraftFromMetadata));
     setEditingRow(row);
     setForm({
       expenseDate: normalizeExpenseDate(row.expense_date) || toLocalActivityDate(),
@@ -2747,7 +2863,6 @@ const MyBusinessExpenseLog = ({
       notes: String(row.notes || ''),
       type: row.type === 'assist' ? 'assist' : row.type === 'personal' ? 'personal' : expenseType,
       agentOnAssist: String(row.agent_on_assist || ''),
-      receipt: null,
     });
     setFormError(null);
     setMessage(null);
@@ -2766,6 +2881,7 @@ const MyBusinessExpenseLog = ({
     setDatePickerOpen(false);
     setAssistAgentPickerOpen(false);
     setAssistAgentSearch('');
+    replaceReceiptDrafts([]);
   };
 
   const handleSaveExpense = async () => {
@@ -2795,6 +2911,16 @@ const MyBusinessExpenseLog = ({
       return;
     }
 
+    if (receiptDrafts.some(draft => draft.uploading)) {
+      setFormError('Wait for receipt images to finish processing.');
+      return;
+    }
+
+    if (receiptDrafts.some(draft => !draft.metadata || draft.error)) {
+      setFormError('Remove any receipt image that could not be processed before saving.');
+      return;
+    }
+
     setSaving(true);
     setFormError(null);
     setMessage(null);
@@ -2808,7 +2934,7 @@ const MyBusinessExpenseLog = ({
         notes: form.notes.trim(),
         type: form.type,
         agentOnAssist: form.type === 'assist' ? form.agentOnAssist : null,
-        receipt: form.receipt,
+        receipt: receiptDrafts.map(draft => draft.metadata).filter((metadata): metadata is ImageMetadata => Boolean(metadata)),
       };
 
       if (editingRow?.id !== undefined && editingRow.id !== null) {
@@ -2822,6 +2948,7 @@ const MyBusinessExpenseLog = ({
       setFormOpen(false);
       setEditingRow(null);
       setForm(emptyExpenseForm());
+      replaceReceiptDrafts([]);
       if (form.type === expenseType) {
         await loadExpenses();
       } else {
@@ -3350,32 +3477,69 @@ const MyBusinessExpenseLog = ({
                 />
               </label>
 
-              <div className="space-y-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Receipt <span className="normal-case tracking-normal text-slate-300">(optional image)</span></span>
-                {form.receipt ? (
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white"><FileImage className="h-5 w-5" /></span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-slate-950">{form.receipt.name}</p>
-                        <p className="text-[10px] font-bold text-emerald-700">{(form.receipt.size / 1024).toFixed(1)} KB ready to upload</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Receipts <span className="normal-case tracking-normal text-slate-300">(optional images)</span></span>
+                  {receiptDrafts.length > 0 ? (
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition hover:border-amber-300 hover:text-slate-950">
+                      <Plus className="h-4 w-4 text-amber-500" />
+                      Add more
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="sr-only"
+                        onChange={event => {
+                          void selectExpenseReceipts(Array.from(event.target.files || []));
+                          event.target.value = '';
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+
+                {receiptDrafts.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {receiptDrafts.map(draft => (
+                      <div key={draft.key} className={`overflow-hidden rounded-2xl border bg-white ${draft.error ? 'border-red-200' : 'border-slate-200'}`}>
+                        <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                          {draft.previewUrl ? (
+                            <img src={draft.previewUrl} alt={draft.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-slate-300"><FileImage className="h-8 w-8" /></div>
+                          )}
+                          {draft.uploading ? (
+                            <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45 text-white"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => removeExpenseReceipt(draft.key)}
+                            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-slate-950/80 text-white shadow transition hover:bg-red-500"
+                            title={`Remove ${draft.name}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <div className="px-3 py-2">
+                          <p className="truncate text-xs font-black text-slate-900">{draft.name}</p>
+                          <p className={`mt-1 text-[10px] font-bold ${draft.error ? 'text-red-600' : draft.uploading ? 'text-amber-600' : 'text-emerald-600'}`}>
+                            {draft.error || (draft.uploading ? 'Preparing metadata...' : draft.size === null ? 'Existing receipt' : `${(draft.size / 1024).toFixed(1)} KB ready`)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <button type="button" onClick={() => setForm(current => ({ ...current, receipt: null }))} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-slate-400 shadow-sm transition hover:text-red-500" title="Remove receipt">
-                      <X className="h-4 w-4" />
-                    </button>
+                    ))}
                   </div>
                 ) : (
                   <label className="flex cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm font-black text-slate-500 transition hover:border-amber-300 hover:bg-amber-50 hover:text-slate-950">
                     <Upload className="h-5 w-5 text-amber-500" />
-                    Upload receipt image
+                    Upload receipt images
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       className="sr-only"
                       onChange={event => {
-                        const file = event.target.files?.[0] || null;
-                        setForm(current => ({ ...current, receipt: file }));
+                        void selectExpenseReceipts(Array.from(event.target.files || []));
                         event.target.value = '';
                       }}
                     />
@@ -3400,11 +3564,11 @@ const MyBusinessExpenseLog = ({
                 <button
                   type="button"
                   onClick={handleSaveExpense}
-                  disabled={saving}
+                  disabled={saving || receiptDrafts.some(draft => draft.uploading)}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-amber-200 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
                 >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {saving ? 'Saving...' : 'Save Expense'}
+                  {saving || receiptDrafts.some(draft => draft.uploading) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {saving ? 'Saving...' : receiptDrafts.some(draft => draft.uploading) ? 'Preparing images...' : 'Save Expense'}
                 </button>
               </div>
             </div>

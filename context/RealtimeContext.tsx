@@ -3,8 +3,20 @@ import { XanoClient } from '@xano/js-sdk';
 import { useAuth } from './AuthContext';
 
 export interface Notification {
-  id: number;
+  id: string | number;
+  serverId?: string;
+  notificationId?: string;
   content: string;
+  title?: string;
+  description?: string;
+  madeBy?: string;
+  eventType?: string;
+  action?: {
+    route: string;
+    entityType?: string;
+    entityId?: string;
+    tab?: string;
+  };
   timestamp: Date;
   type: 'direct' | 'broadcast' | 'leaderboard';
   isRead: boolean;
@@ -29,10 +41,12 @@ interface RealtimeContextType {
   notifications: Notification[];
   hasNew: boolean;
   latestSale: SaleEvent | null;
+  latestInternalNotification: Notification | null;
   setHasNew: (hasNew: boolean) => void;
   setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
   setLatestSale: React.Dispatch<React.SetStateAction<SaleEvent | null>>;
-  markAsRead: (id: number) => void;
+  setLatestInternalNotification: React.Dispatch<React.SetStateAction<Notification | null>>;
+  markAsRead: (id: string | number) => void;
   markAllAsRead: (type?: 'direct' | 'broadcast' | 'leaderboard') => void;
 }
 
@@ -182,6 +196,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [hasNew, setHasNew] = useState(false);
   const [latestSale, setLatestSale] = useState<SaleEvent | null>(null);
+  const [latestInternalNotification, setLatestInternalNotification] = useState<Notification | null>(null);
   const [realtimeSetupAttempt, setRealtimeSetupAttempt] = useState(0);
   const seenSaleIds = useRef(new Set<string>());
 
@@ -230,7 +245,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, []);
 
-  const markAsRead = (id: number) => {
+  const markAsRead = (id: string | number) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     // If all read, set hasNew to false
     setNotifications(current => {
@@ -273,21 +288,52 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     const notificationListener = (message: any, type: 'direct' | 'broadcast') => {
-      const content = message.payload || message.data || message;
-      const realtimeStatus = getRealtimeStatus(content);
+      let envelope = message?.payload ?? message?.data ?? message;
+      if (typeof envelope === 'string') {
+        try { envelope = JSON.parse(envelope); } catch { /* Keep plain-text notifications as-is. */ }
+      }
+      const realtimeStatus = getRealtimeStatus(envelope);
       if (realtimeStatus) {
         setIsConnected(realtimeStatus === 'connected');
         return;
       }
 
+      const content = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
+      const rawAction = content?.action;
+      const description = String(content?.description || content?.message || '')
+        .replace(/\s*(Category\s*:|Subject\s*:)/gi, '\n$1')
+        .trim();
+      const title = String(content?.title || '').trim();
+      const createdAt = Number(content?.created_at);
+      const rawMadeBy = content?.made_by;
+      const madeBy = typeof rawMadeBy === 'string'
+        ? rawMadeBy.trim()
+        : [
+            rawMadeBy?.first_name ?? rawMadeBy?.name?.first_name,
+            rawMadeBy?.last_name ?? rawMadeBy?.name?.last_name,
+          ].filter(Boolean).join(' ').trim()
+          || String(rawMadeBy?.name || rawMadeBy?.full_name || '').trim();
+
       const newNotification: Notification = {
         id: Date.now(),
-        content: typeof content === 'object' ? (content.message || JSON.stringify(content)) : content,
-        timestamp: new Date(),
+        notificationId: content?.id ? String(content.id) : undefined,
+        content: typeof content === 'object' ? (description || title || JSON.stringify(content)) : String(content),
+        title: title || undefined,
+        description: description || undefined,
+        madeBy: madeBy || undefined,
+        eventType: content?.event_type ? String(content.event_type) : undefined,
+        action: rawAction?.route ? {
+          route: String(rawAction.route),
+          entityType: rawAction.entity_type ? String(rawAction.entity_type) : undefined,
+          entityId: rawAction.entity_id ? String(rawAction.entity_id) : undefined,
+          tab: rawAction.tab ? String(rawAction.tab) : undefined,
+        } : undefined,
+        timestamp: Number.isFinite(createdAt) ? new Date(createdAt) : new Date(),
         type: type,
         isRead: false
       };
       setNotifications(prev => [newNotification, ...prev]);
+      if (type === 'broadcast') setLatestInternalNotification(newNotification);
       setHasNew(true);
       playNotificationSound();
     };
@@ -328,7 +374,7 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const personalChannelListener = (message: any) => {
-      notificationListener(message, 'direct');
+      notificationListener(message, 'broadcast');
     };
 
     const personalChannelErrorListener = (error: unknown) => {
@@ -367,9 +413,11 @@ export const RealtimeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         notifications, 
         hasNew, 
         latestSale,
+        latestInternalNotification,
         setHasNew, 
         setNotifications,
         setLatestSale,
+        setLatestInternalNotification,
         markAsRead,
         markAllAsRead
     }}>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
@@ -936,7 +937,11 @@ const SortableTicketHeader: React.FC<{
 
 export const AgentTickets: React.FC = () => {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedTicketId = searchParams.get('ticket_id');
+  const deepLinkedTab = searchParams.get('tab');
   const ticketDetailsRef = useRef<HTMLDivElement>(null);
+  const handledDeepLinkRef = useRef('');
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [isStaff, setIsStaff] = useState(false);
   const [staffChecked, setStaffChecked] = useState(false);
@@ -994,7 +999,10 @@ export const AgentTickets: React.FC = () => {
         sort: { [sortConfig.key]: sortConfig.direction },
       });
       const next = response.items.map((raw: any) => mapTicket(raw, String(raw?.status || '').trim().toLowerCase() === 'needs attention'));
-      setTickets(next);
+      setTickets(current => {
+        const linkedTicket = deepLinkedTicketId ? current.find(ticket => ticket.id === deepLinkedTicketId) : undefined;
+        return linkedTicket && !next.some(ticket => ticket.id === linkedTicket.id) ? [linkedTicket, ...next] : next;
+      });
       setPagination({
         itemsReceived: response.itemsReceived,
         curPage: response.curPage,
@@ -1005,7 +1013,7 @@ export const AgentTickets: React.FC = () => {
         itemsTotal: response.itemsTotal,
         pageTotal: response.pageTotal,
       });
-      setSelectedId(current => current && next.some(ticket => ticket.id === current) ? current : null);
+      setSelectedId(current => current && (next.some(ticket => ticket.id === current) || current === deepLinkedTicketId) ? current : null);
     } catch {
       setTickets([]);
       setSelectedId(null);
@@ -1013,7 +1021,7 @@ export const AgentTickets: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [appliedQuickFilter, debouncedSearch, isStaff, scope, sortConfig, staleOnly, ticketPage, ticketPageSize, user?.id]);
+  }, [appliedQuickFilter, debouncedSearch, deepLinkedTicketId, isStaff, scope, sortConfig, staleOnly, ticketPage, ticketPageSize, user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1039,6 +1047,38 @@ export const AgentTickets: React.FC = () => {
   useEffect(() => {
     if (staffChecked) void loadTickets();
   }, [loadTickets, staffChecked]);
+
+  useEffect(() => {
+    if (!deepLinkedTicketId || !staffChecked || loading) return;
+    setView('tickets');
+    const requestedTab: DetailTab = ['overview', 'conversation', 'activity', 'notes'].includes(String(deepLinkedTab))
+      ? deepLinkedTab as DetailTab
+      : 'overview';
+    const safeTab = requestedTab === 'notes' && !isStaff ? 'overview' : requestedTab;
+    const deepLinkKey = `${deepLinkedTicketId}:${safeTab}`;
+    if (handledDeepLinkRef.current === deepLinkKey) return;
+    handledDeepLinkRef.current = deepLinkKey;
+    setDetailTab(safeTab);
+
+    if (tickets.some(ticket => ticket.id === deepLinkedTicketId)) {
+      setSelectedId(deepLinkedTicketId);
+      return;
+    }
+
+    let cancelled = false;
+    agentTicketsApi.getTicketDetails(deepLinkedTicketId)
+      .then(response => {
+        if (cancelled) return;
+        const detail = unwrapTicketDetail(response);
+        const ticket = mapTicket({ ...detail, id: detail?.id || deepLinkedTicketId });
+        setTickets(current => current.some(item => item.id === ticket.id) ? current : [ticket, ...current]);
+        setSelectedId(ticket.id);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('The ticket from this notification could not be opened.');
+      });
+    return () => { cancelled = true; };
+  }, [deepLinkedTab, deepLinkedTicketId, isStaff, loading, staffChecked, tickets]);
 
   useEffect(() => {
     if (!isStaff) {
@@ -1112,6 +1152,17 @@ export const AgentTickets: React.FC = () => {
     void loadDetail();
     return () => { cancelled = true; };
   }, [selectedId]);
+
+  const closeTicketDetails = useCallback(() => {
+    setSelectedId(null);
+    handledDeepLinkRef.current = '';
+    if (searchParams.has('ticket_id') || searchParams.has('tab')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('ticket_id');
+      nextParams.delete('tab');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!selectedId || detailTab !== 'conversation') return;
@@ -1204,12 +1255,12 @@ export const AgentTickets: React.FC = () => {
     if (!selectedId) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
       if (ticketDetailsRef.current && !ticketDetailsRef.current.contains(event.target as Node)) {
-        setSelectedId(null);
+        closeTicketDetails();
       }
     };
     document.addEventListener('click', closeOnOutsideClick);
     return () => document.removeEventListener('click', closeOnOutsideClick);
-  }, [selectedId]);
+  }, [closeTicketDetails, selectedId]);
 
   const selectedTicket = tickets.find(ticket => ticket.id === selectedId) || null;
   const counts = useMemo(() => ({
@@ -1565,7 +1616,7 @@ export const AgentTickets: React.FC = () => {
 
       <div ref={ticketDetailsRef} className={`shrink-0 self-start transition-all duration-300 ease-in-out ${selectedTicket ? 'w-[42%] min-w-0 max-w-[42rem] opacity-100' : 'pointer-events-none w-0 opacity-0'}`}>
       {selectedTicket && <aside className="flex max-h-[calc(100vh-6rem)] min-h-[620px] w-full flex-col overflow-hidden rounded-[2rem] bg-white shadow-sm ring-1 ring-slate-100" aria-label={`Ticket ${selectedTicket.reference}`}>
-          <div className="border-b border-slate-100 px-6 py-5 sm:px-8"><div className="flex items-start justify-between gap-5"><div><div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-950 px-2.5 py-1 font-mono text-[10px] font-black text-white">{selectedTicket.reference}</span><span className={`text-[10px] font-black ${priorityStyles[selectedTicket.priority]}`}>{selectedTicket.priority === 'Intermediate' ? 'Normal priority' : `${selectedTicket.priority} priority`}</span></div><h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">{selectedTicket.subject}</h2><div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-bold text-slate-400"><span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" />{selectedTicket.category}</span><span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />Created {formatDate(selectedTicket.createdAt)}</span><span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />Updated {formatDate(selectedTicket.updatedAt)}</span></div></div><button type="button" onClick={() => setSelectedId(null)} aria-label="Close ticket details" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500 transition hover:bg-slate-950 hover:text-white"><X className="h-5 w-5" /></button></div></div>
+          <div className="border-b border-slate-100 px-6 py-5 sm:px-8"><div className="flex items-start justify-between gap-5"><div><div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-950 px-2.5 py-1 font-mono text-[10px] font-black text-white">{selectedTicket.reference}</span><span className={`text-[10px] font-black ${priorityStyles[selectedTicket.priority]}`}>{selectedTicket.priority === 'Intermediate' ? 'Normal priority' : `${selectedTicket.priority} priority`}</span></div><h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">{selectedTicket.subject}</h2><div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-bold text-slate-400"><span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" />{selectedTicket.category}</span><span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />Created {formatDate(selectedTicket.createdAt)}</span><span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />Updated {formatDate(selectedTicket.updatedAt)}</span></div></div><button type="button" onClick={closeTicketDetails} aria-label="Close ticket details" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500 transition hover:bg-slate-950 hover:text-white"><X className="h-5 w-5" /></button></div></div>
           {isStaff && <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-4 sm:px-8"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Update status</p><div className="mt-2 max-w-xs"><QuickEditMenu ariaLabel={`Update status for ${selectedTicket.reference}`} value={selectedTicket.statusValue} placeholder={selectedTicket.status} options={includeCurrentQuickOption(statusQuickOptions, selectedTicket.statusValue, selectedTicket.status, statusQuickTone(selectedTicket.statusValue))} disabled={quickEditing.includes(`${selectedTicket.id}-status`)} triggerTone={statusQuickTone(selectedTicket.statusValue).tone} onChange={value => void quickEditTicket(selectedTicket, 'status', value)} /></div></div>}
           <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-3 sm:px-8"><div role="tablist" aria-label="Ticket details" className="inline-flex rounded-xl bg-slate-50 p-1">{(['overview', 'conversation', 'activity', ...(isStaff ? ['notes' as const] : [])] as DetailTab[]).map(tab => <button key={tab} type="button" role="tab" aria-selected={detailTab === tab} onClick={() => setDetailTab(tab)} className={`rounded-lg px-3 py-2 text-[10px] font-black transition ${detailTab === tab ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-700'}`}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}</div></div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-6 sm:px-8">

@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { RealtimeProvider } from './context/RealtimeContext';
 import { AgentProvider } from './features/agent-workspace/context/AgentContext';
 import { SaleAlert } from './shared/components/SaleAlert';
+import { InternalNotificationAlert } from './shared/components/InternalNotificationAlert';
 
 // Feature Modules
 import { AgentWorkspace } from './features/agent-workspace/AgentWorkspace';
@@ -79,6 +80,7 @@ const AppContent: React.FC = () => {
     <>
       <AppRoutes />
       {user && <SaleAlert />}
+      {user && <InternalNotificationAlert />}
     </>
   );
 };

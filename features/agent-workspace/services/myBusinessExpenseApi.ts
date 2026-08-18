@@ -1,3 +1,5 @@
+import type { ImageMetadata } from './agentTicketsApi';
+
 const EXPENSE_LOG_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/expense-log';
 const UTILITY_AGENTS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/utility/agents';
 const ASSIST_SPLITS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/assist/splits';
@@ -7,10 +9,6 @@ const getAuthToken = () => localStorage.getItem('authToken');
 const authHeader = () => ({
   Authorization: `Bearer ${getAuthToken()}`,
   'Content-Type': 'application/json',
-});
-
-const authOnlyHeader = () => ({
-  Authorization: `Bearer ${getAuthToken()}`,
 });
 
 export interface MyBusinessExpenseQuery {
@@ -29,7 +27,7 @@ export interface MyBusinessExpenseSaveInput {
   notes?: string | null;
   type: 'personal' | 'assist';
   agentOnAssist?: string | null;
-  receipt?: File | null;
+  receipt: ImageMetadata[];
 }
 
 export interface MyBusinessExpenseUpdateInput extends MyBusinessExpenseSaveInput {
@@ -118,28 +116,13 @@ const expenseFields = (input: MyBusinessExpenseSaveInput) => ({
   notes: input.notes ?? '',
   type: input.type,
   agent_on_assist: input.type === 'assist' ? input.agentOnAssist ?? null : null,
+  receipt: input.receipt,
 });
 
-const expenseRequest = (input: MyBusinessExpenseSaveInput) => {
-  if (!input.receipt) {
-    return {
-      headers: authHeader(),
-      body: JSON.stringify(expenseFields(input)),
-    };
-  }
-
-  const formData = new FormData();
-  const fields = expenseFields(input);
-  Object.entries(fields).forEach(([key, value]) => {
-    formData.append(key, value === null ? '' : String(value));
-  });
-  formData.append('receipt', input.receipt, input.receipt.name);
-
-  return {
-    headers: authOnlyHeader(),
-    body: formData,
-  };
-};
+const expenseRequest = (input: MyBusinessExpenseSaveInput) => ({
+  headers: authHeader(),
+  body: JSON.stringify(expenseFields(input)),
+});
 
 export const myBusinessExpenseApi = {
   async getUtilityAgents(): Promise<UtilityAgent[]> {
