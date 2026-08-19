@@ -77,6 +77,21 @@ export interface AgentDetailsResponse {
   carrier: { name: string; apps: number; premium: number }[];
 }
 
+export type AgentDetailTimeframe = 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'all';
+
+export interface AgentDetailCardInput {
+  timeframe: AgentDetailTimeframe;
+  start_date?: string;
+  end_date?: string;
+  agent_id: string;
+}
+
+export interface AgentDetailCardResponse {
+  carriers: Array<{ name: string; totalAP: number }>;
+  lead_sources: Array<{ name: string; totalAP: number }>;
+  production: number;
+}
+
 export interface TrainerDetailsResponse {
   trainer?: {
     id?: string;
@@ -127,6 +142,17 @@ export interface TrainerDetailsResponse {
 }
 
 export const agentleaderboardRealtimeApi = {
+  /** Fetches the timeframe-specific data displayed in an agent summary card. */
+  getAgentDetailCard: async (input: AgentDetailCardInput): Promise<AgentDetailCardResponse> => {
+    const response = await fetch(`${TRAINER_API_BASE_URL}/leaderboard/agent_details`, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) throw new ApiError('Failed to fetch agent detail card', response.status);
+    return response.json();
+  },
+
   /**
    * Fetches detailed production breakdown for a single agent
    */

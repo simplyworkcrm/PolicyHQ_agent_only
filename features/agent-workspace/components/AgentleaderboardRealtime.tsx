@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { 
   ChevronLeft, 
@@ -25,7 +25,7 @@ import {
   Share2,
   Search
 } from 'lucide-react';
-import { agentleaderboardRealtimeApi, ArenaEntry, SaleRecord, AgentDetailsResponse, TrainerDetailsResponse } from '../services/agentleaderboardRealtimeApi';
+import { agentleaderboardRealtimeApi, ArenaEntry, SaleRecord, AgentDetailsResponse, TrainerDetailsResponse, AgentDetailTimeframe } from '../services/agentleaderboardRealtimeApi';
 import { useRealtime } from '../../../context/RealtimeContext';
 import { FilterDropdown, LeaderboardControls, LeaderboardMode } from './LeaderboardControls';
 import { AgentComparisonView } from './AgentComparisonView';
@@ -285,9 +285,10 @@ export interface AgentSummaryStats {
   agent_name: string;
   agent_profile_url?: string | null;
   agency: string;
-  production: AgentDetailsResponse['production'];
-  sources: AgentDetailsResponse['sources'];
-  carrier: AgentDetailsResponse['carrier'];
+  timeframe: AgentDetailTimeframe;
+  production: number;
+  sources: Array<{ name: string; premium: number }>;
+  carrier: Array<{ name: string; premium: number }>;
 }
 
 type TrainerHelpedAgent = {
@@ -383,146 +384,138 @@ export const AgentSummaryPopup: React.FC<{
   isNightMode: boolean;
   onClose: () => void;
 }> = ({ stats, isNightMode, onClose }) => {
-  const prod = stats.production;
-  const maxSourcePremium = stats.sources.length > 0 ? Math.max(...stats.sources.map(s => s.premium)) : 1;
-  const maxCarrierPremium = stats.carrier.length > 0 ? Math.max(...stats.carrier.map(c => c.premium)) : 1;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const maxSourcePremium = Math.max(1, ...stats.sources.map(source => source.premium));
+  const maxCarrierPremium = Math.max(1, ...stats.carrier.map(carrier => carrier.premium));
 
   const fmtCurrency = (v: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
   const fmtCompact = (v: number) =>
     new Intl.NumberFormat('en-US', { notation: 'compact', style: 'currency', currency: 'USD', maximumFractionDigits: 1 }).format(v);
 
-  const bands = [
-    { label: 'Today',     accent: 'text-brand-400',   bg: 'bg-brand-500/10 border-brand-500/20',   data: prod.today },
-    { label: 'This Week', accent: 'text-sky-400',      bg: 'bg-sky-500/10 border-sky-500/20',       data: prod.this_week },
-    { label: 'MTD',       accent: 'text-indigo-400',   bg: 'bg-indigo-500/10 border-indigo-500/20', data: prod.mtd },
-    { label: 'This Year', accent: 'text-emerald-400',  bg: 'bg-emerald-500/10 border-emerald-500/20', data: prod.this_year },
-  ];
+  const timeframeLabel: Record<AgentDetailTimeframe, string> = {
+    today: 'Today',
+    weekly: 'This Week',
+    monthly: 'This Month',
+    yearly: 'This Year',
+    custom: 'Custom Range',
+    all: 'All Time',
+  };
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [stats.agent_id, stats.timeframe]);
+
+  const breakdownSection = (
+    title: string,
+    items: Array<{ name: string; premium: number }>,
+    maximum: number,
+    tone: 'indigo' | 'emerald',
+  ) => {
+    const isSource = tone === 'indigo';
+    return (
+      <section className={`min-w-0 rounded-[1.75rem] border p-5 ${isNightMode ? 'border-white/10 bg-white/[0.035]' : 'border-slate-200/80 bg-white shadow-sm'}`}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${isSource ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+              {isSource ? <Share2 className="h-4 w-4" /> : <BarChart3 className="h-4 w-4" />}
+            </span>
+            <div>
+              <h4 className={`text-xs font-black ${isNightMode ? 'text-white' : 'text-slate-900'}`}>{title}</h4>
+              <p className={`mt-0.5 text-[9px] font-bold ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Annual premium contribution</p>
+            </div>
+          </div>
+          <span className={`rounded-full px-2.5 py-1 text-[9px] font-black ${isNightMode ? 'bg-white/5 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>{items.length}</span>
+        </div>
+
+        {items.length ? (
+          <div className="space-y-2">
+            {items.map(item => (
+              <div key={item.name} className={`rounded-2xl border px-3.5 py-3 ${isNightMode ? 'border-white/5 bg-slate-950/40' : 'border-slate-100 bg-slate-50/80'}`}>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className={`min-w-0 truncate text-[10px] font-black ${isNightMode ? 'text-slate-200' : 'text-slate-700'}`} title={item.name}>{item.name}</p>
+                  <span className={`shrink-0 text-[10px] font-black ${isSource ? 'text-indigo-600' : 'text-emerald-600'}`}>{fmtCompact(item.premium)}</span>
+                </div>
+                <div className={`h-1.5 overflow-hidden rounded-full ${isNightMode ? 'bg-white/10' : 'bg-slate-200/80'}`}>
+                  <div
+                    className={`h-full rounded-full ${isSource ? 'bg-gradient-to-r from-indigo-500 to-violet-400' : 'bg-gradient-to-r from-emerald-500 to-teal-400'}`}
+                    style={{ width: `${Math.min((item.premium / maximum) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={`rounded-2xl border border-dashed py-10 text-center text-[10px] font-bold ${isNightMode ? 'border-white/10 text-slate-600' : 'border-slate-200 text-slate-400'}`}>No {title.toLowerCase()} returned</div>
+        )}
+      </section>
+    );
+  };
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6">
       <div
-        className="absolute inset-0 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300"
+        className="absolute inset-0 bg-slate-950/75 backdrop-blur-lg animate-in fade-in duration-300"
         onClick={onClose}
       />
-      <div className={`relative w-full max-w-xl rounded-[3rem] shadow-2xl border animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh] ${
-        isNightMode ? 'bg-slate-900 border-white/10 shadow-black' : 'bg-white border-slate-200'
-      }`}>
-
-        {/* ── Hero header ── */}
-        <div className="p-10 pb-6 bg-slate-950 relative overflow-hidden text-center shrink-0">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-brand-500/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-summary-title"
+        className={`relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] border shadow-2xl animate-in zoom-in-95 duration-200 ${
+          isNightMode ? 'border-white/10 bg-slate-900 shadow-black' : 'border-white/80 bg-slate-50 shadow-slate-950/30'
+        }`}
+      >
+        <header className="relative shrink-0 overflow-hidden bg-slate-950 px-6 py-6 text-white sm:px-8">
+          <div className="absolute -right-16 -top-24 h-72 w-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="absolute -bottom-24 left-1/3 h-52 w-52 rounded-full bg-indigo-500/15 blur-3xl" />
           <button
             onClick={onClose}
-            className="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white transition-all active:scale-95"
+            aria-label="Close agent summary"
+            className="absolute right-5 top-5 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:bg-white/15 hover:text-white active:scale-95"
           >
-            <X className="w-5 h-5" />
+            <X className="h-4 w-4" />
           </button>
-          <div className="relative z-10 flex flex-col items-center">
-            <div className="w-24 h-24 rounded-[2.25rem] bg-white border-4 border-slate-800 shadow-2xl mb-5 overflow-hidden flex items-center justify-center ring-4 ring-brand-500/20">
+
+          <div className="relative z-10 flex flex-col gap-6 pr-10 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-amber-300/40 bg-white shadow-xl ring-4 ring-white/5 sm:h-20 sm:w-20">
               {stats.agent_profile_url
-                ? <img src={stats.agent_profile_url} className="w-full h-full object-cover" alt="Profile" />
-                : <span className="text-4xl font-black text-slate-900">{getInitials(stats.agent_name)}</span>}
+                  ? <img src={stats.agent_profile_url} className="h-full w-full object-cover" alt={stats.agent_name} />
+                  : <span className="text-2xl font-black text-slate-900">{getInitials(stats.agent_name)}</span>}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[8px] font-black uppercase tracking-[0.24em] text-amber-300">Agent performance</p>
+                <h3 id="agent-summary-title" className="mt-1.5 truncate text-xl font-black tracking-tight sm:text-2xl">{stats.agent_name}</h3>
+                <div className="mt-2 flex items-center gap-2 text-slate-400">
+                  <Building2 className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                  <span className="truncate text-[9px] font-black uppercase tracking-[0.18em]">{stats.agency}</span>
+                </div>
+              </div>
             </div>
-            <h3 className="text-2xl font-black text-white tracking-tight leading-none mb-1.5">{stats.agent_name}</h3>
-            <div className="flex items-center gap-2">
-              <Building2 className="w-3.5 h-3.5 text-brand-400" />
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">{stats.agency}</span>
+
+            <div className="min-w-[210px] rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-4 backdrop-blur-sm">
+              <div className="flex items-center gap-2 text-amber-300">
+                <Zap className="h-3.5 w-3.5 fill-current" />
+                <span className="text-[8px] font-black uppercase tracking-[0.2em]">{timeframeLabel[stats.timeframe]} production</span>
+              </div>
+              <p className="mt-2 text-3xl font-black tracking-tight">{fmtCurrency(stats.production)}</p>
+              <p className="mt-1 text-[9px] font-semibold text-white/40">Annual premium submitted</p>
             </div>
+          </div>
+        </header>
+
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {breakdownSection('Lead sources', stats.sources, maxSourcePremium, 'indigo')}
+            {breakdownSection('Carriers', stats.carrier, maxCarrierPremium, 'emerald')}
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto scrollbar-hide">
-          <div className="p-8 space-y-8 animate-in fade-in duration-500">
-
-            {/* ── 4-band production grid ── */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 px-1">
-                <Zap className="w-3.5 h-3.5 text-brand-500 fill-brand-500" />
-                <h4 className={`text-[10px] font-black uppercase tracking-widest ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Production</h4>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {bands.map(({ label, accent, bg, data }) => (
-                  <div key={label} className={`p-4 rounded-2xl border ${bg} flex flex-col gap-2`}>
-                    <p className={`text-[8px] font-black uppercase tracking-widest ${accent}`}>{label}</p>
-                    <p className={`text-xl font-black tracking-tighter ${isNightMode ? 'text-white' : 'text-slate-900'}`}>{fmtCompact(data.premium)}</p>
-                    <p className={`text-[9px] font-bold ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>{data.apps} app{data.apps !== 1 ? 's' : ''}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* ── Sources breakdown ── */}
-            {stats.sources.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 px-1">
-                  <Share2 className="w-3.5 h-3.5 text-indigo-400" />
-                  <h4 className={`text-[10px] font-black uppercase tracking-widest ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Lead Sources</h4>
-                </div>
-                <div className="space-y-2">
-                  {stats.sources.map(src => (
-                    <div key={src.name} className={`p-3.5 rounded-2xl border ${isNightMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className={`text-[10px] font-black truncate ${isNightMode ? 'text-white' : 'text-slate-800'}`}>{src.name}</p>
-                        <div className="flex items-center gap-3 shrink-0 ml-3">
-                          <span className={`text-[9px] font-bold ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>{src.apps} apps</span>
-                          <span className={`text-[10px] font-black ${isNightMode ? 'text-indigo-300' : 'text-indigo-600'}`}>{fmtCompact(src.premium)}</span>
-                        </div>
-                      </div>
-                      <div className={`w-full h-1.5 rounded-full ${isNightMode ? 'bg-white/10' : 'bg-slate-200'} overflow-hidden`}>
-                        <div
-                          className="h-full rounded-full bg-indigo-500 transition-all duration-700"
-                          style={{ width: `${Math.min((src.premium / maxSourcePremium) * 100, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Carrier breakdown ── */}
-            {stats.carrier.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 px-1">
-                  <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-                  <h4 className={`text-[10px] font-black uppercase tracking-widest ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Carriers</h4>
-                </div>
-                <div className="space-y-2">
-                  {stats.carrier.map(car => (
-                    <div key={car.name} className={`p-3.5 rounded-2xl border ${isNightMode ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-100'}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className={`text-[10px] font-black truncate ${isNightMode ? 'text-white' : 'text-slate-800'}`}>{car.name}</p>
-                        <div className="flex items-center gap-3 shrink-0 ml-3">
-                          <span className={`text-[9px] font-bold ${isNightMode ? 'text-slate-400' : 'text-slate-500'}`}>{car.apps} apps</span>
-                          <span className={`text-[10px] font-black ${isNightMode ? 'text-emerald-300' : 'text-emerald-600'}`}>{fmtCompact(car.premium)}</span>
-                        </div>
-                      </div>
-                      <div className={`w-full h-1.5 rounded-full ${isNightMode ? 'bg-white/10' : 'bg-slate-200'} overflow-hidden`}>
-                        <div
-                          className="h-full rounded-full bg-emerald-500 transition-all duration-700"
-                          style={{ width: `${Math.min((car.premium / maxCarrierPremium) * 100, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-
-        <div className={`p-8 pt-4 border-t shrink-0 ${isNightMode ? 'border-white/5 bg-slate-950' : 'border-slate-50 bg-slate-50/30'}`}>
-          <button
-            onClick={onClose}
-            className={`w-full py-4 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-              isNightMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-            }`}
-          >
-            Dismiss
-          </button>
-        </div>
+        <footer className={`flex shrink-0 items-center justify-between gap-4 border-t px-5 py-3.5 sm:px-6 ${isNightMode ? 'border-white/10 bg-slate-950/60' : 'border-slate-200/80 bg-white'}`}>
+          <p className={`text-[9px] font-semibold ${isNightMode ? 'text-slate-500' : 'text-slate-400'}`}>Values reflect the selected leaderboard timeframe.</p>
+          <button onClick={onClose} className="rounded-xl bg-slate-950 px-5 py-2.5 text-[9px] font-black uppercase tracking-[0.16em] text-white transition hover:bg-amber-400 hover:text-slate-950 active:scale-95">Close</button>
+        </footer>
       </div>
     </div>
   );
@@ -779,24 +772,33 @@ export const AgentleaderboardRealtime: React.FC<{ isNightMode: boolean }> = ({ i
   useEffect(() => {
     if (!selectedAgentId) { setAgentDetailStats(null); return; }
     setAgentDetailLoading(true);
-    agentleaderboardRealtimeApi.getAgentDetails(selectedAgentId)
+    agentleaderboardRealtimeApi.getAgentDetailCard({
+      timeframe,
+      ...(timeframe === 'custom' ? {
+        start_date: dateRange.startDate,
+        end_date: dateRange.endDate,
+      } : {}),
+      agent_id: selectedAgentId,
+    })
       .then(res => {
+        const leaderboardMatch = unifiedData.find(e => e.agent_id === selectedAgentId);
         const todayMatch = todayData.find(e => e.agent_id === selectedAgentId);
         const mtdMatch = mtdData.find(e => e.agent_id === selectedAgentId);
         const feedMatch = arenaFeed.find(e => e.agentId === selectedAgentId);
         setAgentDetailStats({
           agent_id: selectedAgentId,
-          agent_name: todayMatch?.agent_name || mtdMatch?.agent_name || feedMatch?.agentOwner_name || 'Agent',
-          agent_profile_url: todayMatch?.agent_profile?.url || mtdMatch?.agent_profile?.url || null,
-          agency: todayMatch?.agency || mtdMatch?.agency || feedMatch?.teamName || 'Organization',
+          agent_name: leaderboardMatch?.agent_name || todayMatch?.agent_name || mtdMatch?.agent_name || feedMatch?.agentOwner_name || 'Agent',
+          agent_profile_url: leaderboardMatch?.agent_profile?.url || todayMatch?.agent_profile?.url || mtdMatch?.agent_profile?.url || null,
+          agency: leaderboardMatch?.agency || todayMatch?.agency || mtdMatch?.agency || feedMatch?.teamName || 'Organization',
+          timeframe,
           production: res.production,
-          sources: res.sources,
-          carrier: res.carrier,
+          sources: (res.lead_sources || []).map(source => ({ name: source.name, premium: Number(source.totalAP) || 0 })),
+          carrier: (res.carriers || []).map(carrier => ({ name: carrier.name, premium: Number(carrier.totalAP) || 0 })),
         });
       })
       .catch(console.error)
       .finally(() => setAgentDetailLoading(false));
-  }, [selectedAgentId]);
+  }, [dateRange.endDate, dateRange.startDate, selectedAgentId, timeframe]);
 
   // Dynamically extract agents from the currently loaded leaderboard payload 
   // so you don't have to query a separate /meta list!

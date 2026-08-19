@@ -27,10 +27,34 @@ import { CarrierSection } from './overview/CarrierSection';
 import { TeamSalesSection } from './overview/TeamSalesSection';
 import { TopClosers } from './overview/TopClosers';
 import { AgentSummaryPopup, AgentSummaryStats } from './AgentleaderboardRealtime';
-import { agentleaderboardRealtimeApi } from '../services/agentleaderboardRealtimeApi';
+import { agentleaderboardRealtimeApi, AgentDetailCardInput } from '../services/agentleaderboardRealtimeApi';
 import { LeadInfoSection } from './overview/LeadInfoSection';
 import { ClosersDrawer, CarrierDrawer, TeamRankingDrawer } from './overview/OverviewDrawers';
 import { MiniDatePicker } from './overview/MiniDatePicker';
+
+const formatApiDate = (timestamp: number) => {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const buildAgentDetailInput = (agentId: string, range: DateRange): AgentDetailCardInput => {
+  const timeframeByLabel: Record<string, AgentDetailCardInput['timeframe']> = {
+    'TODAY': 'today',
+    'THIS WEEK': 'weekly',
+    'THIS MONTH': 'monthly',
+    'THIS YEAR': 'yearly',
+    'ALL TIME': 'all',
+  };
+  const timeframe = timeframeByLabel[range.label.toUpperCase()] || 'custom';
+  return {
+    timeframe,
+    ...(timeframe === 'custom' && range.start !== null && range.end !== null ? {
+      start_date: formatApiDate(range.start),
+      end_date: formatApiDate(range.end),
+    } : {}),
+    agent_id: agentId,
+  };
+};
 
 export const AgentOverview: React.FC = () => {
   const navigate = useNavigate();
@@ -62,16 +86,18 @@ export const AgentOverview: React.FC = () => {
     setPopupLoading(true);
     setPopupStats(null);
     try {
-      const res = await agentleaderboardRealtimeApi.getAgentDetails(agentId);
+      const input = buildAgentDetailInput(agentId, dateRange);
+      const res = await agentleaderboardRealtimeApi.getAgentDetailCard(input);
       const entry = leaderboardData.find(e => e.agent_id === agentId);
       setPopupStats({
         agent_id: agentId,
         agent_name: entry?.agent_name || 'Agent',
         agent_profile_url: entry?.agent_profile?.url || null,
         agency: (entry?.agency as any)?.label || (entry?.agency as any) || 'Organization',
+        timeframe: input.timeframe,
         production: res.production,
-        sources: res.sources,
-        carrier: res.carrier,
+        sources: (res.lead_sources || []).map(source => ({ name: source.name, premium: Number(source.totalAP) || 0 })),
+        carrier: (res.carriers || []).map(carrier => ({ name: carrier.name, premium: Number(carrier.totalAP) || 0 })),
       });
     } catch (err) {
       console.error('Agent popup fetch failed', err);
