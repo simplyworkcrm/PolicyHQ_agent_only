@@ -63,14 +63,27 @@ export const NotificationBell: React.FC = () => {
   const [nextPage, setNextPage] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
   const requestVersion = useRef(0);
+  const countRequestVersion = useRef(0);
 
   const type = 'broadcast';
+
+  const refreshUnreadCount = useCallback(async () => {
+    const version = ++countRequestVersion.current;
+    try {
+      const count = await notificationApi.count();
+      if (version === countRequestVersion.current) setUnreadCount(count);
+    } catch {
+      // Keep the last confirmed count when the count endpoint is unavailable.
+    }
+  }, []);
 
   const handleToggle = () => {
       setIsOpen(!isOpen);
       if (!isOpen) {
           setSearchQuery('');
+          void refreshUnreadCount();
       }
   };
 
@@ -151,10 +164,9 @@ export const NotificationBell: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, readFilter]);
 
-  const unreadCount = useMemo(() => 
-    notifications.filter(n => n.type === type && !n.isRead && !isRealtimeStatusNotification(n.content)).length, 
-    [notifications]
-  );
+  useEffect(() => {
+    void refreshUnreadCount();
+  }, [notifications, refreshUnreadCount]);
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter(n => {
@@ -200,6 +212,9 @@ export const NotificationBell: React.FC = () => {
           params.set(`${notification.action.entityType}_id`, notification.action.entityId);
       }
       if (notification.action.tab) params.set('tab', notification.action.tab);
+      // A notification can target the ticket that is already open. Give every
+      // click a unique load key so the destination refreshes the full entity.
+      params.set('load', String(Date.now()));
       setIsOpen(false);
       navigate(`${notification.action.route}${params.size ? `?${params.toString()}` : ''}`);
   };
@@ -224,7 +239,9 @@ export const NotificationBell: React.FC = () => {
       >
         <Bell className="h-4 w-4" strokeWidth={2} />
         {unreadCount > 0 && (
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-brand-500 ring-2 ring-white" />
+            <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-black leading-none text-white ring-2 ring-white">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
         )}
       </button>
 
@@ -275,18 +292,19 @@ export const NotificationBell: React.FC = () => {
                       {filteredNotifications.length > 0 ? (
                           filteredNotifications.map((notif) => {
                             const isTicket = notif.action?.entityType?.toLowerCase() === 'ticket';
+                            const isTicketUpdated = isTicket && notif.eventType?.toLowerCase() === 'ticket.updated';
                             const EntityIcon = isTicket ? Ticket : Megaphone;
                             return (
-                              <div key={notif.id} className={`group relative overflow-hidden rounded-[1.75rem] border bg-white p-4 transition-all duration-300 ${notif.isRead ? 'border-slate-100 opacity-70' : isTicket ? 'border-emerald-100 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-50' : 'border-brand-100 shadow-lg shadow-brand-500/5 ring-1 ring-brand-50/50'}`}>
+                              <div key={notif.id} className={`group relative overflow-hidden rounded-[1.75rem] border bg-white p-4 transition-all duration-300 ${notif.isRead ? 'border-slate-100 opacity-70' : isTicketUpdated ? 'border-orange-200 shadow-lg shadow-orange-500/10 ring-1 ring-orange-100' : isTicket ? 'border-emerald-100 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-50' : 'border-brand-100 shadow-lg shadow-brand-500/5 ring-1 ring-brand-50/50'}`}>
                                   <div className="flex items-start gap-3">
-                                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isTicket ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}><EntityIcon className="h-5 w-5" /></div>
+                                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isTicketUpdated ? 'bg-orange-50 text-orange-600' : isTicket ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}><EntityIcon className="h-5 w-5" /></div>
                                       <div className="min-w-0 flex-1 pt-0.5">
                                           <div className="flex items-start justify-between gap-2">
                                               <div className="min-w-0">
                                                   {notif.title && <p className="truncate text-sm font-black text-slate-900">{notif.title}</p>}
                                                   {notif.madeBy && <p className="mt-0.5 truncate text-[10px] font-normal text-slate-400">By {notif.madeBy}</p>}
                                               </div>
-                                              {!notif.isRead && <span className={`mt-1 h-2 w-2 shrink-0 rounded-full animate-pulse ${isTicket ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>}
+                                              {!notif.isRead && <span className={`mt-1 h-2 w-2 shrink-0 rounded-full animate-pulse ${isTicketUpdated ? 'bg-orange-500' : isTicket ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>}
                                           </div>
                                       </div>
                                   </div>
@@ -303,8 +321,8 @@ export const NotificationBell: React.FC = () => {
                                   </div>
 
                                   {notif.action?.route && <div className="mt-4 flex items-center gap-2">
-                                      <button type="button" onClick={() => void handleNotificationClick(notif)} className={`flex h-11 flex-1 items-center overflow-hidden rounded-full font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${isTicket ? 'bg-emerald-500' : 'bg-blue-600'}`}>
-                                          <span className={`flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-white/25 ${isTicket ? 'bg-emerald-400' : 'bg-blue-500'}`}><ArrowRight className="h-4 w-4" /></span>
+                                      <button type="button" onClick={() => void handleNotificationClick(notif)} className={`flex h-11 flex-1 items-center overflow-hidden rounded-full font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${isTicketUpdated ? 'bg-orange-500' : isTicket ? 'bg-emerald-500' : 'bg-blue-600'}`}>
+                                          <span className={`flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-white/25 ${isTicketUpdated ? 'bg-orange-400' : isTicket ? 'bg-emerald-400' : 'bg-blue-500'}`}><ArrowRight className="h-4 w-4" /></span>
                                           <span className="flex-1 pr-4 text-center text-xs">{isTicket ? 'Open ticket' : 'Open notification'}</span>
                                       </button>
                                       <button
@@ -313,7 +331,7 @@ export const NotificationBell: React.FC = () => {
                                         disabled={notif.isRead}
                                         aria-label={notif.isRead ? 'Notification is read' : 'Mark notification as read'}
                                         title={notif.isRead ? 'Read' : 'Mark as read'}
-                                        className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-default disabled:text-emerald-500"
+                                        className={`flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition disabled:cursor-default ${isTicketUpdated ? 'hover:bg-orange-50 hover:text-orange-600 disabled:text-orange-500' : 'hover:bg-emerald-50 hover:text-emerald-600 disabled:text-emerald-500'}`}
                                       ><Check className="h-4 w-4" /></button>
                                   </div>}
                               </div>

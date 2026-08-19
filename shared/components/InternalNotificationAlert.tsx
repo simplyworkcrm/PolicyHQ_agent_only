@@ -32,6 +32,7 @@ export const InternalNotificationAlert: React.FC = () => {
   const notification = latestInternalNotification;
   if (!notification) return null;
   const isTicket = notification.action?.entityType?.toLowerCase() === 'ticket';
+  const isTicketUpdated = isTicket && notification.eventType?.toLowerCase() === 'ticket.updated';
   const EntityIcon = isTicket ? Ticket : Megaphone;
 
   const close = (event?: React.MouseEvent) => {
@@ -52,6 +53,7 @@ export const InternalNotificationAlert: React.FC = () => {
       params.set(`${notification.action.entityType}_id`, notification.action.entityId);
     }
     if (notification.action.tab) params.set('tab', notification.action.tab);
+    if (isTicket) params.set('load', Date.now().toString());
     navigate(`${notification.action.route}${params.size ? `?${params.toString()}` : ''}`);
     close();
   };
@@ -68,7 +70,7 @@ export const InternalNotificationAlert: React.FC = () => {
         onClick={openNotification}
         className={`group relative overflow-hidden rounded-[1.75rem] border bg-white p-4 shadow-2xl ring-1 transition-all ${
           notification.action?.route ? 'cursor-pointer hover:-translate-y-0.5' : ''
-        } ${isTicket ? 'border-emerald-100 shadow-emerald-950/15 ring-emerald-50' : 'border-blue-100 shadow-blue-950/15 ring-blue-50'}`}
+        } ${isTicketUpdated ? 'border-orange-200 shadow-orange-950/15 ring-orange-100' : isTicket ? 'border-emerald-100 shadow-emerald-950/15 ring-emerald-50' : 'border-blue-100 shadow-blue-950/15 ring-blue-50'}`}
       >
         <button
           type="button"
@@ -80,14 +82,14 @@ export const InternalNotificationAlert: React.FC = () => {
         </button>
 
         <div className="flex items-start gap-3 pr-8">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${isTicket ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${isTicketUpdated ? 'bg-orange-50 text-orange-600' : isTicket ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
             <EntityIcon className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
             <p className="truncate text-base font-black text-slate-900">{notification.title || (isTicket ? 'Ticket notification' : 'New notification')}</p>
             {notification.madeBy && <p className="mt-0.5 truncate text-[11px] font-normal text-slate-400">By {notification.madeBy}</p>}
           </div>
-          <span className={`mt-2 h-2 w-2 shrink-0 animate-pulse rounded-full ${isTicket ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+          <span className={`mt-2 h-2 w-2 shrink-0 animate-pulse rounded-full ${isTicketUpdated ? 'bg-orange-500' : isTicket ? 'bg-emerald-500' : 'bg-blue-500'}`} />
         </div>
 
         <div className="mt-3 space-y-2 pl-1">
@@ -103,8 +105,8 @@ export const InternalNotificationAlert: React.FC = () => {
 
         {notification.action?.route && (
           <div className="mt-4 flex items-center gap-2">
-            <div className={`flex h-11 flex-1 items-center overflow-hidden rounded-full font-black text-white shadow-sm transition group-hover:shadow-md ${isTicket ? 'bg-emerald-500' : 'bg-blue-600'}`}>
-              <span className={`flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-white/25 ${isTicket ? 'bg-emerald-400' : 'bg-blue-500'}`}>
+            <div className={`flex h-11 flex-1 items-center overflow-hidden rounded-full font-black text-white shadow-sm transition group-hover:shadow-md ${isTicketUpdated ? 'bg-orange-500' : isTicket ? 'bg-emerald-500' : 'bg-blue-600'}`}>
+              <span className={`flex h-11 w-11 items-center justify-center rounded-full ring-1 ring-white/25 ${isTicketUpdated ? 'bg-orange-400' : isTicket ? 'bg-emerald-400' : 'bg-blue-500'}`}>
                 <ArrowRight className="h-4 w-4" />
               </span>
               <span className="flex-1 pr-4 text-center text-xs">{isTicket ? 'Open ticket' : 'Open notification'}</span>

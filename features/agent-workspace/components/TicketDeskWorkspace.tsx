@@ -43,12 +43,18 @@ type DetailTab = 'overview' | 'conversation' | 'activity' | 'notes';
 type TicketSortDirection = 'asc' | 'desc';
 type TicketSortField = 'ticket_reference' | 'created_at' | 'createdBy_ghl_user_name' | 'name' | 'category' | 'priority' | 'status' | 'assigned_ghl_user_name' | 'cohandler_ghl_user_name' | 'updated_at';
 
+interface PendingTicketCompletion {
+  ticket: TicketRecord;
+  status: string;
+}
+
 interface TicketSortConfig {
   key: TicketSortField;
   direction: TicketSortDirection;
 }
 
 interface TicketQuickFilter {
+  reference: string;
   requesterId: string[];
   category: string[];
   priority: string[];
@@ -64,6 +70,7 @@ const TICKET_SCOPE_FIELDS: Record<Exclude<TicketScope, 'all'>, string> = {
 };
 
 const EMPTY_QUICK_FILTER: TicketQuickFilter = {
+  reference: '',
   requesterId: [],
   category: [],
   priority: [],
@@ -73,8 +80,10 @@ const EMPTY_QUICK_FILTER: TicketQuickFilter = {
 };
 
 const buildTicketFilter = (scope: TicketScope, quickFilter: TicketQuickFilter, userId?: string, isStaff = false, staleOnly = false): Record<string, unknown> => {
+  const normalizedReference = quickFilter.reference.trim().replace(/^#/, '').trim();
   const filterGroups = [
     ...(scope !== 'all' && userId ? [{ field: TICKET_SCOPE_FIELDS[scope], values: [userId] }] : []),
+    ...(normalizedReference ? [{ field: 'ticket_reference', values: [normalizedReference] }] : []),
     ...(isStaff && quickFilter.requesterId.length ? [{ field: 'createdBy_ghl_user_id', values: quickFilter.requesterId }] : []),
     ...(quickFilter.category.length ? [{ field: 'category', values: quickFilter.category }] : []),
     ...(quickFilter.priority.length ? [{ field: 'priority', values: quickFilter.priority }] : []),
@@ -246,6 +255,11 @@ const normalizeStatus = (value: unknown): TicketStatus => {
   if (status === 'completed' || status === 'complete' || status === 'closed' || status === 'resolved') return 'Resolved';
   if (status === 'in progress' || status === 'on it' || status === 'working') return 'On it';
   return 'Waiting';
+};
+
+const isCompletionStatus = (value: unknown) => {
+  const status = String(value || '').trim().toLowerCase();
+  return status === 'completed' || status === 'completed - incomplete';
 };
 
 const normalizePriority = (value: unknown): TicketPriority => {
@@ -940,6 +954,7 @@ export const AgentTickets: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkedTicketId = searchParams.get('ticket_id');
   const deepLinkedTab = searchParams.get('tab');
+  const deepLinkLoadKey = searchParams.get('load');
   const ticketDetailsRef = useRef<HTMLDivElement>(null);
   const handledDeepLinkRef = useRef('');
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
@@ -960,6 +975,9 @@ export const AgentTickets: React.FC = () => {
   const [visibleColumns, setVisibleColumns] = useState<TicketColumnKey[]>(ticketColumnOptions.map(option => option.value));
   const [quickEditing, setQuickEditing] = useState<string[]>([]);
   const [quickEditError, setQuickEditError] = useState('');
+  const [pendingCompletion, setPendingCompletion] = useState<PendingTicketCompletion | null>(null);
+  const [resolution, setResolution] = useState('');
+  const [resolutionError, setResolutionError] = useState('');
   const [quickFilter, setQuickFilter] = useState<TicketQuickFilter>({ ...EMPTY_QUICK_FILTER });
   const [appliedQuickFilter, setAppliedQuickFilter] = useState<TicketQuickFilter>({ ...EMPTY_QUICK_FILTER });
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -977,6 +995,7 @@ export const AgentTickets: React.FC = () => {
   const [replyAttachmentError, setReplyAttachmentError] = useState('');
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsError, setCommentsError] = useState('');
   const [ticketActivity, setTicketActivity] = useState<TicketActivity[]>([]);
@@ -1055,13 +1074,14 @@ export const AgentTickets: React.FC = () => {
       ? deepLinkedTab as DetailTab
       : 'overview';
     const safeTab = requestedTab === 'notes' && !isStaff ? 'overview' : requestedTab;
-    const deepLinkKey = `${deepLinkedTicketId}:${safeTab}`;
+    const deepLinkKey = `${deepLinkedTicketId}:${safeTab}:${deepLinkLoadKey || ''}`;
     if (handledDeepLinkRef.current === deepLinkKey) return;
     handledDeepLinkRef.current = deepLinkKey;
     setDetailTab(safeTab);
 
     if (tickets.some(ticket => ticket.id === deepLinkedTicketId)) {
       setSelectedId(deepLinkedTicketId);
+      setDetailRefreshKey(current => current + 1);
       return;
     }
 
@@ -1078,7 +1098,7 @@ export const AgentTickets: React.FC = () => {
         if (!cancelled) setLoadError('The ticket from this notification could not be opened.');
       });
     return () => { cancelled = true; };
-  }, [deepLinkedTab, deepLinkedTicketId, isStaff, loading, staffChecked, tickets]);
+  }, [deepLinkedTab, deepLinkedTicketId, deepLinkLoadKey, isStaff, loading, staffChecked, tickets]);
 
   useEffect(() => {
     if (!isStaff) {
@@ -1151,18 +1171,24 @@ export const AgentTickets: React.FC = () => {
     };
     void loadDetail();
     return () => { cancelled = true; };
-  }, [selectedId]);
+  }, [detailRefreshKey, selectedId]);
 
   const closeTicketDetails = useCallback(() => {
     setSelectedId(null);
     handledDeepLinkRef.current = '';
-    if (searchParams.has('ticket_id') || searchParams.has('tab')) {
+    if (searchParams.has('ticket_id') || searchParams.has('tab') || searchParams.has('load')) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('ticket_id');
       nextParams.delete('tab');
+      nextParams.delete('load');
       setSearchParams(nextParams, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  const handleDetailTabChange = useCallback((tab: DetailTab) => {
+    setDetailTab(tab);
+    setDetailRefreshKey(current => current + 1);
+  }, []);
 
   useEffect(() => {
     if (!selectedId || detailTab !== 'conversation') return;
@@ -1188,7 +1214,7 @@ export const AgentTickets: React.FC = () => {
     };
     void loadComments();
     return () => { cancelled = true; };
-  }, [detailTab, selectedId, user?.id]);
+  }, [detailRefreshKey, detailTab, selectedId, user?.id]);
 
   useEffect(() => {
     const previews = replyScreenshots.map(file => ({ file, url: URL.createObjectURL(file) }));
@@ -1211,6 +1237,8 @@ export const AgentTickets: React.FC = () => {
       setActivityError('');
       return;
     }
+
+    if (detailTab !== 'activity') return;
     let cancelled = false;
     const loadActivity = async () => {
       setActivityLoading(true);
@@ -1236,7 +1264,7 @@ export const AgentTickets: React.FC = () => {
             updatedById: String(item.updatedBy_ghl_user_id || ''),
             updatedByName: String(item.updatedBy_ghl_user_name || 'PolicyHQ Support').trim(),
           }];
-        }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setTicketActivity(normalized);
       } catch {
         if (!cancelled) {
@@ -1249,7 +1277,7 @@ export const AgentTickets: React.FC = () => {
     };
     void loadActivity();
     return () => { cancelled = true; };
-  }, [selectedId]);
+  }, [detailRefreshKey, detailTab, selectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -1349,6 +1377,76 @@ export const AgentTickets: React.FC = () => {
       }));
     } catch (editError) {
       setQuickEditError(editError instanceof Error ? editError.message : 'The ticket could not be updated.');
+    } finally {
+      setQuickEditing(current => current.filter(key => key !== editKey));
+    }
+  };
+
+  const updateTicketStatus = (ticket: TicketRecord, status: string, resolutionText?: string) => {
+    const resolvedByName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+    setTickets(current => current.map(row => row.id !== ticket.id ? row : {
+      ...row,
+      statusValue: status,
+      status: normalizeStatus(status),
+      needsAttention: status.trim().toLowerCase() === 'needs attention',
+      ...(resolutionText ? {
+        resolution: {
+          resolvedById: String(user?.id || ''),
+          solution: resolutionText,
+          firstName: String(user?.first_name || ''),
+          lastName: String(user?.last_name || ''),
+          resolvedByName,
+        },
+      } : {}),
+    }));
+  };
+
+  const changeTicketStatus = (ticket: TicketRecord, status: string) => {
+    if (isCompletionStatus(status)) {
+      setQuickEditError('');
+      setResolution('');
+      setResolutionError('');
+      setPendingCompletion({ ticket, status });
+      return;
+    }
+    void quickEditTicket(ticket, 'status', status);
+  };
+
+  const closeCompletionModal = () => {
+    if (pendingCompletion && quickEditing.includes(`${pendingCompletion.ticket.id}-status`)) return;
+    setPendingCompletion(null);
+    setResolution('');
+    setResolutionError('');
+  };
+
+  const submitTicketCompletion = async () => {
+    if (!pendingCompletion) return;
+    const resolutionText = resolution.trim();
+    if (!resolutionText) {
+      setResolutionError('Resolution is required.');
+      return;
+    }
+
+    const { ticket, status } = pendingCompletion;
+    const editKey = `${ticket.id}-status`;
+    const oldStatus = tableStatusOptions.find(option => option.value === ticket.statusValue)?.label || ticket.status;
+    const newStatus = tableStatusOptions.find(option => option.value === status)?.label || status;
+    const log = `Status updated from ${oldStatus} to ${newStatus}.`;
+    setQuickEditing(current => [...current, editKey]);
+    setQuickEditError('');
+    setResolutionError('');
+    try {
+      await agentTicketsApi.completeTicket({
+        ticket_id: ticket.id,
+        status,
+        log,
+        resolution: resolutionText,
+      });
+      updateTicketStatus(ticket, status, resolutionText);
+      setPendingCompletion(null);
+      setResolution('');
+    } catch (completionError) {
+      setResolutionError(completionError instanceof Error ? completionError.message : 'The ticket could not be completed.');
     } finally {
       setQuickEditing(current => current.filter(key => key !== editKey));
     }
@@ -1554,8 +1652,9 @@ export const AgentTickets: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto border-b border-slate-100 bg-white px-5 py-3">
-          <div className={`grid min-w-[1100px] items-center overflow-visible rounded-[1.35rem] border border-slate-200 bg-slate-50/70 shadow-sm transition focus-within:border-amber-300 focus-within:bg-white focus-within:shadow-md ${isStaff ? 'grid-cols-[120px_minmax(190px,1fr)_150px_150px_160px_180px_180px_142px]' : 'grid-cols-[120px_minmax(180px,1fr)_150px_160px_180px_180px_142px]'}`}>
+          <div className={`grid min-w-[1250px] items-center overflow-visible rounded-[1.35rem] border border-slate-200 bg-slate-50/70 shadow-sm transition focus-within:border-amber-300 focus-within:bg-white focus-within:shadow-md ${isStaff ? 'grid-cols-[120px_145px_minmax(190px,1fr)_150px_150px_160px_180px_180px_142px]' : 'grid-cols-[120px_145px_150px_160px_180px_180px_142px]'}`}>
             <div className="flex h-full items-center gap-2 border-r border-slate-200 px-4 py-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500"><span className="h-2 w-2 rounded-full bg-amber-400" />Quick filter</div>
+            <div className="border-r border-slate-200 px-2 py-2"><label className="relative block"><TicketCheck className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><input aria-label="Filter by ticket reference" inputMode="numeric" value={quickFilter.reference} onChange={event => setQuickFilter(current => ({ ...current, reference: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') applyQuickFilter(); }} placeholder="Reference" className="min-h-8 w-full rounded-full bg-white py-2 pl-8 pr-7 text-[10px] font-black text-slate-700 outline-none ring-1 ring-slate-200 transition placeholder:text-slate-400 focus:ring-2 focus:ring-amber-300" />{quickFilter.reference && <button type="button" onClick={() => setQuickFilter(current => ({ ...current, reference: '' }))} aria-label="Clear ticket reference filter" className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-800"><X className="h-3 w-3" /></button>}</label></div>
             {isStaff && <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Choose ticket requester filter" value="" values={quickFilter.requesterId} multiple placeholder="Requester" options={requesterQuickOptions} showDots={false} searchable onValuesChange={values => setQuickFilter(current => ({ ...current, requesterId: values }))} /></div>}
             <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Choose ticket category filter" value="" values={quickFilter.category} multiple placeholder="Category" options={categoryQuickOptions} showDots={false} onValuesChange={values => setQuickFilter(current => ({ ...current, category: values }))} /></div>
             <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Choose ticket priority filter" value="" values={quickFilter.priority} multiple placeholder="Priority" options={priorityQuickOptions} triggerTone={quickFilter.priority.length === 1 ? priorityQuickTone(quickFilter.priority[0]).tone : 'bg-white text-slate-700 ring-slate-200'} onValuesChange={values => setQuickFilter(current => ({ ...current, priority: values }))} /></div>
@@ -1597,7 +1696,7 @@ export const AgentTickets: React.FC = () => {
                 {visibleColumnSet.has('question') && <td className="px-3 py-4"><span className="block font-black text-slate-900">{ticket.subject}</span><span className="mt-1 block max-w-md truncate text-[10px] font-medium text-slate-400">{ticket.description || 'No additional details'}</span></td>}
                 {visibleColumnSet.has('category') && <td className="px-3 py-4">{isStaff ? <QuickEditMenu ariaLabel={`Edit category for ${ticket.reference}`} value={ticket.category} placeholder={ticket.category} options={includeCurrentQuickOption(categoryQuickOptions, ticket.category, ticket.category)} disabled={quickEditing.includes(`${ticket.id}-category`)} showDots={false} onChange={value => void quickEditTicket(ticket, 'category', value)} /> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-black text-slate-700">{ticket.category}</span>}</td>}
                 {visibleColumnSet.has('priority') && <td className="px-3 py-4">{isStaff ? <QuickEditMenu ariaLabel={`Edit priority for ${ticket.reference}`} value={ticket.priorityValue} placeholder={ticket.priority === 'Intermediate' ? 'Normal' : ticket.priority} options={includeCurrentQuickOption(priorityQuickOptions, ticket.priorityValue, ticket.priority === 'Intermediate' ? 'Normal' : ticket.priority, priorityQuickTone(ticket.priorityValue))} disabled={quickEditing.includes(`${ticket.id}-priority`)} triggerTone={priorityQuickTone(ticket.priorityValue).tone} onChange={value => void quickEditTicket(ticket, 'priority', value)} /> : <span className={`whitespace-nowrap text-[10px] font-black ${priorityStyles[ticket.priority]}`}>{ticket.priority === 'Intermediate' ? 'Normal' : ticket.priority}</span>}</td>}
-                {visibleColumnSet.has('status') && <td className="px-3 py-4">{isStaff ? <QuickEditMenu ariaLabel={`Edit status for ${ticket.reference}`} value={ticket.statusValue} placeholder={ticket.status} options={includeCurrentQuickOption(statusQuickOptions, ticket.statusValue, ticket.status, statusQuickTone(ticket.statusValue))} disabled={quickEditing.includes(`${ticket.id}-status`)} triggerTone={statusQuickTone(ticket.statusValue).tone} onChange={value => void quickEditTicket(ticket, 'status', value)} /> : <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-black ring-1 ${statusStyles[ticket.status]}`}>{ticket.status}</span>}</td>}
+                {visibleColumnSet.has('status') && <td className="px-3 py-4">{isStaff ? <QuickEditMenu ariaLabel={`Edit status for ${ticket.reference}`} value={ticket.statusValue} placeholder={ticket.status} options={includeCurrentQuickOption(statusQuickOptions, ticket.statusValue, ticket.status, statusQuickTone(ticket.statusValue))} disabled={quickEditing.includes(`${ticket.id}-status`)} triggerTone={statusQuickTone(ticket.statusValue).tone} onChange={value => changeTicketStatus(ticket, value)} /> : <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-black ring-1 ${statusStyles[ticket.status]}`}>{ticket.status}</span>}</td>}
                 {visibleColumnSet.has('handler') && <td className="px-3 py-4">{isStaff ? <QuickEditMenu ariaLabel={`Edit handler for ${ticket.reference}`} value={ticket.handlerId} placeholder={ticket.handler || 'Choose handler'} options={includeCurrentQuickOption(handlerQuickOptions.filter(option => option.value !== ticket.coHandlerId), ticket.handlerId, ticket.handler || 'Current handler')} disabled={quickEditing.includes(`${ticket.id}-handler`)} showDots={false} onChange={value => void quickEditTicket(ticket, 'handler', value)} /> : <span className="whitespace-nowrap text-[10px] font-bold text-slate-600">{ticket.handler || 'Unassigned'}</span>}</td>}
                 {visibleColumnSet.has('cohandler') && <td className="px-3 py-4">{isStaff ? <QuickEditMenu ariaLabel={`Edit co-handler for ${ticket.reference}`} value={ticket.coHandlerId} placeholder={ticket.handlerId ? (ticket.coHandler || 'Add co-handler') : 'Choose handler first'} options={includeCurrentQuickOption(handlerQuickOptions.filter(option => option.value !== ticket.handlerId), ticket.coHandlerId, ticket.coHandler || 'Current co-handler')} disabled={!ticket.handlerId || quickEditing.includes(`${ticket.id}-cohandler`)} title={!ticket.handlerId ? 'Choose a handler before adding a co-handler' : undefined} showDots={false} onChange={value => void quickEditTicket(ticket, 'cohandler', value)} /> : <span className="whitespace-nowrap text-[10px] font-bold text-slate-500">{ticket.coHandler || '—'}</span>}</td>}
                 {visibleColumnSet.has('created') && <td className="whitespace-nowrap px-3 py-4 text-[10px] font-bold text-slate-500">{formatMountainDateTime(ticket.createdAt)}</td>}
@@ -1617,8 +1716,8 @@ export const AgentTickets: React.FC = () => {
       <div ref={ticketDetailsRef} className={`shrink-0 self-start transition-all duration-300 ease-in-out ${selectedTicket ? 'w-[42%] min-w-0 max-w-[42rem] opacity-100' : 'pointer-events-none w-0 opacity-0'}`}>
       {selectedTicket && <aside className="flex max-h-[calc(100vh-6rem)] min-h-[620px] w-full flex-col overflow-hidden rounded-[2rem] bg-white shadow-sm ring-1 ring-slate-100" aria-label={`Ticket ${selectedTicket.reference}`}>
           <div className="border-b border-slate-100 px-6 py-5 sm:px-8"><div className="flex items-start justify-between gap-5"><div><div className="flex flex-wrap items-center gap-2"><span className="rounded-lg bg-slate-950 px-2.5 py-1 font-mono text-[10px] font-black text-white">{selectedTicket.reference}</span><span className={`text-[10px] font-black ${priorityStyles[selectedTicket.priority]}`}>{selectedTicket.priority === 'Intermediate' ? 'Normal priority' : `${selectedTicket.priority} priority`}</span></div><h2 className="mt-4 text-2xl font-black tracking-tight text-slate-950">{selectedTicket.subject}</h2><div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-bold text-slate-400"><span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5" />{selectedTicket.category}</span><span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" />Created {formatDate(selectedTicket.createdAt)}</span><span className="flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />Updated {formatDate(selectedTicket.updatedAt)}</span></div></div><button type="button" onClick={closeTicketDetails} aria-label="Close ticket details" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 text-slate-500 transition hover:bg-slate-950 hover:text-white"><X className="h-5 w-5" /></button></div></div>
-          {isStaff && <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-4 sm:px-8"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Update status</p><div className="mt-2 max-w-xs"><QuickEditMenu ariaLabel={`Update status for ${selectedTicket.reference}`} value={selectedTicket.statusValue} placeholder={selectedTicket.status} options={includeCurrentQuickOption(statusQuickOptions, selectedTicket.statusValue, selectedTicket.status, statusQuickTone(selectedTicket.statusValue))} disabled={quickEditing.includes(`${selectedTicket.id}-status`)} triggerTone={statusQuickTone(selectedTicket.statusValue).tone} onChange={value => void quickEditTicket(selectedTicket, 'status', value)} /></div></div>}
-          <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-3 sm:px-8"><div role="tablist" aria-label="Ticket details" className="inline-flex rounded-xl bg-slate-50 p-1">{(['overview', 'conversation', 'activity', ...(isStaff ? ['notes' as const] : [])] as DetailTab[]).map(tab => <button key={tab} type="button" role="tab" aria-selected={detailTab === tab} onClick={() => setDetailTab(tab)} className={`rounded-lg px-3 py-2 text-[10px] font-black transition ${detailTab === tab ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-700'}`}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}</div></div>
+          {isStaff && <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-4 sm:px-8"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Update status</p><div className="mt-2 max-w-xs"><QuickEditMenu ariaLabel={`Update status for ${selectedTicket.reference}`} value={selectedTicket.statusValue} placeholder={selectedTicket.status} options={includeCurrentQuickOption(statusQuickOptions, selectedTicket.statusValue, selectedTicket.status, statusQuickTone(selectedTicket.statusValue))} disabled={quickEditing.includes(`${selectedTicket.id}-status`)} triggerTone={statusQuickTone(selectedTicket.statusValue).tone} onChange={value => changeTicketStatus(selectedTicket, value)} /></div></div>}
+          <div className="shrink-0 border-b border-slate-100 bg-white px-6 py-3 sm:px-8"><div role="tablist" aria-label="Ticket details" className="inline-flex rounded-xl bg-slate-50 p-1">{(['overview', 'conversation', 'activity', ...(isStaff ? ['notes' as const] : [])] as DetailTab[]).map(tab => <button key={tab} type="button" role="tab" aria-selected={detailTab === tab} onClick={() => handleDetailTabChange(tab)} className={`rounded-lg px-3 py-2 text-[10px] font-black transition ${detailTab === tab ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-700'}`}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}</div></div>
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-6 sm:px-8">
             {detailLoading && <div className="mb-4 flex items-center gap-2 text-[10px] font-bold text-slate-400"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing ticket details</div>}
             {detailTab === 'overview' && <section aria-label="Request overview" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
@@ -1640,7 +1739,49 @@ export const AgentTickets: React.FC = () => {
             {detailTab === 'conversation' && <div className="space-y-6">
               {commentsLoading ? <div className="flex items-center justify-center gap-2 rounded-2xl bg-white/70 py-10 text-xs font-bold text-slate-500 ring-1 ring-slate-100"><Loader2 className="h-4 w-4 animate-spin text-amber-500" />Loading conversation…</div> : commentsError ? <div className="rounded-2xl border border-rose-100 bg-rose-50 px-5 py-4 text-xs font-semibold text-rose-600">{commentsError}</div> : selectedTicket.comments.length ? <div className="space-y-5">{selectedTicket.comments.map(comment => { const authorName = commentAuthorName(comment); return <div key={comment.id} className={`flex gap-3 ${comment.role === 'Agent' ? 'flex-row-reverse' : ''}`}><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[10px] font-black ${comment.role === 'Agent' ? 'bg-slate-950 text-amber-300' : 'bg-white text-slate-500 ring-1 ring-slate-200'}`}>{authorName.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase()}</span><div className={`max-w-[82%] ${comment.role === 'Agent' ? 'text-right' : ''}`}><div className={`mb-1.5 flex items-center gap-2 text-[9px] font-bold text-slate-400 ${comment.role === 'Agent' ? 'justify-end' : ''}`}><span className="text-slate-700">{authorName}</span><span>{formatDate(comment.timestamp)} · {formatTime(comment.timestamp)}</span></div><div className={`rounded-2xl px-4 py-3 text-left text-sm font-medium leading-6 shadow-sm ${comment.role === 'Agent' ? 'rounded-tr-sm bg-slate-950 text-white' : 'rounded-tl-sm bg-white text-slate-700 ring-1 ring-slate-100'}`}><p className="whitespace-pre-wrap">{comment.message}</p>{comment.screenshots.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{comment.screenshots.map((screenshot, index) => screenshot.url ? <a key={`${screenshot.label}-${index}`} href={screenshot.url} target="_blank" rel="noreferrer" aria-label={`Open comment screenshot ${screenshot.label}`} title={screenshot.label} className="h-20 w-20 overflow-hidden rounded-xl bg-slate-100 ring-1 ring-white/20"><img src={screenshot.url} alt={screenshot.label} loading="lazy" className="h-full w-full object-cover transition duration-300 hover:scale-105" /></a> : <span key={`${screenshot.label}-${index}`} className="inline-flex max-w-48 items-center gap-1.5 truncate rounded-lg bg-slate-100 px-2.5 py-2 text-[9px] font-bold text-slate-600"><ImagePlus className="h-3.5 w-3.5 shrink-0" />{screenshot.label}</span>)}</div>}</div></div></div>; })}</div> : <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 py-10 text-center"><MessageSquare className="mx-auto h-6 w-6 text-slate-300" /><p className="mt-3 text-xs font-black text-slate-600">No replies yet</p><p className="mt-1 text-[11px] font-medium text-slate-400">Use the reply box below to start the conversation.</p></div>}
             </div>}
-            {detailTab === 'activity' && <div className="space-y-7"><div className="relative border-l border-slate-200 pl-7"><span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 ring-4 ring-amber-50"><span className="h-1.5 w-1.5 rounded-full bg-slate-950" /></span><p className="text-xs font-black text-slate-800">Request submitted</p><p className="mt-1 text-[10px] font-semibold text-slate-400">{formatMountainDateTime(selectedTicket.createdAt)}</p><p className="mt-3 rounded-2xl bg-white p-4 text-sm font-medium leading-6 text-slate-600 shadow-sm ring-1 ring-slate-100">{selectedTicket.subject}</p></div>{activityLoading ? <div className="flex items-center gap-2 rounded-2xl bg-white/70 px-5 py-4 text-xs font-bold text-slate-500 ring-1 ring-slate-100"><Loader2 className="h-4 w-4 animate-spin text-amber-500" />Loading ticket activity…</div> : activityError ? <div className="rounded-2xl border border-rose-100 bg-rose-50 px-5 py-4 text-xs font-semibold text-rose-600">{activityError}</div> : ticketActivity.length > 0 ? <div className="space-y-7">{ticketActivity.map(activity => <div key={activity.id} className="relative border-l border-slate-200 pl-7"><span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-slate-950 ring-4 ring-slate-100"><span className="h-1.5 w-1.5 rounded-full bg-amber-300" /></span><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-black text-slate-800">{activity.updatedByName}</p><p className="text-[10px] font-semibold text-slate-400">{formatMountainDateTime(activity.createdAt)}</p></div><p className="mt-3 rounded-2xl bg-white p-4 text-sm font-medium leading-6 text-slate-600 shadow-sm ring-1 ring-slate-100">{activity.log}</p></div>)}</div> : <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-5 py-4 text-xs font-medium leading-5 text-slate-500">No additional activity has been recorded yet.</div>}</div>}
+            {detailTab === 'activity' && (
+              <div className="space-y-7">
+                {activityLoading ? (
+                  <div className="flex items-center gap-2 rounded-2xl bg-white/70 px-5 py-4 text-xs font-bold text-slate-500 ring-1 ring-slate-100">
+                    <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                    Loading ticket activity…
+                  </div>
+                ) : activityError ? (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-5 py-4 text-xs font-semibold text-rose-600">
+                    {activityError}
+                  </div>
+                ) : ticketActivity.length > 0 ? (
+                  <div className="space-y-7">
+                    {ticketActivity.map(activity => (
+                      <div key={activity.id} className="relative border-l border-slate-200 pl-7">
+                        <span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-slate-950 ring-4 ring-slate-100">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                        </span>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-black text-slate-800">{activity.updatedByName}</p>
+                          <p className="text-[10px] font-semibold text-slate-400">{formatMountainDateTime(activity.createdAt)}</p>
+                        </div>
+                        <p className="mt-3 rounded-2xl bg-white p-4 text-sm font-medium leading-6 text-slate-600 shadow-sm ring-1 ring-slate-100">
+                          {activity.log}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="relative border-l border-slate-200 pl-7">
+                  <span className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 ring-4 ring-amber-50">
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-950" />
+                  </span>
+                  <p className="text-xs font-black text-slate-800">Request submitted</p>
+                  <p className="mt-1 text-[10px] font-semibold text-slate-400">{formatMountainDateTime(selectedTicket.createdAt)}</p>
+                  <p className="mt-3 rounded-2xl bg-white p-4 text-sm font-medium leading-6 text-slate-600 shadow-sm ring-1 ring-slate-100">
+                    {selectedTicket.subject}
+                  </p>
+      </div>
+
+    </div>
+            )}
             {detailTab === 'notes' && <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 px-6 py-12 text-center"><FileText className="mx-auto h-6 w-6 text-slate-300" /><p className="mt-3 text-xs font-black text-slate-700">No internal notes yet</p><p className="mx-auto mt-1 max-w-xs text-[11px] font-medium leading-5 text-slate-400">Notes will remain separate from the customer conversation. They can be connected when the notes API is ready.</p></div>}
           </div>
           {detailTab === 'conversation' && <div className="border-t border-slate-100 bg-white p-5 sm:px-8">
@@ -1652,6 +1793,22 @@ export const AgentTickets: React.FC = () => {
       </div>
       </div>
 
+      {pendingCompletion && createPortal(<div className="fixed inset-0 z-[600] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={closeCompletionModal}>
+        <div role="dialog" aria-modal="true" aria-labelledby="complete-ticket-title" onMouseDown={event => event.stopPropagation()} className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl sm:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-6 w-6" /></span>
+            <button type="button" onClick={closeCompletionModal} disabled={quickEditing.includes(`${pendingCompletion.ticket.id}-status`)} aria-label="Close resolution dialog" className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-400 transition hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40"><X className="h-5 w-5" /></button>
+          </div>
+          <h2 id="complete-ticket-title" className="mt-5 text-2xl font-black tracking-tight text-slate-950">Resolve {pendingCompletion.ticket.reference}</h2>
+          <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">Add the resolution before changing this ticket to <span className="font-black text-slate-700">{tableStatusOptions.find(option => option.value === pendingCompletion.status)?.label || pendingCompletion.status}</span>.</p>
+          <label className="mt-5 block"><span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">Resolution <span className="text-rose-500">*</span></span><textarea autoFocus required value={resolution} onChange={event => { setResolution(event.target.value); if (resolutionError) setResolutionError(''); }} rows={5} placeholder="Describe what was done and the outcome." className="mt-2 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-medium leading-6 text-slate-800 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100" /></label>
+          {resolutionError && <p role="alert" className="mt-3 rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700">{resolutionError}</p>}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={closeCompletionModal} disabled={quickEditing.includes(`${pendingCompletion.ticket.id}-status`)} className="rounded-xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Cancel</button>
+            <button type="button" onClick={() => void submitTicketCompletion()} disabled={!resolution.trim() || quickEditing.includes(`${pendingCompletion.ticket.id}-status`)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-emerald-500 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{quickEditing.includes(`${pendingCompletion.ticket.id}-status`) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Send resolution</button>
+          </div>
+        </div>
+      </div>, document.body)}
     </div>
   );
 };

@@ -7,6 +7,7 @@ const IMAGE_METADATA_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/image/me
 const TICKETS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/tickets';
 const STALE_TICKETS_URL = `${TICKETS_URL}/stale`;
 const QUICK_EDIT_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket/quick_edit';
+const COMPLETE_TICKET_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket/complete';
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -77,6 +78,13 @@ export interface QuickEditTicketInput {
   handler: string | null;
   cohandler: string | null;
   log: string;
+}
+
+export interface CompleteTicketInput {
+  ticket_id: string;
+  status: string;
+  log: string;
+  resolution: string;
 }
 
 const normalizeSchemaOptions = (payload: unknown): TicketSchemaOption[] => {
@@ -245,6 +253,18 @@ export const agentTicketsApi = {
       body: JSON.stringify(input),
     });
     if (!response.ok) throw new ApiError('Failed to update ticket', response.status);
+    const body = await response.text();
+    if (!body) return null;
+    try { return JSON.parse(body); } catch { return body; }
+  },
+
+  completeTicket: async (input: CompleteTicketInput) => {
+    const response = await fetch(COMPLETE_TICKET_URL, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) throw new ApiError('Failed to complete ticket', response.status);
     const body = await response.text();
     if (!body) return null;
     try { return JSON.parse(body); } catch { return body; }

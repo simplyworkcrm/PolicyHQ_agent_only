@@ -1,4 +1,5 @@
 const NOTIFICATION_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/notification';
+const NOTIFICATION_COUNT_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/notification/count';
 const MARK_READ_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/notification/mark_read';
 
 export interface StoredNotification {
@@ -62,6 +63,17 @@ const readStateFilter = (isRead: boolean) => ({
 });
 
 export const notificationApi = {
+  count: async (): Promise<number> => {
+    const response = await fetch(NOTIFICATION_COUNT_URL, {
+      method: 'GET',
+      headers: headers(),
+    });
+    if (!response.ok) throw new Error(`Unable to load notification count (${response.status})`);
+    const count = Number((await response.text()).trim());
+    if (!Number.isFinite(count) || count < 0) throw new Error('The notification count response was invalid.');
+    return Math.floor(count);
+  },
+
   list: async (page: number, perPage: number, isRead: boolean): Promise<NotificationPage> => {
     const response = await fetch(NOTIFICATION_URL, {
       method: 'POST',
