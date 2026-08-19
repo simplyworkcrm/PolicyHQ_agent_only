@@ -14,7 +14,7 @@ const isRealtimeStatusNotification = (content: string) => {
   }
 };
 
-export const NotificationDirect: React.FC = () => {
+export const NotificationDirect: React.FC<{ disabled?: boolean }> = ({ disabled = false }) => {
   const { notifications, setNotifications, markAsRead, markAllAsRead } = useRealtime();
   const [isOpen, setIsOpen] = useState(false);
   const [readFilter, setReadFilter] = useState<ReadFilter>('all');
@@ -23,6 +23,7 @@ export const NotificationDirect: React.FC = () => {
   const type = 'direct';
 
   const handleToggle = () => {
+      if (disabled) return;
       setIsOpen(!isOpen);
       if (!isOpen) {
           setSearchQuery('');
@@ -53,19 +54,20 @@ export const NotificationDirect: React.FC = () => {
     <>
       <button 
         onClick={handleToggle}
+        disabled={disabled}
         className={`relative z-50 flex h-10 w-10 items-center justify-center rounded-full border border-transparent shadow-sm transition-all hover:-translate-y-px hover:shadow-md
-            ${isOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 hover:text-slate-700'}
+            ${disabled ? 'cursor-not-allowed bg-white text-slate-300 opacity-60 hover:translate-y-0 hover:shadow-sm' : isOpen ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 hover:text-slate-700'}
         `}
-        title="Direct Messages"
-        aria-label={unreadCount > 0 ? `Direct Messages, ${unreadCount} unread` : 'Direct Messages'}
+        title={disabled ? 'Direct Messages are temporarily unavailable' : 'Direct Messages'}
+        aria-label={disabled ? 'Direct Messages, temporarily unavailable' : unreadCount > 0 ? `Direct Messages, ${unreadCount} unread` : 'Direct Messages'}
       >
         <MessageSquare className="h-4 w-4" strokeWidth={2} />
-        {unreadCount > 0 && (
+        {!disabled && unreadCount > 0 && (
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-brand-500 ring-2 ring-white" />
         )}
       </button>
 
-      {isOpen && createPortal(
+      {!disabled && isOpen && createPortal(
           <div className="fixed inset-0 z-[9999] flex justify-end items-stretch font-sans p-4 sm:p-6">
               <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity animate-in fade-in duration-300" onClick={handleClose} />
               

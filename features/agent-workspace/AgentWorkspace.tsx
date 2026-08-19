@@ -3976,7 +3976,7 @@ const AgentLayout: React.FC = () => {
 
   // Permission Logic
   const isLocked = (key: string) => {
-    if (key === 'ticketing' && !isImpersonating) return false;
+    if (key === 'ticketing') return false;
     return !availableFeatures.includes(key);
   };
 
@@ -4265,7 +4265,7 @@ const AgentLayout: React.FC = () => {
                       {isNightMode ? <Sun className="h-4 w-4" strokeWidth={2} /> : <Moon className="h-4 w-4" strokeWidth={2} />}
                     </button>
                     <div className="flex items-center gap-2.5">
-                        <NotificationDirect />
+                        <NotificationDirect disabled />
                         <NotificationBell />
                     </div>
                     <div className="relative z-50 ml-1 hidden sm:block">

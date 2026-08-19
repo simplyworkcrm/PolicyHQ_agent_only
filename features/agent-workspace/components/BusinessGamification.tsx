@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, CheckCircle2, ChevronRight, Coins, Crown, Flame, GitBranch, HeartPulse, Loader2, LockKeyhole, Medal, Orbit, Pencil, ShieldCheck, Sparkles, Star, Target, Timer, Trophy, Users, Zap } from 'lucide-react';
-import greenCoupleGif from '../assets/green_couple_360.gif';
-import redCoupleGif from '../assets/red_couple_360.gif';
+import { Building2, CheckCircle2, ChevronRight, Crown, Flame, Loader2, LockKeyhole, Medal, Pencil, Sparkles, Star, Target, Trophy, Zap } from 'lucide-react';
+import hallOfFameGreenBlazer from '../assets/hall_of_fame_green_blazer.webp';
+import hallOfFameRedBlazer from '../assets/hall_of_fame_red_blazer.webp';
 import { FflIssuePaidRecord, fflIssuePaidApi } from '../services/fflIssuePaidApi';
 
 type TrackId = 'personal' | 'agency' | 'hall-of-fame';
@@ -128,13 +128,13 @@ export function BusinessGamification({
   const remaining = Math.max(0, track.goal - track.current);
   const isLiveFflTrack = activeTrack === 'agency' || activeTrack === 'hall-of-fame';
   const issuePaidMetrics = useMemo(() => [
-    { label: 'Whole Life', value: compactUsd.format(Number(issuePaid?.whole_life) || 0), exact: exactUsd.format(Number(issuePaid?.whole_life) || 0), Icon: ShieldCheck },
-    { label: 'Term Life', value: compactUsd.format(Number(issuePaid?.term_life) || 0), exact: exactUsd.format(Number(issuePaid?.term_life) || 0), Icon: Timer },
-    { label: 'Annuity', value: compactUsd.format(Number(issuePaid?.annuity) || 0), exact: exactUsd.format(Number(issuePaid?.annuity) || 0), Icon: Coins },
-    { label: 'Universal Life', value: compactUsd.format(Number(issuePaid?.ul) || 0), exact: exactUsd.format(Number(issuePaid?.ul) || 0), Icon: Orbit },
-    { label: 'Health', value: compactUsd.format(Number(issuePaid?.health) || 0), exact: exactUsd.format(Number(issuePaid?.health) || 0), Icon: HeartPulse },
-    { label: 'Outside First Leg', value: compactUsd.format(Number(issuePaid?.outside_first_leg) || 0), exact: exactUsd.format(Number(issuePaid?.outside_first_leg) || 0), Icon: Users },
-    { label: 'First Leg', value: `${Number(issuePaid?.first_leg_percent) || 0}%`, exact: `${Number(issuePaid?.first_leg_percent) || 0}%`, Icon: GitBranch },
+    { label: 'Whole Life', value: compactUsd.format(Number(issuePaid?.whole_life) || 0), exact: exactUsd.format(Number(issuePaid?.whole_life) || 0) },
+    { label: 'Term Life', value: compactUsd.format(Number(issuePaid?.term_life) || 0), exact: exactUsd.format(Number(issuePaid?.term_life) || 0) },
+    { label: 'Annuity', value: compactUsd.format(Number(issuePaid?.annuity) || 0), exact: exactUsd.format(Number(issuePaid?.annuity) || 0) },
+    { label: 'Universal Life', value: compactUsd.format(Number(issuePaid?.ul) || 0), exact: exactUsd.format(Number(issuePaid?.ul) || 0) },
+    { label: 'Health', value: compactUsd.format(Number(issuePaid?.health) || 0), exact: exactUsd.format(Number(issuePaid?.health) || 0) },
+    { label: 'Outside First Leg', value: compactUsd.format(Number(issuePaid?.outside_first_leg) || 0), exact: exactUsd.format(Number(issuePaid?.outside_first_leg) || 0) },
+    { label: 'First Leg', value: `${Number(issuePaid?.first_leg_percent) || 0}%`, exact: `${Number(issuePaid?.first_leg_percent) || 0}%` },
   ], [issuePaid]);
   const theme = {
     personal: {
@@ -156,15 +156,6 @@ export function BusinessGamification({
       glow: 'bg-rose-300/30',
     },
   }[activeTrack];
-  const metricTones = [
-    'border-violet-300 bg-gradient-to-br from-violet-100 via-white to-fuchsia-100 text-violet-700 shadow-violet-200/70',
-    'border-cyan-300 bg-gradient-to-br from-cyan-100 via-white to-sky-100 text-cyan-700 shadow-cyan-200/70',
-    'border-amber-300 bg-gradient-to-br from-amber-100 via-white to-yellow-100 text-amber-700 shadow-amber-200/70',
-    'border-indigo-300 bg-gradient-to-br from-indigo-100 via-white to-blue-100 text-indigo-700 shadow-indigo-200/70',
-    'border-rose-300 bg-gradient-to-br from-rose-100 via-white to-pink-100 text-rose-700 shadow-rose-200/70',
-    'border-emerald-300 bg-gradient-to-br from-emerald-100 via-white to-teal-100 text-emerald-700 shadow-emerald-200/70',
-    'border-orange-300 bg-gradient-to-br from-orange-100 via-white to-red-100 text-orange-700 shadow-orange-200/70',
-  ];
   const checkpoints = [25, 50, 75, 100];
   const nextCheckpoint = checkpoints.find(checkpoint => checkpoint > progress) ?? 100;
   const nextMilestoneTarget = track.goal * (nextCheckpoint / 100);
@@ -362,24 +353,17 @@ export function BusinessGamification({
             </div>
 
             {isLiveFflTrack && issuePaid ? (
-              <div className="mt-6">
+              <div className="mt-5">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Issue-paid breakdown</p>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200/80 shadow-sm sm:grid-cols-4 dark:border-white/10 dark:bg-white/10">
                   {issuePaidMetrics.map((metric, index) => {
-                    const MetricIcon = metric.Icon;
                     return (
-                      <div key={metric.label} className={`group relative overflow-hidden rounded-2xl border p-3.5 shadow-lg transition-all duration-300 hover:-translate-y-1.5 hover:scale-[1.02] hover:shadow-xl dark:border-white/10 dark:bg-white/5 ${metricTones[index]}`}>
-                        <div className="pointer-events-none absolute -right-5 -top-6 h-16 w-16 rounded-full bg-current opacity-[0.08] blur-xl transition-transform duration-300 group-hover:scale-150" />
-                        <div className="relative flex items-center justify-between gap-2">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/75 shadow-sm ring-1 ring-current/10 dark:bg-white/10">
-                            <MetricIcon className="h-4 w-4" />
-                          </span>
-                          <span className="rounded-full bg-white/65 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] opacity-70 dark:bg-white/10">Stat {String(index + 1).padStart(2, '0')}</span>
+                      <div key={metric.label} className={`min-w-0 bg-white/85 px-3 py-2.5 dark:bg-slate-950/75 ${index === issuePaidMetrics.length - 1 ? 'col-span-2' : ''}`}>
+                        <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">{metric.label}</p>
+                        <div className="mt-1 flex min-w-0 items-baseline gap-2">
+                          <p className="shrink-0 text-sm font-black tabular-nums text-slate-900 dark:text-white">{metric.value}</p>
+                          {metric.exact !== metric.value && <p className="truncate text-[9px] font-medium tabular-nums text-slate-400" title={metric.exact}>{metric.exact}</p>}
                         </div>
-                        <p className="relative mt-3 text-[9px] font-black uppercase tracking-[0.14em] opacity-75">{metric.label}</p>
-                        <p className="relative mt-1 text-lg font-black dark:text-white">{metric.value}</p>
-                        <p className="relative mt-1 truncate text-[9px] font-bold opacity-60" title={metric.exact}>{metric.exact}</p>
-                        <div className="absolute inset-x-0 bottom-0 h-1 bg-current opacity-70" />
                       </div>
                     );
                   })}
@@ -456,8 +440,8 @@ export function BusinessGamification({
         ) : (
           <div className={`relative min-h-72 overflow-hidden lg:min-h-full ${activeTrack === 'agency' ? 'bg-[#071a14]' : 'bg-[#20090d]'}`}>
             <img
-              src={activeTrack === 'agency' ? greenCoupleGif : redCoupleGif}
-              alt={activeTrack === 'agency' ? 'Green jacket agency qualification' : 'Red jacket Hall of Fame qualification'}
+              src={activeTrack === 'agency' ? hallOfFameGreenBlazer : hallOfFameRedBlazer}
+              alt={activeTrack === 'agency' ? 'Hall of Fame green blazer' : 'Hall of Fame red blazer'}
               className="absolute inset-0 h-full w-full object-cover object-top"
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />

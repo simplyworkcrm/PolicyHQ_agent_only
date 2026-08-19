@@ -33,9 +33,9 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { agentTicketsApi, CreateTicketInput, ImageMetadata, TicketSchemaOption } from '../services/agentTicketsApi';
+import { agentTicketsApi, CreateTicketInput, ImageMetadata, TicketSchemaOption, type TicketDashboardResponse } from '../services/agentTicketsApi';
 
-type TicketStatus = 'Waiting' | 'On it' | 'Resolved' | 'Incomplete';
+type TicketStatus = 'Waiting' | 'On it' | 'Needs Attention' | 'Resolved' | 'Incomplete';
 type TicketPriority = 'Low' | 'Intermediate' | 'High';
 type TicketFilter = 'all' | 'attention' | 'open' | 'closed';
 type TicketScope = 'all' | 'mine' | 'handling' | 'cohandling';
@@ -253,6 +253,7 @@ const normalizeStatus = (value: unknown): TicketStatus => {
   const status = String(value || '').trim().toLowerCase();
   if (status.includes('complete') && status.includes('incomplete')) return 'Incomplete';
   if (status === 'completed' || status === 'complete' || status === 'closed' || status === 'resolved') return 'Resolved';
+  if (status.includes('attention')) return 'Needs Attention';
   if (status === 'in progress' || status === 'on it' || status === 'working') return 'On it';
   return 'Waiting';
 };
@@ -427,6 +428,7 @@ const isSlaBreached = (ticket: TicketRecord, now = Date.now()) => (
 const statusStyles: Record<TicketStatus, string> = {
   Waiting: 'bg-amber-50 text-amber-700 ring-amber-200',
   'On it': 'bg-blue-50 text-blue-700 ring-blue-200',
+  'Needs Attention': 'bg-rose-50 text-rose-700 ring-rose-200',
   Resolved: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   Incomplete: 'bg-slate-100 text-slate-600 ring-slate-200',
 };
@@ -957,6 +959,7 @@ export const AgentTickets: React.FC = () => {
   const deepLinkLoadKey = searchParams.get('load');
   const ticketDetailsRef = useRef<HTMLDivElement>(null);
   const handledDeepLinkRef = useRef('');
+  const dashboardSelectedTicketIdRef = useRef<string | null>(null);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [isStaff, setIsStaff] = useState(false);
   const [staffChecked, setStaffChecked] = useState(false);
@@ -1003,6 +1006,9 @@ export const AgentTickets: React.FC = () => {
   const [activityError, setActivityError] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [dashboardData, setDashboardData] = useState<TicketDashboardResponse | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState('');
   const [view, setView] = useState<'home' | 'assistant' | 'dashboard' | 'tickets'>('home');
 
   const loadTickets = useCallback(async () => {
@@ -1019,7 +1025,8 @@ export const AgentTickets: React.FC = () => {
       });
       const next = response.items.map((raw: any) => mapTicket(raw, String(raw?.status || '').trim().toLowerCase() === 'needs attention'));
       setTickets(current => {
-        const linkedTicket = deepLinkedTicketId ? current.find(ticket => ticket.id === deepLinkedTicketId) : undefined;
+        const retainedTicketId = deepLinkedTicketId || dashboardSelectedTicketIdRef.current;
+        const linkedTicket = retainedTicketId ? current.find(ticket => ticket.id === retainedTicketId) : undefined;
         return linkedTicket && !next.some(ticket => ticket.id === linkedTicket.id) ? [linkedTicket, ...next] : next;
       });
       setPagination({
@@ -1032,15 +1039,34 @@ export const AgentTickets: React.FC = () => {
         itemsTotal: response.itemsTotal,
         pageTotal: response.pageTotal,
       });
-      setSelectedId(current => current && (next.some(ticket => ticket.id === current) || current === deepLinkedTicketId) ? current : null);
+      setSelectedId(current => current && (
+        next.some(ticket => ticket.id === current)
+        || current === deepLinkedTicketId
+        || current === dashboardSelectedTicketIdRef.current
+      ) ? current : null);
     } catch {
-      setTickets([]);
-      setSelectedId(null);
+      const dashboardTicketId = dashboardSelectedTicketIdRef.current;
+      setTickets(current => dashboardTicketId
+        ? current.filter(ticket => ticket.id === dashboardTicketId)
+        : []);
+      if (!dashboardTicketId) setSelectedId(null);
       setLoadError('Tickets could not be loaded. Check the ticket API and try again.');
     } finally {
       setLoading(false);
     }
   }, [appliedQuickFilter, debouncedSearch, deepLinkedTicketId, isStaff, scope, sortConfig, staleOnly, ticketPage, ticketPageSize, user?.id]);
+
+  const loadDashboard = useCallback(async () => {
+    setDashboardLoading(true);
+    setDashboardError('');
+    try {
+      setDashboardData(await agentTicketsApi.getDashboard(isStaff));
+    } catch (dashboardLoadError) {
+      setDashboardError(dashboardLoadError instanceof Error ? dashboardLoadError.message : 'The ticket dashboard could not be loaded.');
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [isStaff]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1066,6 +1092,10 @@ export const AgentTickets: React.FC = () => {
   useEffect(() => {
     if (staffChecked) void loadTickets();
   }, [loadTickets, staffChecked]);
+
+  useEffect(() => {
+    if (view === 'dashboard' && staffChecked) void loadDashboard();
+  }, [loadDashboard, staffChecked, view]);
 
   useEffect(() => {
     if (!deepLinkedTicketId || !staffChecked || loading) return;
@@ -1175,6 +1205,7 @@ export const AgentTickets: React.FC = () => {
 
   const closeTicketDetails = useCallback(() => {
     setSelectedId(null);
+    dashboardSelectedTicketIdRef.current = null;
     handledDeepLinkRef.current = '';
     if (searchParams.has('ticket_id') || searchParams.has('tab') || searchParams.has('load')) {
       const nextParams = new URLSearchParams(searchParams);
@@ -1184,6 +1215,54 @@ export const AgentTickets: React.FC = () => {
       setSearchParams(nextParams, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  const openDashboardTicket = useCallback((ticket: TicketRecord) => {
+    dashboardSelectedTicketIdRef.current = ticket.id;
+    setTickets(current => current.some(row => row.id === ticket.id) ? current : [ticket, ...current]);
+    setFilter('all');
+    setDetailTab('overview');
+    setSelectedId(ticket.id);
+    setView('tickets');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('ticket_id', ticket.id);
+    nextParams.set('tab', 'overview');
+    nextParams.set('load', String(Date.now()));
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const openDashboardStatus = useCallback((dashboardFilter: TicketFilter) => {
+    const requestedStatuses: Record<TicketFilter, string[]> = {
+      attention: ['needs attention'],
+      open: ['waiting', 'in progress'],
+      closed: ['completed', 'completed - incomplete'],
+      all: [],
+    };
+    const statusValues = requestedStatuses[dashboardFilter].map(requestedStatus => {
+      const matchingOption = tableStatusOptions.find(option => (
+        option.value.trim().toLowerCase() === requestedStatus
+        || option.label.trim().toLowerCase() === requestedStatus
+      ));
+      return matchingOption?.value || requestedStatus;
+    });
+    const nextQuickFilter: TicketQuickFilter = { ...EMPTY_QUICK_FILTER, status: statusValues };
+
+    dashboardSelectedTicketIdRef.current = null;
+    setSelectedId(null);
+    setTicketPage(1);
+    setScope('all');
+    setFilter('all');
+    setStaleOnly(false);
+    setSearch('');
+    setQuickFilter(nextQuickFilter);
+    setAppliedQuickFilter(nextQuickFilter);
+    setView('tickets');
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('ticket_id');
+    nextParams.delete('tab');
+    nextParams.delete('load');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams, tableStatusOptions]);
 
   const handleDetailTabChange = useCallback((tab: DetailTab) => {
     setDetailTab(tab);
@@ -1290,13 +1369,25 @@ export const AgentTickets: React.FC = () => {
     return () => document.removeEventListener('click', closeOnOutsideClick);
   }, [closeTicketDetails, selectedId]);
 
-  const selectedTicket = tickets.find(ticket => ticket.id === selectedId) || null;
-  const counts = useMemo(() => ({
-    all: tickets.length,
-    attention: tickets.filter(ticket => ticket.needsAttention || ticket.priority === 'High').length,
-    open: tickets.filter(ticket => ticket.status !== 'Resolved' && ticket.status !== 'Incomplete').length,
-    closed: tickets.filter(ticket => ticket.status === 'Resolved' || ticket.status === 'Incomplete').length,
-  }), [tickets]);
+  const dashboardCounts = useMemo(() => {
+    const totals = new Map<string, number>();
+    (dashboardData?.tickets || []).forEach(item => {
+      const status = item.tickets_status.trim().toLowerCase();
+      totals.set(status, (totals.get(status) || 0) + item.count);
+    });
+    return {
+      attention: totals.get('needs attention') || 0,
+      open: (totals.get('waiting') || 0) + (totals.get('in progress') || 0),
+      closed: (totals.get('completed') || 0) + (totals.get('completed - incomplete') || 0),
+      all: Array.from(totals.values()).reduce((sum, count) => sum + count, 0),
+    };
+  }, [dashboardData]);
+  const dashboardLatestTickets = useMemo(() => (
+    (dashboardData?.latest_tickets || []).map((raw: any) => mapTicket(raw, String(raw?.status || '').trim().toLowerCase() === 'needs attention'))
+  ), [dashboardData]);
+  const selectedTicket = tickets.find(ticket => ticket.id === selectedId)
+    || dashboardLatestTickets.find(ticket => ticket.id === selectedId)
+    || null;
 
   const visibleTickets = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -1562,9 +1653,9 @@ export const AgentTickets: React.FC = () => {
     <nav aria-label="Support navigation" className="flex flex-wrap items-center gap-1 rounded-2xl bg-white p-1.5 shadow-sm ring-1 ring-slate-100">
       {[
         { key: 'home' as const, label: 'Ask Support', icon: MessageCircleQuestion },
-        { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard, disabled: true },
+        { key: 'dashboard' as const, label: 'Dashboard', icon: LayoutDashboard },
         { key: 'tickets' as const, label: 'All Tickets', icon: FileText },
-      ].map(item => <button key={item.key} type="button" disabled={item.disabled} aria-disabled={item.disabled || undefined} title={item.disabled ? 'Dashboard coming soon' : undefined} onClick={() => { if (item.disabled) return; if (item.key === 'home') setComposerText(''); setView(item.key); }} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-black transition ${item.disabled ? 'cursor-not-allowed text-slate-300' : active === item.key ? 'bg-slate-950 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}><item.icon className={`h-3.5 w-3.5 ${item.disabled ? 'text-slate-300' : active === item.key ? 'text-amber-300' : 'text-slate-400'}`} />{item.label}{item.disabled && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-amber-700 ring-1 ring-amber-200">Coming soon</span>}</button>)}
+      ].map(item => <button key={item.key} type="button" onClick={() => { if (item.key === 'home') setComposerText(''); setView(item.key); }} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-black transition ${active === item.key ? 'bg-slate-950 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}><item.icon className={`h-3.5 w-3.5 ${active === item.key ? 'text-amber-300' : 'text-slate-400'}`} />{item.label}</button>)}
     </nav>
   );
 
@@ -1585,7 +1676,7 @@ export const AgentTickets: React.FC = () => {
               <textarea autoFocus aria-label="Ask the support assistant" value={composerText} onChange={event => setComposerText(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && composerText.trim()) { event.preventDefault(); startRequest(); } }} rows={1} placeholder="Ask anything" className="max-h-28 min-h-[40px] flex-1 resize-none bg-transparent px-2 py-2.5 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400" />
               <button type="button" onClick={() => startRequest()} disabled={!composerText.trim()} aria-label="Send to support assistant" className="group flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white transition-all duration-300 hover:scale-105 hover:bg-amber-400 hover:text-slate-950 active:scale-95 disabled:bg-slate-100 disabled:text-slate-300"><ArrowRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-0.5" /></button>
             </div>
-            <button type="button" disabled aria-disabled="true" title="Dashboard coming soon" className="mx-auto mt-5 inline-flex cursor-not-allowed items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-300 shadow-sm"><LayoutDashboard className="h-3.5 w-3.5" />Dashboard<span className="rounded-full bg-amber-50 px-2 py-0.5 text-[8px] font-black uppercase tracking-wide text-amber-700 ring-1 ring-amber-200">Coming soon</span></button>
+            <button type="button" onClick={() => setView('dashboard')} className="mx-auto mt-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-500 shadow-sm transition hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:text-slate-900 hover:shadow-md"><LayoutDashboard className="h-3.5 w-3.5" />Dashboard</button>
             <div className="mx-auto mt-6 flex max-w-3xl flex-wrap justify-center gap-2">{quickPrompts.map((prompt, index) => <button key={prompt} type="button" onClick={() => startRequest(prompt)} style={{ animationDelay: `${300 + index * 65}ms`, animationFillMode: 'both' }} className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[10px] font-bold text-slate-500 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 hover:shadow-md active:translate-y-0 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-500 motion-reduce:transform-none">{prompt}</button>)}</div>
           </div>
         </div>
@@ -1599,7 +1690,6 @@ export const AgentTickets: React.FC = () => {
   }
 
   if (view === 'dashboard') {
-    const recentTickets = tickets.slice(0, 5);
     return (
       <div className="min-h-[calc(100vh-7rem)] space-y-5 pb-8 font-sans">
         <SupportNav active="dashboard" />
@@ -1607,16 +1697,16 @@ export const AgentTickets: React.FC = () => {
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { key: 'attention' as const, label: 'Needs attention', value: counts.attention, note: 'Urgent or flagged', icon: AlertCircle, colors: 'bg-rose-50 text-rose-700 ring-rose-100' },
-            { key: 'open' as const, label: 'Open requests', value: counts.open, note: 'Waiting or in progress', icon: Inbox, colors: 'bg-blue-50 text-blue-700 ring-blue-100' },
-            { key: 'closed' as const, label: 'Completed', value: counts.closed, note: 'Resolved requests', icon: TicketCheck, colors: 'bg-emerald-50 text-emerald-700 ring-emerald-100' },
-            { key: 'all' as const, label: 'All tickets', value: counts.all, note: 'Your complete history', icon: LayoutDashboard, colors: 'bg-amber-50 text-amber-700 ring-amber-100' },
-          ].map(card => <button key={card.key} type="button" onClick={() => { setFilter(card.key); setView('tickets'); }} className="flex items-center gap-4 rounded-[1.5rem] bg-white p-5 text-left shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-md"><span className={`flex h-11 w-11 items-center justify-center rounded-2xl ring-1 ${card.colors}`}><card.icon className="h-5 w-5" /></span><span><span className="block text-2xl font-black text-slate-950">{loading ? '—' : card.value}</span><span className="block text-xs font-black text-slate-800">{card.label}</span><span className="mt-0.5 block text-[10px] font-semibold text-slate-400">{card.note}</span></span></button>)}
+            { key: 'attention' as const, label: 'Needs attention', value: dashboardCounts.attention, note: 'Urgent or flagged', icon: AlertCircle, colors: 'bg-rose-50 text-rose-700 ring-rose-100' },
+            { key: 'open' as const, label: 'Open requests', value: dashboardCounts.open, note: 'Waiting or in progress', icon: Inbox, colors: 'bg-blue-50 text-blue-700 ring-blue-100' },
+            { key: 'closed' as const, label: 'Completed', value: dashboardCounts.closed, note: 'Resolved requests', icon: TicketCheck, colors: 'bg-emerald-50 text-emerald-700 ring-emerald-100' },
+            { key: 'all' as const, label: 'All tickets', value: dashboardCounts.all, note: 'Your complete history', icon: LayoutDashboard, colors: 'bg-amber-50 text-amber-700 ring-amber-100' },
+          ].map(card => <button key={card.key} type="button" onClick={() => openDashboardStatus(card.key)} className="flex items-center gap-4 rounded-[1.5rem] bg-white p-5 text-left shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:ring-slate-300 hover:shadow-md"><span className={`flex h-11 w-11 items-center justify-center rounded-2xl ring-1 ${card.colors}`}><card.icon className="h-5 w-5" /></span><span><span className="block text-2xl font-black text-slate-950">{dashboardLoading ? '—' : card.value}</span><span className="block text-xs font-black text-slate-800">{card.label}</span><span className="mt-0.5 block text-[10px] font-semibold text-slate-400">{card.note}</span></span></button>)}
         </section>
 
-        {loadError && <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" />{loadError}</span><button type="button" onClick={() => void loadTickets()} className="inline-flex items-center gap-1.5 font-black"><RotateCcw className="h-3.5 w-3.5" />Retry</button></div>}
+        {dashboardError && <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" />{dashboardError}</span><button type="button" onClick={() => void loadDashboard()} className="inline-flex items-center gap-1.5 font-black"><RotateCcw className="h-3.5 w-3.5" />Retry</button></div>}
 
-        <section className="rounded-[2rem] bg-white p-6 shadow-sm ring-1 ring-slate-100"><div className="flex items-center justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-600">Most recent</p><h2 className="mt-1 text-xl font-black text-slate-950">Latest requests</h2></div><button type="button" onClick={() => { setFilter('all'); setView('tickets'); }} className="inline-flex items-center gap-1 text-[10px] font-black text-slate-500 hover:text-slate-900">See all<ChevronRight className="h-4 w-4" /></button></div><div className="mt-5 divide-y divide-slate-100">{loading ? <div className="flex h-32 items-center justify-center text-slate-400"><Loader2 className="h-6 w-6 animate-spin text-amber-500" /></div> : recentTickets.length ? recentTickets.map(ticket => <button key={ticket.id} type="button" onClick={() => { setSelectedId(ticket.id); setView('tickets'); }} className="flex w-full items-center gap-4 py-4 text-left transition hover:bg-slate-50"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${ticket.status === 'Resolved' ? 'bg-emerald-400' : ticket.priority === 'High' ? 'bg-rose-400' : 'bg-blue-400'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-800">{ticket.subject}</span><span className="mt-1 block text-[10px] font-semibold text-slate-400">{ticket.reference} · {ticket.category}</span></span><span className={`rounded-full px-2.5 py-1 text-[9px] font-black ring-1 ${statusStyles[ticket.status]}`}>{ticket.status}</span><span className="hidden text-[10px] font-bold text-slate-400 sm:block">{formatDate(ticket.updatedAt)}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>) : <div className="py-14 text-center"><p className="text-sm font-black text-slate-700">No tickets yet</p><p className="mt-1 text-xs font-medium text-slate-400">Your submitted requests will appear here.</p></div>}</div></section>
+        <section className="rounded-[2rem] bg-white p-6 shadow-sm ring-1 ring-slate-100"><div className="flex items-center justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-600">Most recent</p><h2 className="mt-1 text-xl font-black text-slate-950">Latest requests</h2></div><button type="button" onClick={() => { setFilter('all'); setView('tickets'); }} className="inline-flex items-center gap-1 text-[10px] font-black text-slate-500 hover:text-slate-900">See all<ChevronRight className="h-4 w-4" /></button></div><div className="mt-5 divide-y divide-slate-100">{dashboardLoading ? <div className="flex h-32 items-center justify-center text-slate-400"><Loader2 className="h-6 w-6 animate-spin text-amber-500" /></div> : dashboardLatestTickets.length ? dashboardLatestTickets.map(ticket => <button key={ticket.id} type="button" onClick={() => openDashboardTicket(ticket)} className="flex w-full items-center gap-4 py-4 text-left transition hover:bg-slate-50"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${ticket.status === 'Resolved' ? 'bg-emerald-400' : ticket.priority === 'High' ? 'bg-rose-400' : 'bg-blue-400'}`} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-800">{ticket.subject}</span><span className="mt-1 block text-[10px] font-semibold text-slate-400">{ticket.reference} · {ticket.category}</span><span className="mt-1 block truncate text-[10px] font-semibold text-slate-500"><span className="text-slate-400">Created by:</span> {ticket.requesterName || 'Unknown'} <span className="mx-1.5 text-slate-300">·</span> <span className="text-slate-400">Assigned:</span> {ticket.handler || 'Unassigned'}</span>{ticket.resolution?.solution && <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3 shrink-0" /><span className="truncate"><span className="font-black">Resolution:</span> {ticket.resolution.solution}</span></span>}</span><span className={`rounded-full px-2.5 py-1 text-[9px] font-black ring-1 ${statusStyles[ticket.status]}`}>{ticket.status}</span><span className="hidden text-[10px] font-bold text-slate-400 sm:block">{formatDate(ticket.updatedAt)}</span><ChevronRight className="h-4 w-4 text-slate-300" /></button>) : <div className="py-14 text-center"><p className="text-sm font-black text-slate-700">No tickets yet</p><p className="mt-1 text-xs font-medium text-slate-400">Your submitted requests will appear here.</p></div>}</div></section>
       </div>
     );
   }

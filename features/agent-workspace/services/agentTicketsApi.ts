@@ -8,6 +8,7 @@ const TICKETS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/tickets';
 const STALE_TICKETS_URL = `${TICKETS_URL}/stale`;
 const QUICK_EDIT_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket/quick_edit';
 const COMPLETE_TICKET_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket/complete';
+const TICKET_DASHBOARD_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket/dashboard';
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -87,6 +88,16 @@ export interface CompleteTicketInput {
   resolution: string;
 }
 
+export interface TicketDashboardStatusCount {
+  tickets_status: string;
+  count: number;
+}
+
+export interface TicketDashboardResponse {
+  tickets: TicketDashboardStatusCount[];
+  latest_tickets: unknown[];
+}
+
 const normalizeSchemaOptions = (payload: unknown): TicketSchemaOption[] => {
   const record = payload && typeof payload === 'object' && !Array.isArray(payload)
     ? payload as Record<string, unknown>
@@ -114,6 +125,28 @@ const normalizeSchemaOptions = (payload: unknown): TicketSchemaOption[] => {
 };
 
 export const agentTicketsApi = {
+  getDashboard: async (isStaff: boolean): Promise<TicketDashboardResponse> => {
+    const params = new URLSearchParams({ is_staff: String(isStaff) });
+    const response = await fetch(`${TICKET_DASHBOARD_URL}?${params.toString()}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+    if (!response.ok) throw new ApiError('Failed to load ticket dashboard', response.status);
+    const payload = await response.json();
+    return {
+      tickets: Array.isArray(payload?.tickets)
+        ? payload.tickets.map((item: unknown) => {
+            const row = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+            return {
+              tickets_status: String(row.tickets_status || '').trim(),
+              count: Number(row.count) || 0,
+            };
+          })
+        : [],
+      latest_tickets: Array.isArray(payload?.latest_tickets) ? payload.latest_tickets : [],
+    };
+  },
+
   getStaleCount: async (): Promise<number> => {
     const response = await fetch(STALE_TICKETS_URL, {
       method: 'GET',
