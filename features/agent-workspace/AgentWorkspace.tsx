@@ -52,6 +52,7 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  ComposedChart,
   CartesianGrid,
   Cell,
   Legend,
@@ -1193,6 +1194,8 @@ const ActivityMetricQuickInput = ({
 const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string }) => {
   const currentAgentId = selectedAgentId;
   const [activityView, setActivityView] = useState<'manual' | 'wavv' | 'policytek' | 'callx' | 'submitted'>('manual');
+  const [manualDisplay, setManualDisplay] = useState<'dashboard' | 'rundown'>('dashboard');
+  const [selectedManualJourneyStage, setSelectedManualJourneyStage] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('weekly');
   const [startDate, setStartDate] = useState<number | undefined>(undefined);
   const [endDate, setEndDate] = useState<number | undefined>(undefined);
@@ -1209,6 +1212,11 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
   const [historicalActivity, setHistoricalActivity] = useState<Record<ManualActivityKey, number>>(emptyManualActivity);
   const [historicalSaving, setHistoricalSaving] = useState(false);
   const [historicalError, setHistoricalError] = useState<string | null>(null);
+  const [historicalLookupState, setHistoricalLookupState] = useState<'idle' | 'checking' | 'available' | 'existing' | 'error'>('idle');
+  const [historicalExistingRecord, setHistoricalExistingRecord] = useState<ManualActivityRundownRow | null>(null);
+  const [historicalExistingMode, setHistoricalExistingMode] = useState<'choose' | 'edit' | 'overwrite'>('choose');
+  const [historicalCalendarOpen, setHistoricalCalendarOpen] = useState(false);
+  const historicalLookupSequence = useRef(0);
   const [editingManualCell, setEditingManualCell] = useState<{ rowKey: string; key: ManualActivityKey; value: number } | null>(null);
   const manualCellCancelRef = useRef(false);
 
@@ -1601,20 +1609,56 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
   };
 
   const closeHistoricalEntry = () => {
+    historicalLookupSequence.current += 1;
     setHistoricalEntryOpen(false);
     setHistoricalEntryDate(toLocalActivityDate());
     setHistoricalActivity(emptyManualActivity);
     setHistoricalError(null);
+    setHistoricalLookupState('idle');
+    setHistoricalExistingRecord(null);
+    setHistoricalExistingMode('choose');
+    setHistoricalCalendarOpen(false);
+  };
+
+  useEffect(() => {
+    if (!historicalEntryOpen || !currentAgentId || !historicalEntryDate) return;
+    const sequence = ++historicalLookupSequence.current;
+    setHistoricalLookupState('checking');
+    setHistoricalExistingRecord(null);
+    setHistoricalExistingMode('choose');
+    setHistoricalActivity(emptyManualActivity);
+    setHistoricalError(null);
+
+    void myBusinessActivityApi.getManualActivityByDate({ agentId: currentAgentId, date: historicalEntryDate })
+      .then(record => {
+        if (sequence !== historicalLookupSequence.current) return;
+        if (record?.id !== undefined && record?.id !== null) {
+          setHistoricalExistingRecord(record);
+          setHistoricalLookupState('existing');
+        } else {
+          setHistoricalLookupState('available');
+        }
+      })
+      .catch(error => {
+        if (sequence !== historicalLookupSequence.current) return;
+        setHistoricalLookupState('error');
+        setHistoricalError(error instanceof Error ? error.message : 'Failed to check this activity date');
+      });
+  }, [historicalEntryOpen, currentAgentId, historicalEntryDate]);
+
+  const chooseHistoricalExistingMode = (mode: 'edit' | 'overwrite') => {
+    setHistoricalExistingMode(mode);
+    setHistoricalActivity(mode === 'edit' ? normalizeManualActivity(historicalExistingRecord) : emptyManualActivity);
+    setHistoricalError(null);
   };
 
   const handleSaveHistoricalActivity = async () => {
-    if (!currentAgentId || !historicalEntryDate || historicalSaving) return;
+    if (!currentAgentId || !historicalEntryDate || historicalSaving || historicalLookupState === 'checking' || historicalLookupState === 'error') return;
+    if (historicalLookupState === 'existing' && historicalExistingMode === 'choose') return;
     setHistoricalSaving(true);
     setHistoricalError(null);
     try {
-      await myBusinessActivityApi.saveManualActivity({
-        agentId: currentAgentId,
-        activityDate: historicalEntryDate,
+      const values = {
         leads: historicalActivity.leads,
         dials: historicalActivity.dials,
         contacts: historicalActivity.contacts,
@@ -1622,10 +1666,15 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
         presentations: historicalActivity.presentations,
         sold: historicalActivity.sold,
         totalAp: historicalActivity.totalAp,
-      });
+      };
+      if (historicalExistingRecord?.id !== undefined && historicalExistingRecord?.id !== null) {
+        await myBusinessActivityApi.updateManualActivity({ id: historicalExistingRecord.id, ...values });
+      } else {
+        await myBusinessActivityApi.saveManualActivity({ agentId: currentAgentId, activityDate: historicalEntryDate, ...values });
+      }
       closeHistoricalEntry();
       await refreshManualActivity();
-      setManualSaveMessage('Historical activity saved.');
+      setManualSaveMessage(historicalExistingRecord ? 'Historical activity updated.' : 'Historical activity saved.');
     } catch (error) {
       setHistoricalError(error instanceof Error ? error.message : 'Failed to save historical activity');
     } finally {
@@ -1648,6 +1697,21 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
     setManualActivity(resolveTodayManualActivity(manual?.today_activity, rows));
     setManualSummary(normalizeManualActivity(manual?.summary));
     setManualRows(rows);
+  };
+
+  const handleManualDisplayChange = async (view: 'dashboard' | 'rundown') => {
+    if (view === manualDisplay || manualLoading) return;
+
+    setManualDisplay(view);
+    setManualLoading(true);
+    setManualError(null);
+    try {
+      await refreshManualActivity();
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : 'Failed to refresh manual activity');
+    } finally {
+      setManualLoading(false);
+    }
   };
 
   const handleSaveManualActivity = async () => {
@@ -2005,18 +2069,66 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
     </div>
   );
 
+  const manualConversionRate = (outcome: number, source: number) => source > 0 ? `${((outcome / source) * 100).toFixed(1)}%` : '—';
+  const manualApPer = (source: number) => source > 0 ? formatActivityCurrency(manualSummary.totalAp / source) : '—';
+  const manualJourneyStages = [
+    { label: 'Leads', value: manualSummary.leads, efficiency: manualApPer(manualSummary.leads), metrics: [['Leads to contacts', manualConversionRate(manualSummary.contacts, manualSummary.leads)], ['Leads to appointments', manualConversionRate(manualSummary.appointments, manualSummary.leads)], ['Leads to presentations', manualConversionRate(manualSummary.presentations, manualSummary.leads)], ['Leads to sold', manualConversionRate(manualSummary.sold, manualSummary.leads)], ['AP per lead', manualApPer(manualSummary.leads)]] },
+    { label: 'Dials', value: manualSummary.dials, efficiency: manualApPer(manualSummary.dials), metrics: [['Calls to contacts', manualConversionRate(manualSummary.contacts, manualSummary.dials)], ['Calls to appointments', manualConversionRate(manualSummary.appointments, manualSummary.dials)], ['Calls to presentations', manualConversionRate(manualSummary.presentations, manualSummary.dials)], ['Calls to sold', manualConversionRate(manualSummary.sold, manualSummary.dials)], ['AP per call', manualApPer(manualSummary.dials)]] },
+    { label: 'Contacts', value: manualSummary.contacts, efficiency: manualApPer(manualSummary.contacts), metrics: [['Contacts to appointments', manualConversionRate(manualSummary.appointments, manualSummary.contacts)], ['Contacts to presentations', manualConversionRate(manualSummary.presentations, manualSummary.contacts)], ['Contacts to sold', manualConversionRate(manualSummary.sold, manualSummary.contacts)], ['AP per contact', manualApPer(manualSummary.contacts)]] },
+    { label: 'Appointments', value: manualSummary.appointments, efficiency: manualApPer(manualSummary.appointments), metrics: [['Appointments to presentations', manualConversionRate(manualSummary.presentations, manualSummary.appointments)], ['Appointments to sold', manualConversionRate(manualSummary.sold, manualSummary.appointments)], ['AP per appointment', manualApPer(manualSummary.appointments)]] },
+    { label: 'Presentations', value: manualSummary.presentations, efficiency: manualApPer(manualSummary.presentations), metrics: [['Presentations to sold', manualConversionRate(manualSummary.sold, manualSummary.presentations)], ['AP per presentation', manualApPer(manualSummary.presentations)]] },
+    { label: 'Sales', value: manualSummary.sold, efficiency: manualApPer(manualSummary.sold), metrics: [['AP per sale', manualApPer(manualSummary.sold)]] },
+  ];
+  const manualJourneyRates = manualJourneyStages.slice(0, -1).map((stage, index) => ({
+    from: stage.label,
+    to: manualJourneyStages[index + 1].label,
+    rate: stage.value > 0 ? (manualJourneyStages[index + 1].value / stage.value) * 100 : 0,
+    display: index === 0 ? `${stage.value > 0 ? (manualJourneyStages[index + 1].value / stage.value).toFixed(1) : '0.0'}x` : `${stage.value > 0 ? ((manualJourneyStages[index + 1].value / stage.value) * 100).toFixed(1) : '0.0'}%`,
+    comparable: index !== 0,
+  }));
+  const comparableManualJourneyRates = manualJourneyRates.filter(stage => stage.comparable);
+  const strongestManualStage = comparableManualJourneyRates.reduce((best, stage) => stage.rate > best.rate ? stage : best, comparableManualJourneyRates[0]);
+  const opportunityManualStage = comparableManualJourneyRates.filter(stage => stage.rate > 0).reduce<typeof manualJourneyRates[number] | null>((lowest, stage) => !lowest || stage.rate < lowest.rate ? stage : lowest, null);
+  const manualTrendData = [...manualRows]
+    .sort((left, right) => String(left.created_date ?? '').localeCompare(String(right.created_date ?? '')))
+    .map(row => {
+      const normalized = normalizeManualActivity(row);
+      return {
+        date: formatManualActivityDate(row.created_date).replace(/, \d{4}$/, ''),
+        leads: normalized.leads,
+        dials: normalized.dials,
+        contacts: normalized.contacts,
+        appointments: normalized.appointments,
+        presentations: normalized.presentations,
+        sold: normalized.sold,
+        totalAp: normalized.totalAp,
+      };
+    });
+
   const historicalEntryModal = historicalEntryOpen && typeof document !== 'undefined' ? createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="historical-activity-title">
-      <div className="w-full max-w-2xl overflow-hidden rounded-[2rem] bg-white shadow-2xl ring-1 ring-white/20">
-        <header className="flex items-start justify-between border-b border-slate-100 px-7 py-6">
-          <div><div className="mb-2 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-amber-600"><History className="h-3 w-3" /> Manual activity</div><h3 id="historical-activity-title" className="text-2xl font-black tracking-tight text-slate-950">Add historical data</h3><p className="mt-1 text-sm font-semibold text-slate-400">Record activity completed on a previous date.</p></div>
+      <div className="w-full max-w-2xl overflow-visible rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-white/20">
+        <header className="flex items-start justify-between border-b border-slate-100 px-7 py-5">
+          <div><div className="mb-2 inline-flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-amber-600"><History className="h-3 w-3" /> Manual activity</div><h3 id="historical-activity-title" className="text-xl font-semibold tracking-tight text-slate-950">Add historical data</h3><p className="mt-1 text-sm font-normal text-slate-500">Record activity completed on a previous date.</p></div>
           <button type="button" onClick={closeHistoricalEntry} aria-label="Close historical activity modal" className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-950"><X className="h-4 w-4" /></button>
         </header>
-        <div className="grid gap-6 p-7 md:grid-cols-[190px_1fr]">
-          <aside className="rounded-2xl bg-slate-950 p-5 text-white"><Calendar className="h-5 w-5 text-amber-400" /><p className="mt-5 text-[9px] font-black uppercase tracking-[0.16em] text-white/45">Activity date</p><input type="date" value={historicalEntryDate} max={toLocalActivityDate()} onChange={event => setHistoricalEntryDate(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-black text-white outline-none [color-scheme:dark] focus:border-amber-400" /><p className="mt-3 text-[10px] font-semibold leading-relaxed text-white/45">Choose the date these numbers were completed.</p></aside>
-          <div><p className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Activity totals</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{([['leads', 'Leads'], ['dials', 'Dials'], ['contacts', 'Contacts'], ['appointments', 'Appointments'], ['presentations', 'Presentations'], ['sold', 'Sold'], ['totalAp', 'Total AP']] as Array<[ManualActivityKey, string]>).map(([key, label]) => <label key={key} className={key === 'totalAp' ? 'col-span-2 sm:col-span-3' : ''}><span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</span><div className="relative">{key === 'totalAp' ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">$</span> : null}<input type="number" min={0} step={key === 'totalAp' ? 0.01 : 1} value={historicalActivity[key]} onChange={event => setHistoricalActivity(current => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} className={`h-11 w-full rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-950 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100 ${key === 'totalAp' ? 'pl-8 pr-3' : 'px-3'}`} /></div></label>)}</div>{historicalError ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{historicalError}</p> : null}</div>
+        <div className="space-y-5 p-7">
+          <div className="relative">
+            <label className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Activity date</label>
+            <button type="button" onClick={() => setHistoricalCalendarOpen(open => !open)} aria-expanded={historicalCalendarOpen} className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 text-left text-sm font-medium text-slate-800 transition hover:border-slate-300 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"><span className="flex items-center gap-2.5"><Calendar className="h-4 w-4 text-amber-500" />{parseExpenseDateKey(historicalEntryDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span><ChevronDown className={`h-4 w-4 text-slate-400 transition ${historicalCalendarOpen ? 'rotate-180' : ''}`} /></button>
+            {historicalCalendarOpen ? <div className="absolute left-0 top-full z-20 mt-2 w-[19rem] rounded-3xl border border-slate-200 bg-white p-1 shadow-2xl shadow-slate-900/15"><ExpenseDatePicker value={historicalEntryDate} maxDate={toLocalActivityDate()} onChange={setHistoricalEntryDate} onSelect={() => setHistoricalCalendarOpen(false)} /></div> : null}
+          </div>
+          <div>
+            <p className="mb-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Activity totals</p>
+            {historicalLookupState === 'checking' ? <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500"><Loader2 className="h-4 w-4 animate-spin text-amber-500" />Checking this date for saved activity...</div> : null}
+            {historicalLookupState === 'available' ? <div className="mb-4 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700"><Check className="h-4 w-4" />No saved entry exists for this date. You can create one.</div> : null}
+            {historicalLookupState === 'existing' && historicalExistingMode === 'choose' ? <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-4"><p className="text-sm font-semibold text-slate-900">Activity is already saved for this date.</p><p className="mt-1 text-xs font-normal text-slate-600">Review the saved values before deciding whether to update them.</p><div className="mt-3 overflow-hidden rounded-xl border border-amber-100 bg-white"><p className="border-b border-slate-100 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.12em] text-slate-400">Currently saved</p><div className="grid grid-cols-2 sm:grid-cols-4">{([['leads', 'Leads'], ['dials', 'Dials'], ['contacts', 'Contacts'], ['appointments', 'Appointments'], ['presentations', 'Presentations'], ['sold', 'Sold'], ['totalAp', 'Total AP']] as Array<[ManualActivityKey, string]>).map(([key, label]) => { const value = normalizeManualActivity(historicalExistingRecord)[key]; return <div key={key} className="border-b border-r border-slate-100 px-3 py-2.5 last:border-r-0"><p className="text-[8px] font-medium uppercase tracking-[0.1em] text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-900">{key === 'totalAp' ? currencyFormatter.format(value) : formatActivityCount(value)}</p></div>; })}</div></div><p className="mt-3 text-[10px] font-normal text-slate-500">Edit loads these values. Overwrite starts with zeroes and replaces this same record.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => chooseHistoricalExistingMode('edit')} className="rounded-full bg-slate-950 px-4 py-2 text-[10px] font-semibold text-white hover:bg-amber-400 hover:text-slate-950">Edit existing</button><button type="button" onClick={() => chooseHistoricalExistingMode('overwrite')} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-semibold text-slate-600 hover:border-amber-300 hover:text-amber-700">Overwrite values</button></div></div> : null}
+            {historicalLookupState === 'existing' && historicalExistingMode !== 'choose' ? <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"><div><p className="text-xs font-black text-amber-800">{historicalExistingMode === 'edit' ? 'Editing the saved entry' : 'Overwriting the saved entry'}</p><p className="mt-0.5 text-[10px] font-semibold text-amber-700">Saving will update record #{historicalExistingRecord?.id}.</p></div><button type="button" onClick={() => setHistoricalExistingMode('choose')} className="shrink-0 text-[10px] font-black text-slate-600 underline">Change choice</button></div> : null}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{([['leads', 'Leads'], ['dials', 'Dials'], ['contacts', 'Contacts'], ['appointments', 'Appointments'], ['presentations', 'Presentations'], ['sold', 'Sold'], ['totalAp', 'Total AP']] as Array<[ManualActivityKey, string]>).map(([key, label]) => <label key={key} className={key === 'totalAp' ? 'col-span-2 sm:col-span-3' : ''}><span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</span><div className="relative">{key === 'totalAp' ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">$</span> : null}<input type="number" min={0} step={key === 'totalAp' ? 0.01 : 1} value={historicalActivity[key]} disabled={historicalLookupState === 'checking' || historicalLookupState === 'error' || (historicalLookupState === 'existing' && historicalExistingMode === 'choose')} onChange={event => setHistoricalActivity(current => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} className={`h-11 w-full rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-950 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100 disabled:cursor-not-allowed disabled:opacity-45 ${key === 'totalAp' ? 'pl-8 pr-3' : 'px-3'}`} /></div></label>)}</div>
+            {historicalError ? <p className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{historicalError}</p> : null}
+          </div>
         </div>
-        <footer className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-7 py-5"><button type="button" onClick={closeHistoricalEntry} disabled={historicalSaving} className="rounded-full px-5 py-2.5 text-xs font-black text-slate-500 hover:text-slate-900 disabled:opacity-40">Cancel</button><button type="button" onClick={handleSaveHistoricalActivity} disabled={!historicalEntryDate || historicalSaving} className="rounded-full bg-slate-950 px-6 py-2.5 text-xs font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{historicalSaving ? 'Saving...' : 'Save historical entry'}</button></footer>
+        <footer className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-7 py-5"><button type="button" onClick={closeHistoricalEntry} disabled={historicalSaving} className="rounded-full px-5 py-2.5 text-xs font-black text-slate-500 hover:text-slate-900 disabled:opacity-40">Cancel</button><button type="button" onClick={handleSaveHistoricalActivity} disabled={!historicalEntryDate || historicalSaving || historicalLookupState === 'checking' || historicalLookupState === 'error' || (historicalLookupState === 'existing' && historicalExistingMode === 'choose')} className="rounded-full bg-slate-950 px-6 py-2.5 text-xs font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{historicalSaving ? 'Saving...' : historicalExistingRecord ? 'Update historical entry' : 'Save historical entry'}</button></footer>
       </div>
     </div>,
     document.body,
@@ -2061,7 +2173,7 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
       </nav>
 
       {activityView === 'manual' && <div className="space-y-8">
-        <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-slate-50/70 shadow-sm">
+        <section className="overflow-visible rounded-[1.5rem] border border-slate-200 bg-slate-50/70 shadow-sm">
           <div className="grid grid-cols-1 items-stretch bg-slate-50/70 sm:grid-cols-2 xl:grid-cols-[120px_repeat(7,minmax(0,1fr))_120px]">
               <div className="flex h-full items-center gap-2 border-r border-slate-200 px-4 py-3">
                 <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
@@ -2104,10 +2216,14 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
           <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white p-6 shadow-sm">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Manual Log</p>
-                <h3 className="text-2xl font-black tracking-tight text-slate-950">Manual activity by date</h3>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Manual activity</p>
+                <h3 className="text-2xl font-black tracking-tight text-slate-950">{manualDisplay === 'dashboard' ? 'Performance dashboard' : 'Activity by date'}</h3>
               </div>
-              <div className="flex items-center gap-2"><button type="button" onClick={() => setHistoricalEntryOpen(true)} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-700 transition hover:border-amber-300 hover:text-slate-950"><Plus className="h-3.5 w-3.5" /> Add historical data</button><span className={`rounded-full border px-3 py-1 text-xs font-black ${
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1" role="group" aria-label="Manual activity view">
+                  {(['dashboard', 'rundown'] as const).map(view => <button key={view} type="button" onClick={() => void handleManualDisplayChange(view)} disabled={manualLoading} aria-pressed={manualDisplay === view} className={`rounded-full px-3 py-1.5 text-[10px] font-black capitalize transition disabled:cursor-wait disabled:opacity-60 ${manualDisplay === view ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:text-slate-950'}`}>{view}</button>)}
+                </div>
+                <button type="button" onClick={() => setHistoricalEntryOpen(true)} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-700 transition hover:border-amber-300 hover:text-slate-950"><Plus className="h-3.5 w-3.5" /> Add historical data</button><span className={`rounded-full border px-3 py-1 text-xs font-black ${
                 manualError
                   ? 'border-red-100 bg-red-50 text-red-600'
                   : manualLoading
@@ -2118,7 +2234,29 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
               </span></div>
             </div>
 
-            <div className="overflow-x-auto rounded-3xl border border-slate-100">
+            {manualDisplay === 'dashboard' ? (
+              <div className="space-y-5">
+                <div aria-label="Manual activity summary" className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50">
+                  <div className="grid min-w-[900px] grid-cols-7 divide-x divide-slate-200">
+                    {([
+                      ['Leads', manualSummary.leads], ['Calls', manualSummary.dials], ['Contacts', manualSummary.contacts],
+                      ['Appointments', manualSummary.appointments], ['Presentations', manualSummary.presentations],
+                      ['Sold', manualSummary.sold], ['Total AP', manualSummary.totalAp],
+                    ] as Array<[string, number]>).map(([label, value], index) => <div key={label} className="relative px-4 py-4">{index === 0 ? <span className="absolute inset-x-4 top-0 h-0.5 rounded-full bg-amber-400" /> : null}<p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p><p className="mt-1 text-xl font-black tabular-nums text-slate-950">{label === 'Total AP' ? formatActivityCurrency(value) : formatActivityCount(value)}</p></div>)}
+                  </div>
+                </div>
+                <section className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 text-white shadow-xl shadow-slate-200/70">
+                  <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 px-6 py-5"><div><p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-amber-400">Performance journey</p><h4 className="mt-1 text-lg font-semibold">From lead to issued opportunity</h4></div><div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2"><Trophy className="h-4 w-4 text-amber-400" /><span className="text-xs text-slate-300">Total AP</span><span className="text-sm font-semibold tabular-nums">{formatActivityCurrency(manualSummary.totalAp)}</span></div></header>
+                  <div className="overflow-x-auto px-6 py-7"><div className="flex min-w-[1040px] items-center">{manualJourneyStages.map((stage, index) => { const rate = index > 0 ? manualJourneyRates[index - 1] : null; const strongest = rate === strongestManualStage && rate.rate > 0; const opportunity = rate === opportunityManualStage; const selected = selectedManualJourneyStage === index; return <React.Fragment key={stage.label}>{index > 0 ? <div className="relative min-w-[72px] flex-1 px-2"><div className="h-px bg-white/15" /><div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border px-2.5 py-1 text-[10px] font-semibold tabular-nums ${strongest ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-300' : opportunity ? 'border-amber-400/40 bg-amber-400/15 text-amber-300' : 'border-white/10 bg-slate-900 text-slate-300'}`}>{rate?.display}</div><ChevronRight className="absolute right-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/25" /></div> : null}<button type="button" onClick={() => setSelectedManualJourneyStage(current => current === index ? null : index)} aria-expanded={selected} className={`w-32 shrink-0 rounded-2xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-amber-400/60 ${selected ? 'border-amber-400 bg-white/10 shadow-lg shadow-black/20' : index === manualJourneyStages.length - 1 ? 'border-amber-400/40 bg-amber-400/10 hover:border-amber-300' : 'border-white/10 bg-white/[0.04] hover:border-white/25 hover:bg-white/[0.07]'}`}><div className="flex items-center justify-between"><span className="text-[9px] font-medium uppercase tracking-[0.14em] text-slate-400">Stage {index + 1}</span>{selected ? <ChevronDown className="h-3.5 w-3.5 text-amber-400" /> : index === manualJourneyStages.length - 1 ? <Check className="h-3.5 w-3.5 text-amber-400" /> : null}</div><p className="mt-3 text-2xl font-semibold tabular-nums">{formatActivityCount(stage.value)}</p><p className="mt-0.5 text-xs text-slate-300">{stage.label}</p><p className="mt-3 border-t border-white/10 pt-2 text-[10px] text-slate-400"><span className="font-semibold text-white">{stage.efficiency}</span> AP each</p></button></React.Fragment>; })}</div></div>
+                  {selectedManualJourneyStage !== null ? <div className="border-t border-white/10 bg-white/[0.035] px-6 py-5"><div className="mb-3 flex items-center justify-between"><div><p className="text-[9px] font-medium uppercase tracking-[0.16em] text-amber-400">Stage detail</p><h5 className="mt-1 text-sm font-semibold text-white">{manualJourneyStages[selectedManualJourneyStage].label} performance</h5></div><button type="button" onClick={() => setSelectedManualJourneyStage(null)} className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close stage detail"><X className="h-3.5 w-3.5" /></button></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{manualJourneyStages[selectedManualJourneyStage].metrics.map(([label, value]) => <div key={label} className="rounded-xl border border-white/10 bg-slate-950/40 px-4 py-3"><p className="text-[10px] leading-snug text-slate-400">{label}</p><p className="mt-1.5 text-base font-semibold tabular-nums text-white">{value}</p></div>)}</div></div> : null}
+                  <div className="grid border-t border-white/10 md:grid-cols-3"><div className="px-6 py-4"><p className="text-[9px] font-medium uppercase tracking-[0.14em] text-slate-500">Activity engine</p><p className="mt-1 text-sm text-slate-300"><span className="font-semibold text-white">{formatActivityCount(manualSummary.dials)}</span> calls · {manualConversionRate(manualSummary.contacts, manualSummary.dials)} reached contact</p></div><div className="border-white/10 px-6 py-4 md:border-l"><p className="text-[9px] font-medium uppercase tracking-[0.14em] text-emerald-400">Strongest stage</p><p className="mt-1 text-sm text-slate-300">{strongestManualStage?.from} → {strongestManualStage?.to} <span className="font-semibold text-white">{strongestManualStage?.rate.toFixed(1)}%</span></p></div><div className="border-white/10 px-6 py-4 md:border-l"><p className="text-[9px] font-medium uppercase tracking-[0.14em] text-amber-400">Biggest opportunity</p><p className="mt-1 text-sm text-slate-300">{opportunityManualStage ? <>{opportunityManualStage.from} → {opportunityManualStage.to} <span className="font-semibold text-white">{opportunityManualStage.rate.toFixed(1)}%</span></> : 'Add activity to reveal your next focus.'}</p></div></div>
+                </section>
+                <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                  <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5"><div><p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-amber-500">Activity trend</p><h4 className="mt-1 text-lg font-semibold text-slate-950">Inputs and AP momentum</h4><p className="mt-1 text-xs text-slate-500">Bars show recorded activity. The amber line tracks total AP.</p></div><div className="rounded-full bg-slate-950 px-3 py-1.5 text-[10px] font-semibold text-white">{manualTrendData.length} recorded {manualTrendData.length === 1 ? 'day' : 'days'}</div></header>
+                  {manualTrendData.length > 0 ? <div className="h-[360px] px-3 py-5 sm:px-6"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={manualTrendData} margin={{ top: 12, right: 14, left: -12, bottom: 4 }}><CartesianGrid stroke="#e2e8f0" strokeDasharray="3 5" vertical={false} /><XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} tickLine={false} axisLine={false} /><YAxis yAxisId="activity" tick={{ fill: '#94a3b8', fontSize: 10 }} tickLine={false} axisLine={false} /><YAxis yAxisId="ap" orientation="right" tickFormatter={(value) => formatActivityCurrency(Number(value))} tick={{ fill: '#d97706', fontSize: 10 }} tickLine={false} axisLine={false} /><RechartsTooltip contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 14px 35px rgba(15,23,42,.12)', fontSize: 12 }} formatter={(value: number | string, name: string) => [name === 'Total AP' ? formatActivityCurrency(Number(value)) : formatActivityCount(Number(value)), name]} /><Legend iconType="circle" wrapperStyle={{ fontSize: 10, fontWeight: 600, paddingTop: 14 }} /><Bar yAxisId="activity" stackId="inputs" dataKey="leads" name="Leads" fill="#94a3b8" maxBarSize={42} /><Bar yAxisId="activity" stackId="inputs" dataKey="dials" name="Dials" fill="#334155" maxBarSize={42} /><Bar yAxisId="activity" stackId="inputs" dataKey="contacts" name="Contacts" fill="#38bdf8" maxBarSize={42} /><Bar yAxisId="activity" stackId="inputs" dataKey="appointments" name="Appointments" fill="#818cf8" maxBarSize={42} /><Bar yAxisId="activity" stackId="inputs" dataKey="presentations" name="Presentations" fill="#10b981" maxBarSize={42} /><Bar yAxisId="activity" stackId="inputs" dataKey="sold" name="Sales" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={42} /><Line yAxisId="ap" type="monotone" dataKey="totalAp" name="Total AP" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} activeDot={{ r: 6 }} /></ComposedChart></ResponsiveContainer></div> : <div className="flex h-56 items-center justify-center px-6 text-center text-sm text-slate-400">Add or load manual activity to see the combined trend.</div>}
+                </section>
+              </div>
+            ) : <div className="overflow-x-auto rounded-3xl border border-slate-100">
               <div className="grid min-w-[960px] grid-cols-[1.15fr_repeat(7,0.72fr)] bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
                 <span>Date</span>
                 <span>Leads</span>
@@ -2157,7 +2295,7 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
                   No manual activity found for this range.
                 </div>
               )}
-            </div>
+            </div>}
           </section>
         </div>
         {historicalEntryOpen ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="historical-activity-title"><div className="w-full max-w-3xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl"><div className="flex items-start justify-between border-b border-slate-100 px-6 py-5"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500">Manual activity</p><h3 id="historical-activity-title" className="mt-1 text-2xl font-black text-slate-950">Add historical data</h3><p className="mt-1 text-sm font-semibold text-slate-400">Choose the activity date and enter the recorded totals.</p></div><button type="button" onClick={closeHistoricalEntry} aria-label="Close historical activity modal" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-950"><X className="h-4 w-4" /></button></div><div className="space-y-5 p-6"><label className="block"><span className="mb-2 block text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Activity date</span><div className="relative max-w-xs"><Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input type="date" value={historicalEntryDate} max={toLocalActivityDate()} onChange={event => setHistoricalEntryDate(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-black text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100" /></div></label><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{([['leads', 'Leads'], ['dials', 'Dials'], ['contacts', 'Contacts'], ['appointments', 'Appointments'], ['presentations', 'Presentations'], ['sold', 'Sold'], ['totalAp', 'Total AP']] as Array<[ManualActivityKey, string]>).map(([key, label]) => <label key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><span className="mb-2 block text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</span><div className="relative">{key === 'totalAp' ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span> : null}<input type="number" min={0} step={key === 'totalAp' ? 0.01 : 1} value={historicalActivity[key]} onChange={event => setHistoricalActivity(current => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} className={`h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-black outline-none focus:border-amber-400 ${key === 'totalAp' ? 'pl-7 pr-3' : 'px-3'}`} /></div></label>)}</div>{historicalError ? <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{historicalError}</p> : null}</div><div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4"><button type="button" onClick={closeHistoricalEntry} disabled={historicalSaving} className="rounded-full px-5 py-2.5 text-xs font-black text-slate-500 hover:text-slate-900 disabled:opacity-40">Cancel</button><button type="button" onClick={handleSaveHistoricalActivity} disabled={!historicalEntryDate || historicalSaving} className="rounded-full bg-slate-950 px-6 py-2.5 text-xs font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{historicalSaving ? 'Saving...' : 'Save historical entry'}</button></div></div></div> : null}
@@ -2228,7 +2366,7 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
                   </div>
                 </div>
               </div>
-              <div className={`mt-6 grid gap-3 ${platform.metrics.length > 4 ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2' : 'grid-cols-2'}`}>
+              <div className={`mt-6 grid gap-3 ${platform.metrics.length === 4 ? 'grid-cols-4' : platform.metrics.length > 4 ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2' : 'grid-cols-2'}`}>
                 {platform.metrics.map(([label, value]) => (
                   <div key={`${platform.name}-${label}`} className={`rounded-2xl border p-4 ${metricClass}`}>
                     <p className={`text-[10px] font-black uppercase tracking-[0.14em] ${metricLabelClass}`}>{label}</p>
@@ -2804,7 +2942,15 @@ const AgencyActivityLog = () => {
     : 0;
 
   const summaryCards: Array<{ label: string; value: string }> = source === 'manual'
-    ? (Object.keys(totals.manual) as ManualActivityKey[]).map(key => ({ label: key, value: formatActivityCount(totals.manual[key]) }))
+    ? [
+        { label: 'Leads', value: formatActivityCount(totals.manual.leads) },
+        { label: 'Dials', value: formatActivityCount(totals.manual.dials) },
+        { label: 'Contacts', value: formatActivityCount(totals.manual.contacts) },
+        { label: 'Appointments', value: formatActivityCount(totals.manual.appointments) },
+        { label: 'Presentations', value: formatActivityCount(totals.manual.presentations) },
+        { label: 'Sold', value: formatActivityCount(totals.manual.sold) },
+        { label: 'Total AP', value: formatActivityCurrency(totals.manual.totalAp) },
+      ]
     : source === 'wavv'
       ? [
           { label: 'Calls dialed', value: formatActivityCount(totals.wavv.dials) },
@@ -2891,8 +3037,19 @@ const AgencyActivityLog = () => {
       {loadError ? <div className="rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-sm font-bold text-red-600">{loadError}</div> : null}
       {!loadError && unavailableAgents > 0 && !loading ? <div className="rounded-2xl border border-amber-100 bg-amber-50 px-5 py-3 text-xs font-bold text-amber-800">{unavailableAgents} agent{unavailableAgents === 1 ? '' : 's'} do not have {sourceLabel} connected or accessible.</div> : null}
 
-      <div aria-label={`${sourceLabel} agency summary`} className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {summaryCards.map(card => <div key={card.label} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{card.label}</p><p className="mt-2 text-xl font-black text-slate-950">{card.value}</p></div>)}
+      <div aria-label={`${sourceLabel} agency summary`} className="overflow-x-auto rounded-[1.65rem] border border-white/80 bg-white shadow-sm">
+        <div
+          className="grid min-w-max divide-x divide-slate-100"
+          style={{ gridTemplateColumns: `repeat(${summaryCards.length}, minmax(145px, 1fr))`, minWidth: `${summaryCards.length * 145}px` }}
+        >
+          {summaryCards.map((card, index) => (
+            <div key={card.label} className="relative min-w-0 px-5 py-4">
+              {index === 0 ? <span className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-amber-400" /> : null}
+              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">{card.label}</p>
+              <p className="mt-1.5 truncate text-xl font-black tabular-nums tracking-tight text-slate-950" title={card.value}>{card.value}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-sm">
@@ -3176,16 +3333,19 @@ const ExpenseDatePicker = ({
   value,
   onChange,
   onSelect,
+  maxDate,
 }: {
   value: string;
   onChange: (value: string) => void;
   onSelect?: () => void;
+  maxDate?: string;
 }) => {
   const selectedDate = parseExpenseDateKey(value || toLocalActivityDate());
   const [viewYear, setViewYear] = useState(selectedDate.getFullYear());
   const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
   const selectedKey = normalizeExpenseDate(value);
   const todayKey = toLocalActivityDate();
+  const maxKey = maxDate ? normalizeExpenseDate(maxDate) : '';
   const days = expenseDatePickerDays(viewYear, viewMonth);
   const viewLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-US', {
     month: 'long',
@@ -3248,14 +3408,19 @@ const ExpenseDatePicker = ({
           const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const selected = dateKey === selectedKey;
           const today = dateKey === todayKey;
+          const disabled = Boolean(maxKey && dateKey > maxKey);
 
           return (
             <button
               key={dateKey}
               type="button"
               onClick={() => selectDay(day)}
+              disabled={disabled}
+              aria-label={`${disabled ? 'Unavailable ' : ''}${new Date(viewYear, viewMonth, day).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
               className={`h-9 rounded-xl text-xs font-black transition ${
-                selected
+                disabled
+                  ? 'cursor-not-allowed bg-transparent text-slate-300'
+                  : selected
                   ? 'bg-slate-950 text-white shadow-lg shadow-slate-200'
                   : today
                     ? 'border border-amber-300 bg-amber-50 text-amber-800'

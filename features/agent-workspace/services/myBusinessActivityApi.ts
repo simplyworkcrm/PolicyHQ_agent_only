@@ -45,6 +45,11 @@ export interface MyBusinessManualActivityUpdateInput {
   totalAp?: number;
 }
 
+export interface MyBusinessManualActivityByDateQuery {
+  agentId: string;
+  date: string;
+}
+
 export interface ManualActivityTotals {
   leads?: number | string | null;
   dials?: number | string | null;
@@ -60,6 +65,8 @@ export interface ManualActivityRundownRow extends ManualActivityTotals {
   created_date?: string | null;
   [key: string]: unknown;
 }
+
+export type MyBusinessManualActivityByDateResponse = ManualActivityRundownRow | null;
 
 export interface MyBusinessManualActivityResponse {
   manual_activity?: {
@@ -263,6 +270,22 @@ export const myBusinessActivityApi = {
     }
 
     return response.json();
+  },
+
+  async getManualActivityByDate(query: MyBusinessManualActivityByDateQuery): Promise<MyBusinessManualActivityByDateResponse> {
+    const params = new URLSearchParams({ agent_id: query.agentId });
+    const response = await fetch(`${MANUAL_ACTIVITY_URL}/${encodeURIComponent(query.date)}?${params.toString()}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+
+    if (response.status === 404 || response.status === 204) return null;
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+    const payload = await response.json();
+    if (!payload) return null;
+    if (payload.manual_activity && !Array.isArray(payload.manual_activity)) return payload.manual_activity;
+    return payload;
   },
 
   async saveManualActivity(input: MyBusinessManualActivitySaveInput): Promise<MyBusinessManualActivityResponse> {
