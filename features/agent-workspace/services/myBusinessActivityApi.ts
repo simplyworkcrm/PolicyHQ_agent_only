@@ -1,5 +1,8 @@
 const ACTIVITY_LOG_BASE_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/activity-log';
+const AGENCY_ACTIVITY_LOG_BASE_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_agency/activity-log';
 const MANUAL_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/manual`;
+const AGENCY_MANUAL_ACTIVITY_URL = `${AGENCY_ACTIVITY_LOG_BASE_URL}/manual`;
+const AGENCY_WAVV_ACTIVITY_URL = `${AGENCY_ACTIVITY_LOG_BASE_URL}/wavv`;
 const WAVV_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/wavv`;
 const POLICYTEK_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/policytek`;
 const CALLX_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/callx`;
@@ -21,19 +24,35 @@ export interface MyBusinessManualActivityQuery {
 
 export interface MyBusinessManualActivitySaveInput {
   agentId: string;
+  activityDate?: string | null;
+  leads?: number;
   dials?: number;
   contacts?: number;
-  presentations?: number;
   appointments?: number;
+  presentations?: number;
   sold?: number;
+  totalAp?: number;
+}
+
+export interface MyBusinessManualActivityUpdateInput {
+  id: string | number;
+  leads?: number;
+  dials?: number;
+  contacts?: number;
+  appointments?: number;
+  presentations?: number;
+  sold?: number;
+  totalAp?: number;
 }
 
 export interface ManualActivityTotals {
+  leads?: number | string | null;
   dials?: number | string | null;
   contacts?: number | string | null;
-  presentations?: number | string | null;
   appointments?: number | string | null;
+  presentations?: number | string | null;
   sold?: number | string | null;
+  total_ap?: number | string | null;
 }
 
 export interface ManualActivityRundownRow extends ManualActivityTotals {
@@ -50,8 +69,38 @@ export interface MyBusinessManualActivityResponse {
   } | null;
 }
 
+export interface AgencyManualActivityAgent {
+  agent_id: string;
+  name?: string | null;
+  profile?: {
+    url?: string | null;
+    name?: string | null;
+    mime?: string | null;
+  } | null;
+  summary?: ManualActivityTotals | null;
+}
+
+export interface MyAgencyManualActivityResponse {
+  manual_activity?: AgencyManualActivityAgent[] | null;
+}
+
+export interface AgencyWavvActivityAgent {
+  agent_id: string;
+  name?: string | null;
+  profile?: {
+    url?: string | null;
+    name?: string | null;
+    mime?: string | null;
+  } | null;
+  summary?: {
+    connected?: boolean | null;
+    summary?: WavvActivitySummary | null;
+  } | null;
+}
+
 export interface WavvActivitySummary {
   dials?: number | string | null;
+  conversations?: number | string | null;
   contacts?: number | string | null;
   talk_time?: number | string | null;
   avgCallLength?: number | string | null;
@@ -222,12 +271,30 @@ export const myBusinessActivityApi = {
       headers: authHeader(),
       body: JSON.stringify({
         agent_id: input.agentId,
+        ...(input.activityDate ? { activity_date: input.activityDate } : {}),
+        leads: input.leads ?? 0,
         dials: input.dials ?? 0,
         contacts: input.contacts ?? 0,
-        presentations: input.presentations ?? 0,
         appointments: input.appointments ?? 0,
+        presentations: input.presentations ?? 0,
         sold: input.sold ?? 0,
+        total_ap: input.totalAp ?? 0,
       }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  async updateManualActivity(input: MyBusinessManualActivityUpdateInput): Promise<MyBusinessManualActivityResponse> {
+    const { id, totalAp, ...values } = input;
+    const response = await fetch(`${MANUAL_ACTIVITY_URL}/${encodeURIComponent(String(id))}`, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: JSON.stringify({ ...values, ...(totalAp !== undefined ? { total_ap: totalAp } : {}) }),
     });
 
     if (!response.ok) {
@@ -289,3 +356,31 @@ export const myBusinessActivityApi = {
     return response.json();
   },
 };
+
+export const myAgencyActivityApi = {
+  async getManualActivity(query: MyBusinessManualActivityQuery): Promise<MyAgencyManualActivityResponse> {
+    const response = await fetch(`${AGENCY_MANUAL_ACTIVITY_URL}?${buildActivityQuery(query)}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  async getWavvActivity(query: MyBusinessManualActivityQuery): Promise<AgencyWavvActivityAgent[]> {
+    const response = await fetch(`${AGENCY_WAVV_ACTIVITY_URL}?${buildActivityQuery(query)}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  },
+} as const;

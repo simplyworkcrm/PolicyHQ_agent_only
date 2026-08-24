@@ -19,7 +19,7 @@ import {
 } from '../services/bookOfBusinessApi';
 import { MyBusinessAgencyProfile, MyBusinessSourceBreakdown, myBusinessOverviewApi, MyBusinessStateBreakdown } from '../services/myBusinessOverviewApi';
 import { PolicyV2 } from '../services/agentPoliciesV2Api';
-import { AgentPoliciesV2 } from './AgentPoliciesV2';
+import { AgentPoliciesV2, PoliciesTimeframe, PolicyDateRangeFilter, toPolicyRequestDate } from './AgentPoliciesV2';
 import { StateProductionPanels } from './StateProductionPanels';
 import { useAgentContext } from '../context/AgentContext';
 
@@ -177,6 +177,21 @@ const monthDayFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
+const policyDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+const formatPolicyDate = (value: string) => {
+  if (!value) return 'Not set';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00Z`)
+    : new Date(value);
+  return Number.isNaN(date.getTime()) ? value : policyDateFormatter.format(date);
+};
+
 const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
 const toLocalDateKey = (date: Date) => [
   date.getFullYear(),
@@ -222,6 +237,9 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
   const [summary, setSummary] = useState<BookOfBusinessSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState(false);
+  const [summaryTimeframe, setSummaryTimeframe] = useState<PoliciesTimeframe>('monthly');
+  const [summaryStartDate, setSummaryStartDate] = useState<number | undefined>();
+  const [summaryEndDate, setSummaryEndDate] = useState<number | undefined>();
   const [monthlyPerformance, setMonthlyPerformance] = useState<BookOfBusinessMonthlyPerformance[]>([]);
   const [monthlyLoading, setMonthlyLoading] = useState(true);
   const [monthlyError, setMonthlyError] = useState(false);
@@ -266,10 +284,21 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
       return () => controller.abort();
     }
 
+    if (summaryTimeframe === 'custom' && (!summaryStartDate || !summaryEndDate)) {
+      setSummaryLoading(false);
+      return () => controller.abort();
+    }
+
     setSummaryLoading(true);
+    const summaryInput = {
+      agentId,
+      timeframe: summaryTimeframe,
+      startDate: summaryTimeframe === 'custom' ? toPolicyRequestDate(summaryStartDate) : null,
+      endDate: summaryTimeframe === 'custom' ? toPolicyRequestDate(summaryEndDate) : null,
+    };
     const summaryRequest = isAgencyScope
-      ? bookOfBusinessApi.getAgencySummary(agentId, controller.signal)
-      : bookOfBusinessApi.getSummary(agentId, controller.signal);
+      ? bookOfBusinessApi.getAgencySummary(summaryInput, controller.signal)
+      : bookOfBusinessApi.getSummary(summaryInput, controller.signal);
 
     summaryRequest
       .then(setSummary)
@@ -283,7 +312,7 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
       });
 
     return () => controller.abort();
-  }, [agentId, isAgencyScope]);
+  }, [agentId, isAgencyScope, summaryEndDate, summaryStartDate, summaryTimeframe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -405,6 +434,11 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
         helper: summary ? `${summary.gross.count.toLocaleString()} policies written` : pendingHelper,
         note: 'Total annual premium from all policies submitted during the current calendar year, regardless of their current status.',
         tone: 'text-slate-950',
+        inlineHelper: true,
+        details: summary ? [
+          { label: 'Net AP', value: usd.format(summary.net.ap), tone: 'text-blue-600' },
+          { label: 'Chargeback AP', value: usd.format(summary.net.chargeback_ap), tone: 'text-rose-500' },
+        ] : null,
       },
       {
         label: 'Issued & Paid',
@@ -530,6 +564,20 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
         </section>
       )}
 
+      <div className="mb-3">
+        <PolicyDateRangeFilter
+          timeframe={summaryTimeframe}
+          startDate={summaryStartDate}
+          endDate={summaryEndDate}
+          onTimeframeChange={setSummaryTimeframe}
+          onDateChange={(start, end) => {
+            setSummaryStartDate(start);
+            setSummaryEndDate(end);
+          }}
+          variant="inline"
+        />
+      </div>
+
       <section className="mb-5 grid grid-cols-1 overflow-visible rounded-[2rem] border border-white bg-white shadow-sm sm:grid-cols-2 xl:grid-cols-3">
         {bookKpis.map((kpi, index) => (
           <div key={kpi.label} className={`px-6 py-5 ${index > 0 ? 'xl:border-l xl:border-slate-100' : ''} ${index > 1 ? 'sm:border-t xl:border-t-0' : ''}`}>
@@ -553,8 +601,28 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
                 </div>
               )}
             </div>
-            <p className={`mt-2 text-2xl font-black tracking-tight ${kpi.tone}`}>{kpi.value}</p>
-            <p className="mt-1 text-[10px] font-semibold text-slate-400">{kpi.helper}</p>
+            {kpi.inlineHelper ? (
+              <div className="mt-2 flex min-w-0 items-baseline gap-2 whitespace-nowrap">
+                <p className={`text-2xl font-black tracking-tight ${kpi.tone}`}>{kpi.value}</p>
+                <span className="text-[10px] font-semibold text-slate-300">/</span>
+                <p className="truncate text-[10px] font-semibold text-slate-400">{kpi.helper}</p>
+              </div>
+            ) : (
+              <>
+                <p className={`mt-2 text-2xl font-black tracking-tight ${kpi.tone}`}>{kpi.value}</p>
+                <p className="mt-1 text-[10px] font-semibold text-slate-400">{kpi.helper}</p>
+              </>
+            )}
+            {kpi.details && (
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+                {kpi.details.map(detail => (
+                  <div key={detail.label} className="min-w-0">
+                    <p className="text-[7px] font-black uppercase tracking-[0.12em] text-slate-400">{detail.label}</p>
+                    <p className={`mt-0.5 truncate text-[10px] font-black tabular-nums ${detail.tone}`}>{detail.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </section>
@@ -776,6 +844,21 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
                         <div className="shrink-0 text-right">
                           <p className="text-xs font-black text-slate-900">{usd.format(policy.annualPremium)}</p>
                           <p className="mt-0.5 text-[8px] font-bold text-slate-400">{usd.format(policy.monthlyPremium)}/mo</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200/70 bg-white">
+                        <div className="min-w-0 px-3 py-2">
+                          <p className="text-[7px] font-black uppercase tracking-[0.14em] text-slate-400">Submitted</p>
+                          <p className="mt-0.5 truncate text-[9px] font-bold text-slate-700" title={formatPolicyDate(policy.submittedDate)}>
+                            {formatPolicyDate(policy.submittedDate)}
+                          </p>
+                        </div>
+                        <div className="min-w-0 border-l border-slate-200/70 px-3 py-2">
+                          <p className="text-[7px] font-black uppercase tracking-[0.14em] text-slate-400">Initial draft</p>
+                          <p className="mt-0.5 truncate text-[9px] font-bold text-slate-700" title={formatPolicyDate(policy.initialDraftDate)}>
+                            {formatPolicyDate(policy.initialDraftDate)}
+                          </p>
                         </div>
                       </div>
 

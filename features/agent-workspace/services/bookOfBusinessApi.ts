@@ -17,6 +17,13 @@ export type BookOfBusinessSummary = {
   average: number;
 };
 
+export type BookOfBusinessSummaryInput = {
+  agentId: string;
+  timeframe: 'all' | 'today' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  startDate?: string | null;
+  endDate?: string | null;
+};
+
 export type BookOfBusinessMonthlyPerformance = {
   submitted_date: string;
   count: number;
@@ -28,6 +35,8 @@ export type BookOfBusinessPolicy = {
   id: string;
   client: string;
   agentName: string;
+  submittedDate: string;
+  initialDraftDate: string;
   policyNumber: string;
   carrier: string;
   product: string;
@@ -96,6 +105,8 @@ const normalizePolicies = (payload: any): BookOfBusinessPolicy[] => {
     id: String(row?.id || ''),
     client: String(row?.client || 'Unnamed client'),
     agentName: String(row?.ref_agent_owner_name || row?.agent_name || row?.agent || ''),
+    submittedDate: String(row?.submitted_date || ''),
+    initialDraftDate: String(row?.initial_draft_date || ''),
     policyNumber: String(row?.policy_number || ''),
     carrier: String(row?.ref_carrier_name || ''),
     product: String(row?.carrier_product || row?.ref_metacontacttype_name || ''),
@@ -108,14 +119,19 @@ const normalizePolicies = (payload: any): BookOfBusinessPolicy[] => {
 };
 
 export const bookOfBusinessApi = {
-  getSummary: async (agentId: string, signal?: AbortSignal): Promise<BookOfBusinessSummary> => {
+  getSummary: async (input: BookOfBusinessSummaryInput, signal?: AbortSignal): Promise<BookOfBusinessSummary> => {
     const response = await fetch(BOOK_OF_BUSINESS_SUMMARY_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ agent_id: agentId }),
+      body: JSON.stringify({
+        agent_id: input.agentId,
+        timeframe: input.timeframe,
+        start_date: input.timeframe === 'custom' ? input.startDate ?? null : null,
+        end_date: input.timeframe === 'custom' ? input.endDate ?? null : null,
+      }),
       signal,
     });
 
@@ -123,14 +139,19 @@ export const bookOfBusinessApi = {
     return normalizeSummary(await response.json());
   },
 
-  getAgencySummary: async (agentId: string, signal?: AbortSignal): Promise<BookOfBusinessSummary> => {
+  getAgencySummary: async (input: BookOfBusinessSummaryInput, signal?: AbortSignal): Promise<BookOfBusinessSummary> => {
     const response = await fetch(AGENCY_BOOK_OF_BUSINESS_SUMMARY_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ agent_id: agentId }),
+      body: JSON.stringify({
+        agent_id: input.agentId,
+        timeframe: input.timeframe,
+        start_date: input.timeframe === 'custom' ? input.startDate ?? null : null,
+        end_date: input.timeframe === 'custom' ? input.endDate ?? null : null,
+      }),
       signal,
     });
 
