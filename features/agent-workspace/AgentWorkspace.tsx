@@ -2633,9 +2633,12 @@ const AgencyActivityLog = () => {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedManualAgentId, setExpandedManualAgentId] = useState<string | null>(null);
+  const [expandedManualView, setExpandedManualView] = useState<'dashboard' | 'rundown'>('dashboard');
+  const [selectedAgencyManualStage, setSelectedAgencyManualStage] = useState<number | null>(null);
   const [manualRundownByAgent, setManualRundownByAgent] = useState<Record<string, {
     loading: boolean;
     error: string | null;
+    summary: Record<ManualActivityKey, number>;
     rows: ManualActivityRundownRow[];
   }>>({});
   const [expandedWavvAgentId, setExpandedWavvAgentId] = useState<string | null>(null);
@@ -2676,15 +2679,18 @@ const AgencyActivityLog = () => {
     if (source !== 'manual') return;
     if (expandedManualAgentId === agent.agentId) {
       setExpandedManualAgentId(null);
+      setSelectedAgencyManualStage(null);
       return;
     }
 
     setExpandedManualAgentId(agent.agentId);
+    setExpandedManualView('dashboard');
+    setSelectedAgencyManualStage(null);
     if (manualRundownByAgent[agent.agentId]) return;
 
     setManualRundownByAgent(current => ({
       ...current,
-      [agent.agentId]: { loading: true, error: null, rows: [] },
+      [agent.agentId]: { loading: true, error: null, summary: agent.manual, rows: [] },
     }));
 
     try {
@@ -2697,7 +2703,7 @@ const AgencyActivityLog = () => {
       const rows = Array.isArray(response.manual_activity?.rundown) ? response.manual_activity.rundown : [];
       setManualRundownByAgent(current => ({
         ...current,
-        [agent.agentId]: { loading: false, error: null, rows },
+        [agent.agentId]: { loading: false, error: null, summary: normalizeManualActivity(response.manual_activity?.summary ?? agent.manual), rows },
       }));
     } catch (error) {
       setManualRundownByAgent(current => ({
@@ -2705,6 +2711,7 @@ const AgencyActivityLog = () => {
         [agent.agentId]: {
           loading: false,
           error: error instanceof Error ? error.message : `Manual activity for ${agent.name} is currently unavailable.`,
+          summary: agent.manual,
           rows: [],
         },
       }));
@@ -2967,11 +2974,13 @@ const AgencyActivityLog = () => {
 
   const tableColumns: Array<{ label: string; value: (row: AgencyActivityAgentRow) => string }> = source === 'manual'
     ? [
+        { label: 'Leads', value: row => formatActivityCount(row.manual.leads) },
         { label: 'Dials', value: row => formatActivityCount(row.manual.dials) },
         { label: 'Contacts', value: row => formatActivityCount(row.manual.contacts) },
         { label: 'Presentations', value: row => formatActivityCount(row.manual.presentations) },
         { label: 'Appointments', value: row => formatActivityCount(row.manual.appointments) },
         { label: 'Sold', value: row => formatActivityCount(row.manual.sold) },
+        { label: 'Total AP', value: row => formatActivityCurrency(row.manual.totalAp) },
       ]
     : source === 'wavv'
       ? [
@@ -3009,7 +3018,12 @@ const AgencyActivityLog = () => {
   const displayedAgentRows = source === 'wavv'
     ? agentRows.filter(row => wavvConnectionFilter === 'all' || (wavvConnectionFilter === 'connected' ? row.sourceAvailable : !row.sourceAvailable))
     : agentRows;
-  const tableGrid = `minmax(190px, 1.4fr) repeat(${tableColumns.length}, minmax(110px, 0.8fr)) 120px`;
+  const manualDetailOpen = source === 'manual' && expandedManualAgentId !== null;
+  const visibleTableColumns = manualDetailOpen ? [] : tableColumns;
+  const tableGrid = manualDetailOpen
+    ? 'minmax(180px, 1fr) 42px'
+    : `minmax(190px, 1.4fr) repeat(${tableColumns.length}, minmax(110px, 0.8fr)) 120px`;
+  const manualRundownGrid = `minmax(150px, 1.2fr) repeat(${tableColumns.length}, minmax(88px, 0.8fr)) 24px`;
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
@@ -3065,53 +3079,83 @@ const AgencyActivityLog = () => {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid bg-slate-50 px-6 py-3 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400" style={{ gridTemplateColumns: tableGrid }}><span>Agent</span>{tableColumns.map(column => <span key={column.label}>{column.label}</span>)}<span>Status</span></div>
+          <div className={manualDetailOpen ? 'grid min-w-[1050px] grid-cols-[minmax(220px,1fr)_minmax(0,3fr)] items-start gap-4 p-4' : 'min-w-[760px]'}>
+            <div className="grid bg-slate-50 px-6 py-3 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400" style={{ gridTemplateColumns: tableGrid, gridColumn: '1' }}><span>Agent</span>{visibleTableColumns.map(column => <span key={column.label}>{column.label}</span>)}<span>{manualDetailOpen ? '' : 'Status'}</span></div>
             {displayedAgentRows.map(row => {
               const manualExpanded = source === 'manual' && expandedManualAgentId === row.agentId;
               const wavvExpanded = source === 'wavv' && expandedWavvAgentId === row.agentId;
               const expanded = manualExpanded || wavvExpanded;
               const rundown = manualRundownByAgent[row.agentId];
               const wavvRundown = wavvRundownByAgent[row.agentId];
+              const agentManualSummary = rundown?.summary ?? row.manual;
+              const agentManualRate = (result: number, sourceValue: number) => sourceValue > 0 ? `${((result / sourceValue) * 100).toFixed(1)}%` : '—';
+              const agentManualApPer = (sourceValue: number) => sourceValue > 0 ? formatActivityCurrency(agentManualSummary.totalAp / sourceValue) : '—';
+              const agentManualStageDetails: Array<{ label: string; metrics: Array<[string, string]> }> = [
+                { label: 'Leads', metrics: [['Leads to contacts', agentManualRate(agentManualSummary.contacts, agentManualSummary.leads)], ['Leads to appointments', agentManualRate(agentManualSummary.appointments, agentManualSummary.leads)], ['Leads to presentations', agentManualRate(agentManualSummary.presentations, agentManualSummary.leads)], ['Leads to sold', agentManualRate(agentManualSummary.sold, agentManualSummary.leads)], ['AP per lead', agentManualApPer(agentManualSummary.leads)]] },
+                { label: 'Dials / calls', metrics: [['Calls to contacts', agentManualRate(agentManualSummary.contacts, agentManualSummary.dials)], ['Calls to appointments', agentManualRate(agentManualSummary.appointments, agentManualSummary.dials)], ['Calls to presentations', agentManualRate(agentManualSummary.presentations, agentManualSummary.dials)], ['Calls to sold', agentManualRate(agentManualSummary.sold, agentManualSummary.dials)], ['AP per call', agentManualApPer(agentManualSummary.dials)]] },
+                { label: 'Contacts', metrics: [['Contacts to appointments', agentManualRate(agentManualSummary.appointments, agentManualSummary.contacts)], ['Contacts to presentations', agentManualRate(agentManualSummary.presentations, agentManualSummary.contacts)], ['Contacts to sold', agentManualRate(agentManualSummary.sold, agentManualSummary.contacts)], ['AP per contact', agentManualApPer(agentManualSummary.contacts)]] },
+                { label: 'Appointments', metrics: [['Appointments to presentations', agentManualRate(agentManualSummary.presentations, agentManualSummary.appointments)], ['Appointments to sold', agentManualRate(agentManualSummary.sold, agentManualSummary.appointments)], ['AP per appointment', agentManualApPer(agentManualSummary.appointments)]] },
+                { label: 'Presentations / sits', metrics: [['Presentations to sold', agentManualRate(agentManualSummary.sold, agentManualSummary.presentations)], ['AP per presentation', agentManualApPer(agentManualSummary.presentations)]] },
+                { label: 'Sold / sales', metrics: [['AP per sale', agentManualApPer(agentManualSummary.sold)]] },
+              ];
 
               return (
                 <React.Fragment key={row.agentId}>
-                  <div className={`grid items-center border-t border-slate-100 px-6 py-4 text-xs font-bold text-slate-600 transition ${expanded ? 'bg-amber-50/40' : 'hover:bg-slate-50/70'}`} style={{ gridTemplateColumns: tableGrid }}>
+                  <div className={`grid items-center border-t border-slate-100 px-6 py-4 text-xs font-bold text-slate-600 transition ${expanded ? 'bg-amber-50/40' : 'hover:bg-slate-50/70'}`} style={{ gridTemplateColumns: tableGrid, gridColumn: '1' }}>
                     <span className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-[10px] font-black text-slate-500">{row.profileUrl ? <img src={row.profileUrl} alt="" className="h-full w-full object-cover" /> : row.name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase()}</span>
                       <span className="min-w-0 flex-1 truncate font-black text-slate-950">{row.name}</span>
                     </span>
-                    {tableColumns.map(column => <span key={column.label}>{column.value(row)}</span>)}
+                    {visibleTableColumns.map(column => <span key={column.label}>{column.value(row)}</span>)}
                     <span className="flex items-center justify-between gap-2">
-                      <span className={`w-fit rounded-full px-2.5 py-1 text-[9px] font-black ${row.sourceAvailable ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{row.sourceAvailable ? 'Connected' : 'Unavailable'}</span>
+                      {!manualDetailOpen ? <span className={`w-fit rounded-full px-2.5 py-1 text-[9px] font-black ${row.sourceAvailable ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>{row.sourceAvailable ? 'Connected' : 'Unavailable'}</span> : null}
                       {source === 'manual' || (source === 'wavv' && row.sourceAvailable) ? <button type="button" onClick={() => void toggleAgentRundown(row)} aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${sourceLabel} activity for ${row.name}`} className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition ${expanded ? 'bg-amber-100 text-amber-600' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}><ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} /></button> : null}
                     </span>
                   </div>
                   {manualExpanded ? (
-                    <div className="border-t border-amber-100 bg-amber-50/25">
+                    <aside className="sticky top-4 max-h-[calc(100vh-7rem)] min-w-0 overflow-y-auto rounded-[1.75rem] border border-slate-200 bg-slate-50 shadow-sm animate-in slide-in-from-right duration-300" style={{ gridColumn: '2', gridRow: '1 / span 999' }} aria-label={`${row.name} manual activity detail`}>
                       {rundown?.error ? (
-                        <div className="px-6 py-4 text-xs font-bold text-red-600">{rundown.error}</div>
+                        <div className="p-6"><button type="button" onClick={() => setExpandedManualAgentId(null)} aria-label="Close agent activity detail" className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm hover:text-slate-950"><X className="h-4 w-4" /></button><div className="mt-4 rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-xs font-bold text-red-600">{rundown.error}</div></div>
                       ) : rundown?.loading ? (
-                        <div className="flex items-center gap-2 px-6 py-4 text-xs font-bold text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading daily breakdown...</div>
-                      ) : rundown?.rows.length ? (
-                        <>
-                          <div className="grid items-center border-b border-amber-100/70 px-6 py-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400" style={{ gridTemplateColumns: tableGrid }}>
-                            <span className="pl-10 text-amber-600">Daily breakdown</span>
-                            {tableColumns.map(column => <span key={column.label}>{column.label}</span>)}
-                            <span />
-                          </div>
-                          {rundown.rows.map((activity, index) => {
-                            const values = normalizeManualActivity(activity);
-                            return <div key={`${activity.id ?? activity.created_date ?? index}`} className="grid items-center border-t border-slate-100/80 px-6 py-3 text-xs font-bold text-slate-600 first:border-t-0" style={{ gridTemplateColumns: tableGrid }}><span className="pl-10 font-black text-slate-700">{formatManualActivityDate(activity.created_date)}</span><span>{values.dials}</span><span>{values.contacts}</span><span>{values.presentations}</span><span>{values.appointments}</span><span>{values.sold}</span><span /></div>;
-                          })}
-                        </>
+                        <div className="p-6"><button type="button" onClick={() => setExpandedManualAgentId(null)} aria-label="Close agent activity detail" className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm hover:text-slate-950"><X className="h-4 w-4" /></button><div className="mt-6 flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-12 text-xs font-bold text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading agent activity...</div></div>
                       ) : (
-                        <div className="px-6 py-5 text-center text-xs font-bold text-slate-400">No daily activity found for this range.</div>
+                        <div className="p-5">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div><p className="text-[9px] font-black uppercase tracking-[0.16em] text-amber-500">{row.name}</p><h4 className="mt-1 text-base font-black text-slate-950">Individual performance</h4></div>
+                            <div className="flex items-center gap-2"><div className="inline-flex rounded-xl border border-slate-200 bg-white p-1" role="group" aria-label={`Manual activity view for ${row.name}`}>{(['dashboard', 'rundown'] as const).map(view => <button key={view} type="button" onClick={() => setExpandedManualView(view)} aria-pressed={expandedManualView === view} className={`rounded-lg px-3 py-1.5 text-[10px] font-black capitalize transition ${expandedManualView === view ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>{view}</button>)}</div><button type="button" onClick={() => setExpandedManualAgentId(null)} aria-label="Close agent activity detail" className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm hover:text-slate-950"><X className="h-4 w-4" /></button></div>
+                          </div>
+                          {expandedManualView === 'dashboard' ? (
+                            <div className="space-y-4">
+                              <div className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white sm:grid-cols-4 lg:grid-cols-7">
+                                {([['Leads', agentManualSummary.leads], ['Dials', agentManualSummary.dials], ['Contacts', agentManualSummary.contacts], ['Appointments', agentManualSummary.appointments], ['Presentations', agentManualSummary.presentations], ['Sold', agentManualSummary.sold], ['Total AP', agentManualSummary.totalAp]] as Array<[string, number]>).map(([label, value]) => <div key={label} className="border-b border-r border-slate-100 px-4 py-3 last:border-r-0 sm:border-b-0"><p className="text-[8px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p><p className="mt-1 text-lg font-black tabular-nums text-slate-950">{label === 'Total AP' ? formatActivityCurrency(value) : formatActivityCount(value)}</p></div>)}
+                              </div>
+                              <div className="overflow-x-auto rounded-2xl bg-slate-950 p-5 text-white">
+                                <div className="mb-4 flex items-center justify-between gap-3"><div><p className="text-[8px] font-black uppercase tracking-[0.18em] text-amber-400">Performance journey</p><p className="mt-1 text-sm font-black">Lead-to-sale conversion</p></div><span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black text-amber-300">{formatActivityCurrency(agentManualSummary.totalAp)} AP</span></div>
+                                <div className="flex min-w-[900px] items-center gap-2">
+                                  {([
+                                    ['Leads', agentManualSummary.leads, agentManualApPer(agentManualSummary.leads), null],
+                                    ['Dials', agentManualSummary.dials, agentManualApPer(agentManualSummary.dials), agentManualSummary.leads > 0 ? `${(agentManualSummary.dials / agentManualSummary.leads).toFixed(1)}x` : '—'],
+                                    ['Contacts', agentManualSummary.contacts, agentManualApPer(agentManualSummary.contacts), agentManualRate(agentManualSummary.contacts, agentManualSummary.dials)],
+                                    ['Appointments', agentManualSummary.appointments, agentManualApPer(agentManualSummary.appointments), agentManualRate(agentManualSummary.appointments, agentManualSummary.contacts)],
+                                    ['Presentations', agentManualSummary.presentations, agentManualApPer(agentManualSummary.presentations), agentManualRate(agentManualSummary.presentations, agentManualSummary.appointments)],
+                                    ['Sales', agentManualSummary.sold, agentManualApPer(agentManualSummary.sold), agentManualRate(agentManualSummary.sold, agentManualSummary.presentations)],
+                                  ] as Array<[string, number, string, string | null]>).map(([label, value, apEach, conversion], index) => <React.Fragment key={label}>{index > 0 ? <div className="flex min-w-16 flex-1 items-center gap-2"><span className="h-px flex-1 bg-white/15" /><span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-black text-amber-300">{conversion}</span><span className="h-px flex-1 bg-white/15" /></div> : null}<button type="button" onClick={() => setSelectedAgencyManualStage(current => current === index ? null : index)} aria-pressed={selectedAgencyManualStage === index} className={`w-28 shrink-0 rounded-xl border p-3 text-left transition ${selectedAgencyManualStage === index ? 'border-amber-400 bg-amber-400/10 shadow-[0_0_0_1px_rgba(251,191,36,.25)]' : 'border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/[0.08]'}`}><p className="text-[8px] font-black uppercase tracking-[0.14em] text-white/40">Stage {index + 1}</p><p className="mt-2 text-lg font-black tabular-nums">{formatActivityCount(value)}</p><p className="text-[10px] font-bold text-white/55">{label}</p><p className="mt-2 border-t border-white/10 pt-2 text-[9px] font-bold text-sky-300">{apEach} AP each</p></button></React.Fragment>)}
+                                </div>
+                                {selectedAgencyManualStage !== null ? <div className="mt-5 border-t border-white/10 pt-5"><div className="mb-3 flex items-center justify-between"><div><p className="text-[8px] font-black uppercase tracking-[0.16em] text-amber-400">Stage detail</p><p className="mt-1 text-sm font-black">{agentManualStageDetails[selectedAgencyManualStage].label} performance</p></div><button type="button" onClick={() => setSelectedAgencyManualStage(null)} aria-label="Close conversion detail" className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"><X className="h-3.5 w-3.5" /></button></div><div className="grid gap-2 sm:grid-cols-2">{agentManualStageDetails[selectedAgencyManualStage].metrics.map(([metric, value]) => <div key={metric} className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3"><p className="text-[10px] text-slate-400">{metric}</p><p className="mt-1.5 text-base font-black tabular-nums text-white">{value}</p></div>)}</div></div> : null}
+                              </div>
+                            </div>
+                          ) : rundown?.rows.length ? (
+                            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                              <div className="grid items-center bg-slate-50 px-4 py-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400" style={{ gridTemplateColumns: manualRundownGrid }}><span className="pl-3 text-amber-600">Date</span>{tableColumns.map(column => <span key={column.label}>{column.label}</span>)}<span /></div>
+                              {rundown.rows.map((activity, index) => { const values = normalizeManualActivity(activity); return <div key={`${activity.id ?? activity.created_date ?? index}`} className="grid items-center border-t border-slate-100 px-4 py-3 text-xs font-bold text-slate-600" style={{ gridTemplateColumns: manualRundownGrid }}><span className="pl-3 font-black text-slate-700">{formatManualActivityDate(activity.created_date)}</span><span>{formatActivityCount(values.leads)}</span><span>{formatActivityCount(values.dials)}</span><span>{formatActivityCount(values.contacts)}</span><span>{formatActivityCount(values.presentations)}</span><span>{formatActivityCount(values.appointments)}</span><span>{formatActivityCount(values.sold)}</span><span>{formatActivityCurrency(values.totalAp)}</span><span /></div>; })}
+                            </div>
+                          ) : <div className="rounded-2xl border border-slate-200 bg-white px-6 py-8 text-center text-xs font-bold text-slate-400">No daily activity found for this range.</div>}
+                        </div>
                       )}
-                    </div>
+                    </aside>
                   ) : null}
                   {wavvExpanded ? (
-                    <div className="border-t border-sky-100 bg-sky-50/25">
+                    <div className="border-t border-sky-100 bg-sky-50/25" style={{ gridColumn: '1' }}>
                       {wavvRundown?.error ? (
                         <div className="px-6 py-4 text-xs font-bold text-red-600">{wavvRundown.error}</div>
                       ) : wavvRundown?.loading ? (
@@ -3133,7 +3177,7 @@ const AgencyActivityLog = () => {
                 </React.Fragment>
               );
             })}
-            {!loading && displayedAgentRows.length === 0 ? <div className="border-t border-slate-100 px-6 py-10 text-center text-xs font-black text-slate-400">No {source === 'wavv' && wavvConnectionFilter !== 'all' ? wavvConnectionFilter : sourceLabel} activity found for this range.</div> : null}
+            {!loading && displayedAgentRows.length === 0 ? <div className="border-t border-slate-100 px-6 py-10 text-center text-xs font-black text-slate-400" style={{ gridColumn: '1' }}>No {source === 'wavv' && wavvConnectionFilter !== 'all' ? wavvConnectionFilter : sourceLabel} activity found for this range.</div> : null}
           </div>
         </div>
       </section>
