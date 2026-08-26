@@ -474,6 +474,8 @@ export const IncomeGamePlanPage = () => {
   const [planHistory, setPlanHistory] = useState<IncomePlanHistoryItem[]>([]);
   const [planHistoryMeta, setPlanHistoryMeta] = useState<Pick<IncomePlanHistoryResponse, 'curPage' | 'nextPage' | 'prevPage' | 'itemsTotal' | 'pageTotal'>>({ curPage: 1, nextPage: null, prevPage: null, itemsTotal: 0, pageTotal: 1 });
   const [planHistoryPage, setPlanHistoryPage] = useState(1);
+  const [savedPlanMonths, setSavedPlanMonths] = useState<string[]>([]);
+  const [planHistoryRefreshKey, setPlanHistoryRefreshKey] = useState(0);
   const [planHistoryLoading, setPlanHistoryLoading] = useState(false);
   const [planHistoryError, setPlanHistoryError] = useState<string | null>(null);
   const [historyDetail, setHistoryDetail] = useState<IncomePlanPublishedSnapshot | null>(null);
@@ -509,9 +511,15 @@ export const IncomeGamePlanPage = () => {
     setPlanHistoryLoading(true);
     setPlanHistoryError(null);
     publishedIncomePlanApi.getHistory(currentAgentId, planHistoryPage, controller.signal)
-      .then(response => {
+      .then(async response => {
         setPlanHistory(response.items);
         setPlanHistoryMeta({ curPage: response.curPage, nextPage: response.nextPage, prevPage: response.prevPage, itemsTotal: response.itemsTotal, pageTotal: response.pageTotal });
+        const otherPages = Array.from({ length: response.pageTotal }, (_, index) => index + 1).filter(page => page !== response.curPage);
+        const otherResponses = await Promise.all(otherPages.map(page => publishedIncomePlanApi.getHistory(currentAgentId, page, controller.signal)));
+        if (!controller.signal.aborted) {
+          const allItems = [...response.items, ...otherResponses.flatMap(page => page.items)];
+          setSavedPlanMonths([...new Set(allItems.map(item => item.plan_start_date.slice(0, 7)))]);
+        }
       })
       .catch(caught => {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
@@ -519,8 +527,11 @@ export const IncomeGamePlanPage = () => {
       })
       .finally(() => { if (!controller.signal.aborted) setPlanHistoryLoading(false); });
     return () => controller.abort();
-  }, [currentAgentId, planHistoryPage]);
-  useEffect(() => { setPlanHistoryPage(1); }, [currentAgentId]);
+  }, [currentAgentId, planHistoryPage, planHistoryRefreshKey]);
+  useEffect(() => { setPlanHistoryPage(1); setSavedPlanMonths([]); }, [currentAgentId]);
+  useEffect(() => {
+    if (futurePlanMonth && savedPlanMonths.includes(futurePlanMonth)) setFuturePlanMonth('');
+  }, [futurePlanMonth, savedPlanMonths]);
 
   const generateAiFeedback = async (itemId: string, planResults: IncomePlanResults, planAssumptions: IncomePlanAssumptions) => {
     const workingDays = Math.max(1, planAssumptions.expected_working_days);
@@ -608,6 +619,7 @@ export const IncomeGamePlanPage = () => {
         official = await publishedIncomePlanApi.publish(snapshot);
       }
       void refreshIncomePlan();
+      setPlanHistoryRefreshKey(value => value + 1);
       setPublishedPlan(official);
       setPlanBeingEdited(null);
       setAssumptions(publishedPlanToAssumptions(official));
@@ -694,6 +706,38 @@ export const IncomeGamePlanPage = () => {
     }
   };
 
+  const isFuturePlan = (plan: IncomePlanPublishedSnapshot) => {
+    const now = new Date();
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return new Date(`${plan.plan_start_date}T00:00:00`) > currentMonth;
+  };
+
+  const editSavedFuturePlan = (plan: IncomePlanPublishedSnapshot) => {
+    const editAssumptions = publishedPlanToAssumptions(plan);
+    const editResults = publishedPlanToResults(plan);
+    const redoPrompt: ConversationItem = {
+      id: `future-redo-${Date.now()}`,
+      stage: 'published',
+      assistant_message: 'This future plan is ready to edit. Which part would you like to update?',
+      accepted_values: editAssumptions,
+      validation_error: null,
+      quick_replies: [],
+      requested_action: 'collect_input',
+      plan: null,
+      results: editResults,
+    };
+    setPlanBeingEdited(plan);
+    setAssumptions(editAssumptions);
+    setResults(editResults);
+    setPublishedPlan(null);
+    setPlannerView('current');
+    setError(null);
+    setConfirmPublish(false);
+    setChoosingRedo(true);
+    setStage('published');
+    setConversation([redoPrompt]);
+  };
+
   const availableFutureMonths = Array.from({ length: 12 }, (_, index) => {
     const now = new Date();
     const date = new Date(now.getFullYear(), now.getMonth() + index + 1, 1);
@@ -701,7 +745,7 @@ export const IncomeGamePlanPage = () => {
       value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
       label: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
     };
-  });
+  }).filter(month => !savedPlanMonths.includes(month.value));
 
   const startSelectedFuturePlan = async () => {
     if (!futurePlanMonth) return;
@@ -737,7 +781,7 @@ export const IncomeGamePlanPage = () => {
         value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
         label: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
       };
-    });
+    }).filter(month => !savedPlanMonths.includes(month.value));
     const editCurrentPlan = () => {
       setPlanBeingEdited(publishedPlan);
       setPublishedPlan(null);
@@ -807,7 +851,7 @@ export const IncomeGamePlanPage = () => {
 
           {plannerView === 'upcoming' && <section className="overflow-visible rounded-[2rem] border border-white bg-white shadow-sm"><div className="grid gap-6 p-6 md:grid-cols-[minmax(0,1fr)_300px]"><div><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-600">New conversation</p><h2 className="mt-2 text-2xl font-black text-slate-950">Plan ahead with your coach</h2><p className="mt-2 max-w-xl text-[11px] font-semibold leading-5 text-slate-500">Choose a future month. The AI coach will then guide you through the goal, production assumptions, and investment needed for that period.</p></div><div className="rounded-2xl bg-slate-950 p-5 text-white"><label htmlFor="future-plan-month" className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">Plan month</label><MonthPicker id="future-plan-month" value={futurePlanMonth} months={futurePlanMonths} onChange={setFuturePlanMonth} /><button type="button" disabled={!futurePlanMonth} onClick={() => void startFuturePlan()} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 text-[10px] font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"><Bot className="h-4 w-4" /> Start with AI Coach</button><p className="mt-3 text-[8px] font-semibold leading-4 text-slate-500">Suggested next period: {nextPeriod}</p></div></div></section>}
 
-          {plannerView === 'history' && <div>{historyDetailLoading && <section className="flex min-h-64 items-center justify-center rounded-[2rem] border border-white bg-white shadow-sm"><div className="text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-amber-500" /><p className="mt-3 text-[10px] font-bold text-slate-400">Loading plan details…</p></div></section>}{!historyDetailLoading && historyDetail && historyAssumptions && historyResults && <div className="space-y-4"><section className="rounded-[2rem] border border-amber-100 bg-amber-50/60 p-5"><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">Saved plan</p><h2 className="mt-2 text-lg font-black text-slate-950">{new Date(`${historyDetail.plan_start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><p className="mt-1 text-[10px] font-semibold text-slate-500">Read-only historical snapshot loaded from the selected period.</p></section><ResultsCard results={historyResults} assumptions={historyAssumptions} publishedSnapshot={historyDetail} aiFeedback={historyDetail.ai_feedback} /></div>}{!historyDetailLoading && !historyDetail && !planHistoryError && <section className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-10 text-center"><RefreshCw className="mx-auto h-5 w-5 text-slate-300" /><p className="mt-3 text-sm font-black text-slate-800">Choose a saved plan</p><p className="mt-1 text-[10px] font-semibold text-slate-400">Select a period from the history navigation to load its details.</p></section>}</div>}
+          {plannerView === 'history' && <div>{historyDetailLoading && <section className="flex min-h-64 items-center justify-center rounded-[2rem] border border-white bg-white shadow-sm"><div className="text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-amber-500" /><p className="mt-3 text-[10px] font-bold text-slate-400">Loading plan details…</p></div></section>}{!historyDetailLoading && historyDetail && historyAssumptions && historyResults && <div className="space-y-4"><section className="flex flex-col gap-4 rounded-[2rem] border border-amber-100 bg-amber-50/60 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">Saved plan</p><h2 className="mt-2 text-lg font-black text-slate-950">{new Date(`${historyDetail.plan_start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2><p className="mt-1 text-[10px] font-semibold text-slate-500">{isFuturePlan(historyDetail) ? 'Future plan ready to review or revise.' : 'Historical snapshot loaded from the selected period.'}</p></div>{isFuturePlan(historyDetail) && <button type="button" onClick={() => editSavedFuturePlan(historyDetail)} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-[10px] font-black text-white shadow-sm transition hover:bg-slate-800"><Sparkles className="h-4 w-4 text-amber-400" /> Edit with Income Coach</button>}</section><ResultsCard results={historyResults} assumptions={historyAssumptions} publishedSnapshot={historyDetail} aiFeedback={historyDetail.ai_feedback} /></div>}{!historyDetailLoading && !historyDetail && !planHistoryError && <section className="rounded-[2rem] border border-dashed border-slate-200 bg-white p-10 text-center"><RefreshCw className="mx-auto h-5 w-5 text-slate-300" /><p className="mt-3 text-sm font-black text-slate-800">Choose a saved plan</p><p className="mt-1 text-[10px] font-semibold text-slate-400">Select a period from the history navigation to load its details.</p></section>}</div>}
         </main>
       </div>
     </div>;
@@ -843,7 +887,7 @@ export const IncomeGamePlanPage = () => {
     </section> : plannerView === 'history' ? <div className="space-y-4">
       {planHistoryError && <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-[10px] font-bold text-rose-700">{planHistoryError}</div>}
       {historyDetailLoading && <section className="flex min-h-64 items-center justify-center rounded-[2rem] border border-white bg-white shadow-sm"><Loader2 className="h-5 w-5 animate-spin text-amber-500" /></section>}
-      {!historyDetailLoading && historyDetail && historyAssumptions && historyResults && <><section className="rounded-[2rem] border border-amber-100 bg-amber-50/60 p-5"><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">Saved plan</p><h1 className="mt-2 text-xl font-black text-slate-950">{new Date(`${historyDetail.plan_start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h1><p className="mt-1 text-[10px] font-semibold text-slate-500">Read-only historical snapshot.</p></section><ResultsCard results={historyResults} assumptions={historyAssumptions} publishedSnapshot={historyDetail} aiFeedback={historyDetail.ai_feedback} /></>}
+      {!historyDetailLoading && historyDetail && historyAssumptions && historyResults && <><section className="flex flex-col gap-4 rounded-[2rem] border border-amber-100 bg-amber-50/60 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-700">Saved plan</p><h1 className="mt-2 text-xl font-black text-slate-950">{new Date(`${historyDetail.plan_start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h1><p className="mt-1 text-[10px] font-semibold text-slate-500">{isFuturePlan(historyDetail) ? 'Future plan ready to review or revise.' : 'Historical snapshot loaded from the selected period.'}</p></div>{isFuturePlan(historyDetail) && <button type="button" onClick={() => editSavedFuturePlan(historyDetail)} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-[10px] font-black text-white shadow-sm transition hover:bg-slate-800"><Sparkles className="h-4 w-4 text-amber-400" /> Edit with Income Coach</button>}</section><ResultsCard results={historyResults} assumptions={historyAssumptions} publishedSnapshot={historyDetail} aiFeedback={historyDetail.ai_feedback} /></>}
     </div> : <div className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-white bg-white shadow-sm">
       <header className="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
