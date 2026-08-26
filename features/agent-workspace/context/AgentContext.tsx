@@ -77,7 +77,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIncomePlanLoading(true);
     setIncomePlanError(false);
     try {
-      const plan = await publishedIncomePlanApi.get(currentAgentId);
+      const plan = await publishedIncomePlanApi.get(currentAgentId, { start_date: null, end_date: null });
       setIncomePlan(plan);
       setIncomePlanAgentId(currentAgentId);
       setIncomePlanError(false);

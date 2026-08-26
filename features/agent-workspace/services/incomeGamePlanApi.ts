@@ -18,19 +18,51 @@ const incomePlanAuthHeaders = () => ({
   'Content-Type': 'application/json',
 });
 
-const unwrapPublishedPlan = (payload: unknown): IncomePlanPublishedSnapshot | null => {
-  if (Array.isArray(payload)) return payload.length ? unwrapPublishedPlan(payload[0]) : null;
+export interface IncomePlanHistoryItem {
+  id: string;
+  created_at: number;
+  plan_start_date: string;
+  plan_end_date: string;
+  agent_id: string;
+  desired_income_goal: number;
+  expected_working_days: number;
+  daily_submitted_applications: number;
+  daily_ap_target: number;
+  monthly_submitted_applications: number;
+  monthly_ap_target: number;
+  ai_feedback: string;
+}
+
+export interface IncomePlanHistoryResponse {
+  itemsReceived: number;
+  curPage: number;
+  nextPage: number | null;
+  prevPage: number | null;
+  offset: number;
+  perPage: number;
+  itemsTotal: number;
+  pageTotal: number;
+  items: IncomePlanHistoryItem[];
+}
+
+const unwrapPublishedPlan = (payload: unknown, fallbackAgentId = ''): IncomePlanPublishedSnapshot | null => {
+  if (Array.isArray(payload)) return payload.length ? unwrapPublishedPlan(payload[0], fallbackAgentId) : null;
   if (!payload || typeof payload !== 'object') return null;
   const record = payload as Record<string, unknown>;
   for (const key of ['item', 'data', 'result', 'record']) {
     if (record[key] !== undefined) {
-      const nested = unwrapPublishedPlan(record[key]);
+      const nested = unwrapPublishedPlan(record[key], fallbackAgentId);
       if (nested) return nested;
     }
   }
-  return record.agent_id && record.desired_income_goal !== undefined
-    ? record as IncomePlanPublishedSnapshot
-    : null;
+  const hasPlanFields = record.desired_income_goal !== undefined
+    || record.daily_ap_target !== undefined
+    || record.monthly_ap_target !== undefined;
+  if (!hasPlanFields) return null;
+  return {
+    ...record,
+    agent_id: String(record.agent_id || fallbackAgentId),
+  } as unknown as IncomePlanPublishedSnapshot;
 };
 
 export const createIncomePlanPublishedSnapshot = (
@@ -40,7 +72,8 @@ export const createIncomePlanPublishedSnapshot = (
   aiFeedback: string,
 ): IncomePlanPublishedSnapshot => {
   const workingDays = Math.max(1, assumptions.expected_working_days);
-  const monthlyApTarget = Math.ceil(assumptions.average_annual_premium * workingDays);
+  const submittedApplicationAp = assumptions.average_annual_premium * results.submitted_applications;
+  const monthlyApTarget = Math.ceil((results.estimated_deposits + submittedApplicationAp) / 2);
   const dailyApplicationPace = results.submitted_applications / workingDays;
   return {
     agent_id: agentId,
@@ -58,27 +91,35 @@ export const createIncomePlanPublishedSnapshot = (
     exact_daily_application_pace: Number(dailyApplicationPace.toFixed(2)),
     daily_submitted_applications: Math.ceil(dailyApplicationPace),
     estimated_acquisition_budget: results.marketing_budget,
-    daily_ap_target: Math.ceil(monthlyApTarget / workingDays),
+    daily_ap_target: Math.ceil(assumptions.average_annual_premium * Math.ceil(dailyApplicationPace)),
     daily_marketing_spend: Math.trunc(results.marketing_budget / workingDays),
     monthly_submitted_applications: results.submitted_applications,
     monthly_ap_target: monthlyApTarget,
     ai_feedback: aiFeedback,
     plan_start_date: assumptions.start_date,
     plan_end_date: assumptions.end_date,
-    formula_version: 1,
+    formula_version: 2,
   };
 };
 
 export const publishedIncomePlanApi = {
-  async get(agentId: string, signal?: AbortSignal): Promise<IncomePlanPublishedSnapshot | null> {
-    const response = await fetch(`${INCOME_CALCULATOR_API_BASE}/${encodeURIComponent(agentId)}`, {
+  async get(
+    agentId: string,
+    period: { start_date?: string | null; end_date?: string | null } = {},
+    signal?: AbortSignal,
+  ): Promise<IncomePlanPublishedSnapshot | null> {
+    const query = new URLSearchParams({
+      start_date: period.start_date || '',
+      end_date: period.end_date || '',
+    });
+    const response = await fetch(`${INCOME_CALCULATOR_API_BASE}/${encodeURIComponent(agentId)}?${query.toString()}`, {
       headers: incomePlanAuthHeaders(),
       signal,
     });
     if (response.status === 404 || response.status === 204) return null;
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new ApiError((payload as { error?: string } | null)?.error || 'Unable to check for a published Income Game Plan.', response.status);
-    return unwrapPublishedPlan(payload);
+    return unwrapPublishedPlan(payload, agentId);
   },
 
   async publish(snapshot: IncomePlanPublishedSnapshot): Promise<IncomePlanPublishedSnapshot> {
@@ -89,7 +130,39 @@ export const publishedIncomePlanApi = {
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new ApiError((payload as { error?: string } | null)?.error || 'Unable to publish your Income Game Plan.', response.status);
-    return unwrapPublishedPlan(payload) || snapshot;
+    return unwrapPublishedPlan(payload, snapshot.agent_id) || snapshot;
+  },
+
+  async update(
+    planId: string,
+    changes: Partial<IncomePlanPublishedSnapshot>,
+    fallbackAgentId = '',
+  ): Promise<IncomePlanPublishedSnapshot> {
+    const response = await fetch(`${INCOME_CALCULATOR_API_BASE}/${encodeURIComponent(planId)}`, {
+      method: 'PATCH',
+      headers: incomePlanAuthHeaders(),
+      body: JSON.stringify(changes),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new ApiError((payload as { error?: string } | null)?.error || 'Unable to update your Income Game Plan.', response.status);
+    const updated = unwrapPublishedPlan(payload, fallbackAgentId);
+    if (!updated) throw new ApiError('The updated Income Game Plan response was incomplete.', response.status);
+    return updated;
+  },
+
+  async getHistory(agentId: string, page = 1, signal?: AbortSignal): Promise<IncomePlanHistoryResponse> {
+    const query = new URLSearchParams({ page: String(Math.max(1, page)) });
+    const response = await fetch(`${INCOME_CALCULATOR_API_BASE}/${encodeURIComponent(agentId)}/history?${query.toString()}`, {
+      headers: incomePlanAuthHeaders(),
+      signal,
+    });
+    const payload = await response.json().catch(() => null) as IncomePlanHistoryResponse | { error?: string } | null;
+    if (!response.ok) throw new ApiError((payload as { error?: string } | null)?.error || 'Unable to load Income Game Plan history.', response.status);
+    const history = payload as IncomePlanHistoryResponse;
+    return {
+      ...history,
+      items: Array.isArray(history?.items) ? history.items : [],
+    };
   },
 };
 
@@ -122,10 +195,11 @@ export const calculateIncomePlanResults = (assumptions: IncomePlanAssumptions): 
   const submittedApplications = assumptions.placement_rate > 0 ? Math.ceil(issuedPolicies / (assumptions.placement_rate / 100)) : 0;
   const placedApplications = Math.ceil((submittedApplications + issuedPolicies) / 2);
   const workingDays = Math.max(1, assumptions.expected_working_days);
-  const monthlyApTarget = Math.ceil(assumptions.average_annual_premium * workingDays);
   const practicalDailyTarget = Math.ceil(submittedApplications / workingDays);
   const marketingBudget = submittedApplications * assumptions.marketing_cost_per_application;
   const estimatedDeposits = issuedPolicies * commissionPerIssuedPolicy;
+  const submittedApplicationAp = assumptions.average_annual_premium * submittedApplications;
+  const monthlyApTarget = Math.ceil((estimatedDeposits + submittedApplicationAp) / 2);
 
   return {
     deposit_goal: assumptions.desired_income_goal,

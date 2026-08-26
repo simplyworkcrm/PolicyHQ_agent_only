@@ -86,6 +86,7 @@ import { AgencyDetailPage } from './components/AgencyDetailPage';
 import { MyProfilePage } from './components/MyProfilePage';
 import { SettingsPage } from './components/SettingsPage';
 import { ServicesPage } from './components/ServicesPage';
+import { FexQuoter } from './components/FexQuoter';
 import { AmericoReconciliation } from './components/AmericoReconciliation';
 import { AmericoBusinessPolicies } from './components/AmericoBusinessPolicies';
 import { AetnaBusinessPolicies, AflacBusinessPolicies } from './components/AetnaBusinessPolicies';
@@ -4863,6 +4864,7 @@ const AgentLayout: React.FC = () => {
     if (['/downlines', '/downlines/team', '/downlines/production', '/downlines/expenses'].includes(path)) return 'My Agency';
     if (path.startsWith('/downlines/')) return 'Downline Profile';
     if (path.startsWith('/services')) return 'Services';
+    if (path.startsWith('/quoter')) return 'FEX Quoter';
     if (path.startsWith('/splits')) return 'Split Business';
     if (path.startsWith('/commissions')) return 'Commissions';
     if (path.startsWith('/debts')) return 'Debt Recovery';
@@ -4889,6 +4891,7 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/policies')) return 'policies';
     if (path.startsWith('/downlines')) return 'downlines';
     if (path.startsWith('/services')) return 'overview';
+    if (path.startsWith('/quoter')) return 'overview';
     if (path.startsWith('/splits')) return 'splits';
     if (path.startsWith('/commissions')) return 'commissions';
     if (path.startsWith('/debts')) return 'debts';
@@ -5056,7 +5059,7 @@ const AgentLayout: React.FC = () => {
             )}
           </div>
           {!isSidebarCompact && (
-            <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">{incomePlanLoading ? 'Checking for your current plan' : incomePlanError ? 'Open to retry loading your plan' : incomePlan ? `${Number(incomePlan.commission_level)}% commission` : 'Build and lock in your income plan'}</p>
+            <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">{incomePlanLoading ? 'Checking for your current plan' : incomePlanError ? 'Open to retry loading your plan' : incomePlan ? `${Number(incomePlan.commission_level)}% commission` : 'Build your current month income plan'}</p>
           )}
         </button>
 
@@ -5335,6 +5338,7 @@ const AgentLayout: React.FC = () => {
                   <Route path="/my-profile" element={<MyProfilePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/services" element={<ServicesPage />} />
+                  <Route path="/quoter/fex" element={<FexQuoter />} />
                   <Route path="/business" element={<Navigate to="/business/overview" replace />} />
                   <Route path="/business/overview" element={<MyBusinessPage tab="overview" />} />
                   <Route path="/business/income-game-plan" element={<MyBusinessPage tab="income-game-plan" />} />

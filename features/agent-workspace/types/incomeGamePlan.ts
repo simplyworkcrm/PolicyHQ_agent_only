@@ -65,6 +65,7 @@ export type IncomePlanResults = {
 };
 
 export type IncomePlanPublishedSnapshot = {
+  id?: string;
   agent_id: string;
   desired_income_goal: number;
   expected_working_days: number;
