@@ -94,6 +94,7 @@ import { ModuleSwitcher } from '../../shared/components/ModuleSwitcher';
 import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
+import { bookOfBusinessApi } from './services/bookOfBusinessApi';
 import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myAgencyActivityApi, myBusinessActivityApi } from './services/myBusinessActivityApi';
 import { AssistPolicySplit, MyBusinessExpenseRow, UtilityAgent, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
 import { agentTicketsApi, type ImageMetadata } from './services/agentTicketsApi';
@@ -408,6 +409,11 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   currency: 'USD',
   maximumFractionDigits: 0,
 });
+
+const formatProgressPercent = (value: number | null) => {
+  if (value === null || !Number.isFinite(value)) return '—';
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)}%`;
+};
 
 const compactCurrencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -4792,6 +4798,53 @@ const AgentLayout: React.FC = () => {
     const savedTheme = localStorage.getItem('workspace_theme') || localStorage.getItem('arena_theme');
     return savedTheme === 'night';
   });
+  const [currentMonthAp, setCurrentMonthAp] = useState<{ today: number; month: number } | null>(null);
+  const [currentMonthApLoading, setCurrentMonthApLoading] = useState(false);
+  const [currentMonthApError, setCurrentMonthApError] = useState(false);
+
+  const currentMonthLabel = useMemo(() => new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date()), []);
+  const dailyApTarget = Math.max(0, Number(incomePlan?.daily_ap_target) || 0);
+  const monthlyApTarget = Math.max(0, Number(incomePlan?.monthly_ap_target) || 0);
+  const dailyApProgress = currentMonthAp && dailyApTarget > 0
+    ? (currentMonthAp.today / dailyApTarget) * 100
+    : null;
+  const monthlyApProgress = currentMonthAp && monthlyApTarget > 0
+    ? (currentMonthAp.month / monthlyApTarget) * 100
+    : null;
+
+  useEffect(() => {
+    if (!currentAgentId) {
+      setCurrentMonthAp(null);
+      setCurrentMonthApLoading(false);
+      setCurrentMonthApError(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setCurrentMonthApLoading(true);
+    setCurrentMonthApError(false);
+
+    void Promise.all([
+      bookOfBusinessApi.getSummary({ agentId: currentAgentId, timeframe: 'today' }, controller.signal),
+      bookOfBusinessApi.getSummary({ agentId: currentAgentId, timeframe: 'monthly' }, controller.signal),
+    ])
+      .then(([today, month]) => {
+        setCurrentMonthAp({ today: today.gross.ap, month: month.gross.ap });
+      })
+      .catch((error: unknown) => {
+        if ((error as { name?: string })?.name === 'AbortError') return;
+        setCurrentMonthAp(null);
+        setCurrentMonthApError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCurrentMonthApLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [currentAgentId]);
 
   useEffect(() => {
     localStorage.setItem('workspace_theme', isNightMode ? 'night' : 'light');
@@ -5037,7 +5090,7 @@ const AgentLayout: React.FC = () => {
           </div>
         </nav>
 
-        {/* Daily AP goal shortcut */}
+        {/* Current-month AP goal shortcut */}
         <button
           type="button"
           onClick={() => navigate(workspaceNavView === 'agency' ? '/downlines' : '/business/income-game-plan')}
@@ -5052,14 +5105,44 @@ const AgentLayout: React.FC = () => {
               <Target className="h-4 w-4" />
             </span>
             {!isSidebarCompact && (
-              <div className="min-w-0">
-                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-white/45">{incomePlan ? 'Daily AP Goal' : 'Income Plan'}</p>
-                <p className="mt-0.5 text-lg font-black leading-none">{incomePlanLoading ? 'Loading…' : incomePlanError ? 'Goal unavailable' : incomePlan ? currencyFormatter.format(Number(incomePlan.daily_ap_target)) : 'Set your AP target'}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-amber-300">Current month · {currentMonthLabel}</p>
+                <p className="mt-0.5 text-sm font-black leading-tight">{incomePlanLoading ? 'Loading plan…' : incomePlanError ? 'Goal unavailable' : incomePlan ? 'AP target progress' : 'Set your AP target'}</p>
               </div>
             )}
           </div>
           {!isSidebarCompact && (
-            <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">{incomePlanLoading ? 'Checking for your current plan' : incomePlanError ? 'Open to retry loading your plan' : incomePlan ? `${Number(incomePlan.commission_level)}% commission` : 'Build your current month income plan'}</p>
+            incomePlan ? (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <div className="flex items-end justify-between gap-2">
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/45">Daily target</p>
+                      <p className="mt-0.5 text-sm font-black">{currencyFormatter.format(dailyApTarget)}</p>
+                    </div>
+                    <p className="text-xs font-black text-amber-300">{currentMonthApLoading ? '…' : currentMonthApError ? '—' : formatProgressPercent(dailyApProgress)}</p>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-amber-400 transition-[width]" style={{ width: `${Math.min(100, Math.max(0, dailyApProgress ?? 0))}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-end justify-between gap-2">
+                    <div>
+                      <p className="text-[8px] font-black uppercase tracking-[0.16em] text-white/45">Month target</p>
+                      <p className="mt-0.5 text-sm font-black">{currencyFormatter.format(monthlyApTarget)}</p>
+                    </div>
+                    <p className="text-xs font-black text-emerald-300">{currentMonthApLoading ? '…' : currentMonthApError ? '—' : formatProgressPercent(monthlyApProgress)}</p>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-emerald-400 transition-[width]" style={{ width: `${Math.min(100, Math.max(0, monthlyApProgress ?? 0))}%` }} />
+                  </div>
+                </div>
+                <p className="border-t border-white/10 pt-2 text-[8px] font-semibold leading-4 text-white/45">Always uses current-month gross AP · {Number(incomePlan.commission_level)}% commission</p>
+              </div>
+            ) : (
+              <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">{incomePlanLoading ? 'Checking for your current plan' : incomePlanError ? 'Open to retry loading your plan' : 'Build your current month income plan'}</p>
+            )
           )}
         </button>
 

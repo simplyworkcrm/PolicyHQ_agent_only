@@ -18,10 +18,11 @@ import {
   BookOfBusinessSummary,
 } from '../services/bookOfBusinessApi';
 import { MyBusinessAgencyProfile, MyBusinessSourceBreakdown, myBusinessOverviewApi, MyBusinessStateBreakdown } from '../services/myBusinessOverviewApi';
+import { publishedIncomePlanApi } from '../services/incomeGamePlanApi';
+import { IncomePlanPublishedSnapshot } from '../types/incomeGamePlan';
 import { PolicyV2 } from '../services/agentPoliciesV2Api';
 import { AgentPoliciesV2, PoliciesTimeframe, PolicyDateRangeFilter, toPolicyRequestDate } from './AgentPoliciesV2';
 import { StateProductionPanels } from './StateProductionPanels';
-import { useAgentContext } from '../context/AgentContext';
 
 type CalendarMetric = 'submitted' | 'issued';
 
@@ -219,13 +220,6 @@ type BookOfBusinessDashboardProps = {
 
 export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = ({ agentId, scope = 'agent' }) => {
   const isAgencyScope = scope === 'agency';
-  const { incomePlan, incomePlanLoading, incomePlanError } = useAgentContext();
-  const activeIncomePlan = isAgencyScope ? null : incomePlan;
-  const dailyGoal = activeIncomePlan ? Number(activeIncomePlan.daily_ap_target) : null;
-  const monthlyGoal = activeIncomePlan ? Number(activeIncomePlan.monthly_ap_target) : null;
-  const isWithinPlan = (date: string) => Boolean(activeIncomePlan
-    && (!activeIncomePlan.plan_start_date || date >= activeIncomePlan.plan_start_date)
-    && (!activeIncomePlan.plan_end_date || date <= activeIncomePlan.plan_end_date));
   const [metric, setMetric] = useState<CalendarMetric>('submitted');
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const today = new Date();
@@ -243,6 +237,9 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
   const [monthlyPerformance, setMonthlyPerformance] = useState<BookOfBusinessMonthlyPerformance[]>([]);
   const [monthlyLoading, setMonthlyLoading] = useState(true);
   const [monthlyError, setMonthlyError] = useState(false);
+  const [incomePlan, setIncomePlan] = useState<IncomePlanPublishedSnapshot | null>(null);
+  const [incomePlanLoading, setIncomePlanLoading] = useState(!isAgencyScope);
+  const [incomePlanError, setIncomePlanError] = useState(false);
   const [selectedPolicies, setSelectedPolicies] = useState<BookOfBusinessPolicy[]>([]);
   const [selectedPoliciesLoading, setSelectedPoliciesLoading] = useState(false);
   const [selectedPoliciesError, setSelectedPoliciesError] = useState(false);
@@ -273,6 +270,40 @@ export const BookOfBusinessDashboard: React.FC<BookOfBusinessDashboardProps> = (
       requestEndDate: toDateKey(lastCellDate),
     };
   }, [visibleMonth]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setIncomePlan(null);
+    setIncomePlanError(false);
+
+    if (isAgencyScope || !agentId) {
+      setIncomePlanLoading(false);
+      return () => controller.abort();
+    }
+
+    setIncomePlanLoading(true);
+    publishedIncomePlanApi.get(agentId, {
+      start_date: monthRange.startDate,
+      end_date: monthRange.endDate,
+    }, controller.signal)
+      .then(setIncomePlan)
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        console.error('Unable to load the Income Game Plan for the selected month', error);
+        setIncomePlanError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIncomePlanLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [agentId, isAgencyScope, monthRange.endDate, monthRange.startDate]);
+
+  const dailyGoal = incomePlan ? Number(incomePlan.daily_ap_target) : null;
+  const monthlyGoal = incomePlan ? Number(incomePlan.monthly_ap_target) : null;
+  const isWithinPlan = (date: string) => Boolean(incomePlan
+    && (!incomePlan.plan_start_date || date >= incomePlan.plan_start_date)
+    && (!incomePlan.plan_end_date || date <= incomePlan.plan_end_date));
 
   useEffect(() => {
     const controller = new AbortController();
