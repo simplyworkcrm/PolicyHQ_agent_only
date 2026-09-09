@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { QuickEditMenu } from './QuickEditMenu';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -782,102 +783,6 @@ const RequestConversation: React.FC<RequestConversationProps> = ({ initialText, 
   );
 };
 
-const QuickEditMenu: React.FC<{
-  ariaLabel: string;
-  value: string;
-  placeholder: string;
-  options: QuickEditOption[];
-  disabled?: boolean;
-  title?: string;
-  triggerTone?: string;
-  showDots?: boolean;
-  searchable?: boolean;
-  multiple?: boolean;
-  values?: string[];
-  onValuesChange?: (values: string[]) => void;
-  onChange?: (value: string) => void;
-}> = ({ ariaLabel, value, placeholder, options, disabled, title, triggerTone = 'bg-white text-slate-700 ring-slate-200', showDots = true, searchable = false, multiple = false, values = [], onValuesChange, onChange }) => {
-  const [open, setOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 190, maxHeight: 300 });
-  const anchorRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const selectedValues = multiple ? values : value ? [value] : [];
-  const selected = options.find(option => option.value === selectedValues[0]);
-  const triggerLabel = selectedValues.length > 1 ? `${selectedValues.length} selected` : selected?.label || placeholder;
-  const visibleOptions = searchable && searchQuery.trim()
-    ? options.filter(option => option.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-    : options;
-
-  const openMenu = () => {
-    if (disabled || !anchorRef.current) return;
-    const rect = anchorRef.current.getBoundingClientRect();
-    const width = Math.max(190, rect.width);
-    const estimatedHeight = Math.min(340, options.length * 42 + (searchable ? 62 : 12));
-    const roomBelow = window.innerHeight - rect.bottom - 12;
-    const opensAbove = roomBelow < estimatedHeight && rect.top > roomBelow;
-    setPosition({
-      top: opensAbove ? Math.max(10, rect.top - estimatedHeight - 7) : rect.bottom + 7,
-      left: Math.min(rect.left, window.innerWidth - width - 12),
-      width,
-      maxHeight: Math.max(120, opensAbove ? rect.top - 18 : roomBelow),
-    });
-    setSearchQuery('');
-    setOpen(true);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const closeForOutsideClick = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!anchorRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
-    };
-    const closeForEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        anchorRef.current?.focus();
-      }
-    };
-    const closeForResize = () => setOpen(false);
-    const closeForOutsideScroll = (event: Event) => {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', closeForOutsideClick);
-    document.addEventListener('keydown', closeForEscape);
-    window.addEventListener('resize', closeForResize);
-    window.addEventListener('scroll', closeForOutsideScroll, true);
-    return () => {
-      document.removeEventListener('pointerdown', closeForOutsideClick);
-      document.removeEventListener('keydown', closeForEscape);
-      window.removeEventListener('resize', closeForResize);
-      window.removeEventListener('scroll', closeForOutsideScroll, true);
-    };
-  }, [open]);
-
-  return <>
-    <button ref={anchorRef} type="button" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} title={title} onClick={event => { event.stopPropagation(); open ? setOpen(false) : openMenu(); }} onKeyDown={event => event.stopPropagation()} className={`inline-flex min-h-8 w-full min-w-[96px] max-w-[165px] items-center justify-between gap-2 rounded-full px-3 py-1.5 text-left text-[10px] font-black ring-1 transition duration-200 hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:ring-slate-100 disabled:hover:translate-y-0 disabled:hover:shadow-none ${triggerTone}`}>
-      <span className="flex min-w-0 items-center gap-2">{showDots && <span className={`h-2 w-2 shrink-0 rounded-full ${selected?.dot || 'bg-slate-400'}`} />}<span className="truncate">{triggerLabel}</span></span><ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-    </button>
-    {open && createPortal(<div ref={menuRef} role="listbox" aria-label={ariaLabel} style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }} onClick={event => event.stopPropagation()} className="z-[500] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-900/15 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-150">
-      {(searchable || (multiple && selectedValues.length > 0)) && <div className="sticky top-0 z-10 mb-1 space-y-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
-        {searchable && <label className="flex items-center gap-2 rounded-lg px-2 py-1.5"><Search className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="sr-only">Search {ariaLabel}</span><input autoFocus value={searchQuery} onChange={event => setSearchQuery(event.target.value)} onKeyDown={event => event.stopPropagation()} placeholder="Search requesters…" className="min-w-0 flex-1 bg-transparent text-[10px] font-bold text-slate-800 outline-none placeholder:text-slate-400" /></label>}
-        {multiple && selectedValues.length > 0 && <button type="button" onClick={() => onValuesChange?.([])} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-50 px-2 py-2 text-[9px] font-black text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"><X className="h-3 w-3" />Clear this filter</button>}
-      </div>}
-      {visibleOptions.map(option => {
-        const optionSelected = selectedValues.includes(option.value);
-        return <button key={option.value} type="button" role="option" aria-selected={optionSelected} onClick={() => {
-          if (multiple) {
-            onValuesChange?.(optionSelected ? selectedValues.filter(item => item !== option.value) : [...selectedValues, option.value]);
-          } else {
-            setOpen(false);
-            if (option.value !== value) onChange?.(option.value);
-          }
-        }} className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-[10px] font-black transition hover:translate-x-0.5 ${optionSelected ? option.tone || 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}><span className="flex min-w-0 items-center gap-2.5">{showDots && <span className={`h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-white ${option.dot || 'bg-slate-400'}`} />}<span className="truncate">{option.label}</span></span>{optionSelected && <Check className="h-3.5 w-3.5 shrink-0" />}</button>;
-      })}
-      {!visibleOptions.length && <div className="px-3 py-6 text-center text-[10px] font-bold text-slate-400">No requesters found</div>}
-    </div>, document.body)}
-  </>;
-};
 
 const ColumnVisibilityMenu: React.FC<{
   columns: Array<{ value: TicketColumnKey; label: string }>;
@@ -951,8 +856,13 @@ const SortableTicketHeader: React.FC<{
   </th>;
 };
 
-export const AgentTickets: React.FC = () => {
-  const { user } = useAuth();
+interface AgentTicketsProps {
+  initialView?: 'home' | 'assistant' | 'dashboard' | 'tickets';
+  staffWorkspace?: boolean;
+}
+
+export const AgentTickets: React.FC<AgentTicketsProps> = ({ initialView = 'home', staffWorkspace = false }) => {
+  const { user, isStaff, isStaffChecked: staffChecked } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkedTicketId = searchParams.get('ticket_id');
   const deepLinkedTab = searchParams.get('tab');
@@ -961,8 +871,6 @@ export const AgentTickets: React.FC = () => {
   const handledDeepLinkRef = useRef('');
   const dashboardSelectedTicketIdRef = useRef<string | null>(null);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
-  const [isStaff, setIsStaff] = useState(false);
-  const [staffChecked, setStaffChecked] = useState(false);
   const [staleCount, setStaleCount] = useState<number | null>(null);
   const [staleOnly, setStaleOnly] = useState(false);
   const [ticketPage, setTicketPage] = useState(1);
@@ -1009,7 +917,7 @@ export const AgentTickets: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<TicketDashboardResponse | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
-  const [view, setView] = useState<'home' | 'assistant' | 'dashboard' | 'tickets'>('home');
+  const [view, setView] = useState<'home' | 'assistant' | 'dashboard' | 'tickets'>(initialView);
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -1067,15 +975,6 @@ export const AgentTickets: React.FC = () => {
       setDashboardLoading(false);
     }
   }, [isStaff]);
-
-  useEffect(() => {
-    let cancelled = false;
-    agentTicketsApi.isStaff()
-      .then(result => { if (!cancelled) setIsStaff(result); })
-      .catch(() => { if (!cancelled) setIsStaff(false); })
-      .finally(() => { if (!cancelled) setStaffChecked(true); });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1661,7 +1560,7 @@ export const AgentTickets: React.FC = () => {
 
   if (view === 'home') {
     return (
-      <div className="relative flex min-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-[2rem] bg-slate-50/50 shadow-sm ring-1 ring-slate-100">
+      <div className={`relative flex ${staffWorkspace ? 'min-h-[calc(100vh-8rem)]' : 'min-h-[calc(100vh-7rem)]'} flex-col overflow-hidden rounded-[2rem] bg-slate-50/50 shadow-sm ring-1 ring-slate-100`}>
         <div className="absolute left-[38%] top-[42%] h-80 w-80 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-200/25 blur-3xl motion-safe:animate-pulse [animation-duration:5s]" />
         <div className="absolute left-[62%] top-[58%] h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-100/30 blur-3xl motion-safe:animate-pulse [animation-delay:1.5s] [animation-duration:7s]" />
         <div className="relative z-10 p-4"><SupportNav active="home" /></div>
@@ -1691,7 +1590,7 @@ export const AgentTickets: React.FC = () => {
 
   if (view === 'dashboard') {
     return (
-      <div className="min-h-[calc(100vh-7rem)] space-y-5 pb-8 font-sans">
+      <div className={`${staffWorkspace ? 'min-h-0' : 'min-h-[calc(100vh-7rem)]'} space-y-5 pb-8 font-sans`}>
         <SupportNav active="dashboard" />
         <section className="flex flex-col justify-between gap-4 rounded-[2rem] bg-slate-950 px-6 py-6 text-white shadow-lg sm:flex-row sm:items-center"><div><p className="text-[9px] font-black uppercase tracking-[0.22em] text-amber-300">Support dashboard</p><h1 className="mt-1 text-2xl font-black">How’s it looking?</h1><p className="mt-1 text-xs font-medium text-slate-400">A quick view of your current support activity.</p></div><button type="button" onClick={() => { setComposerText(''); setView('home'); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-3 text-xs font-black text-slate-950 transition hover:bg-amber-300"><Plus className="h-4 w-4" />Ask for help</button></section>
 
@@ -1712,9 +1611,9 @@ export const AgentTickets: React.FC = () => {
   }
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] space-y-5 pb-8 font-sans">
+    <div className={`${staffWorkspace ? 'min-h-0' : 'min-h-[calc(100vh-7rem)]'} space-y-5 pb-8 font-sans`}>
       <SupportNav active="tickets" />
-      <section className="flex flex-col justify-between gap-4 rounded-[2rem] bg-slate-950 px-6 py-5 text-white shadow-lg sm:flex-row sm:items-center"><div><p className="text-[9px] font-black uppercase tracking-[0.22em] text-amber-300">All tickets</p><h1 className="mt-1 text-2xl font-black">Request history</h1><p className="mt-1 text-xs font-medium text-slate-400">Search tickets and open a request to see its conversation.</p></div><button type="button" onClick={() => { setComposerText(''); setView('home'); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-3 text-xs font-black text-slate-950 transition hover:bg-amber-300"><Plus className="h-4 w-4" />Ask for help</button></section>
+      <section className="flex flex-col justify-between gap-4 rounded-[2rem] bg-slate-950 px-6 py-5 text-white shadow-lg sm:flex-row sm:items-center"><div><p className="text-[9px] font-black uppercase tracking-[0.22em] text-amber-300">{staffWorkspace ? 'Internal tools · Tickets' : 'All tickets'}</p><h1 className="mt-1 text-2xl font-black">{staffWorkspace ? 'Staff ticket desk' : 'Request history'}</h1><p className="mt-1 text-xs font-medium text-slate-400">{staffWorkspace ? 'Review, assign, update, and resolve support requests across the organization.' : 'Search tickets and open a request to see its conversation.'}</p></div>{!staffWorkspace && <button type="button" onClick={() => { setComposerText(''); setView('home'); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-3 text-xs font-black text-slate-950 transition hover:bg-amber-300"><Plus className="h-4 w-4" />Ask for help</button>}</section>
 
       {loadError && <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 shrink-0" />{loadError}</span><button type="button" onClick={() => void loadTickets()} className="inline-flex items-center gap-1.5 font-black"><RotateCcw className="h-3.5 w-3.5" />Retry</button></div>}
 
@@ -1742,7 +1641,7 @@ export const AgentTickets: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto border-b border-slate-100 bg-white px-5 py-3">
-          <div className={`grid min-w-[1250px] items-center overflow-visible rounded-[1.35rem] border border-slate-200 bg-slate-50/70 shadow-sm transition focus-within:border-amber-300 focus-within:bg-white focus-within:shadow-md ${isStaff ? 'grid-cols-[120px_145px_minmax(190px,1fr)_150px_150px_160px_180px_180px_142px]' : 'grid-cols-[120px_145px_150px_160px_180px_180px_142px]'}`}>
+          <div className={`grid min-w-[1250px] items-center overflow-visible rounded-[1.35rem] border border-slate-200 bg-slate-50/70 shadow-sm transition focus-within:border-amber-300 focus-within:bg-white focus-within:shadow-md ${isStaff ? 'grid-cols-[minmax(120px,1fr)_145px_190px_150px_150px_160px_180px_180px_142px]' : 'grid-cols-[minmax(120px,1fr)_145px_150px_150px_160px_180px_180px_142px]'}`}>
             <div className="flex h-full items-center gap-2 border-r border-slate-200 px-4 py-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-500"><span className="h-2 w-2 rounded-full bg-amber-400" />Quick filter</div>
             <div className="border-r border-slate-200 px-2 py-2"><label className="relative block"><TicketCheck className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><input aria-label="Filter by ticket reference" inputMode="numeric" value={quickFilter.reference} onChange={event => setQuickFilter(current => ({ ...current, reference: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') applyQuickFilter(); }} placeholder="Reference" className="min-h-8 w-full rounded-full bg-white py-2 pl-8 pr-7 text-[10px] font-black text-slate-700 outline-none ring-1 ring-slate-200 transition placeholder:text-slate-400 focus:ring-2 focus:ring-amber-300" />{quickFilter.reference && <button type="button" onClick={() => setQuickFilter(current => ({ ...current, reference: '' }))} aria-label="Clear ticket reference filter" className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-800"><X className="h-3 w-3" /></button>}</label></div>
             {isStaff && <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Choose ticket requester filter" value="" values={quickFilter.requesterId} multiple placeholder="Requester" options={requesterQuickOptions} showDots={false} searchable onValuesChange={values => setQuickFilter(current => ({ ...current, requesterId: values }))} /></div>}

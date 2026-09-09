@@ -21,6 +21,7 @@ import {
   Briefcase, 
   BarChart3,
   Calendar,
+  Database,
   History,
   Loader2,
   MapPinned,
@@ -77,6 +78,8 @@ import { AgentDebtRecovery } from './components/AgentDebtRecovery';
 import { AgentDownlines } from './components/AgentDownlines';
 import { DownlineAgentDetails } from './components/DownlineAgentDetails';
 import { AgentTickets } from './components/TicketDeskWorkspace';
+import { HcmsResourceWorkspace } from './components/HcmsResourceWorkspace';
+import { SwcrmWorkspace } from './components/SwcrmWorkspace';
 import { AgentleaderboardRealtime, TrainerDetailPage } from './components/AgentleaderboardRealtime';
 import { CallReportPolicytek } from './components/CallReportPolicytek';
 import { CallReportWavv } from './components/CallReportWavv';
@@ -4710,7 +4713,7 @@ const MyBusinessExpenseLog = ({
 };
 
 type MyBusinessTab = 'gamification' | 'overview' | 'income-game-plan' | 'policies' | 'americo-policies' | 'aetna-policies' | 'aflac-policies' | 'activity' | 'expenses' | 'splits' | 'commissions' | 'debts';
-type WorkspaceNavView = 'agent' | 'agency';
+type WorkspaceNavView = 'agent' | 'agency' | 'staff';
 
 const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
   const { currentAgentId, viewingAgentName } = useAgentContext();
@@ -4767,7 +4770,7 @@ const MyBusinessPage = ({ tab }: { tab: MyBusinessTab }) => {
 };
 
 const AgentLayout: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isStaff, isStaffChecked } = useAuth();
   const { 
     currentAgentId, 
     selectedAgentIds,
@@ -4786,9 +4789,12 @@ const AgentLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [workspaceNavView, setWorkspaceNavView] = useState<WorkspaceNavView>(() => {
+    if (location.pathname.startsWith('/internal-tools')) return 'staff';
     if (location.pathname.startsWith('/downlines')) return 'agency';
     if (location.pathname.startsWith('/business') || location.pathname.startsWith('/policies')) return 'agent';
-    return localStorage.getItem('workspace_nav_view') === 'agency' ? 'agency' : 'agent';
+    const savedView = localStorage.getItem('workspace_nav_view');
+    if (savedView === 'staff' && isStaff) return 'staff';
+    return savedView === 'agency' ? 'agency' : 'agent';
   });
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [agentSearch, setAgentSearch] = useState('');
@@ -4862,22 +4868,27 @@ const AgentLayout: React.FC = () => {
   const isDarkRoute = isNightMode;
   const isBusinessPage = location.pathname.startsWith('/business') || location.pathname.startsWith('/policies');
   const isAgencyPage = location.pathname.startsWith('/downlines');
+  const isStaffPage = location.pathname.startsWith('/internal-tools');
   const isPoliciesPage = location.pathname.startsWith('/business/policies') || location.pathname === '/policies' || location.pathname === '/policies/v2';
   const isTicketPage = location.pathname.startsWith('/tickets');
 
   useEffect(() => {
-    const routeView: WorkspaceNavView | null = isAgencyPage ? 'agency' : isBusinessPage ? 'agent' : null;
+    const routeView: WorkspaceNavView | null = isStaffPage ? 'staff' : isAgencyPage ? 'agency' : isBusinessPage ? 'agent' : null;
     if (!routeView) return;
 
     setWorkspaceNavView(current => current === routeView ? current : routeView);
     localStorage.setItem('workspace_nav_view', routeView);
-  }, [isAgencyPage, isBusinessPage]);
+  }, [isAgencyPage, isBusinessPage, isStaffPage]);
 
   const selectWorkspaceNavView = (nextView: WorkspaceNavView) => {
     if (nextView === workspaceNavView) return;
 
     setWorkspaceNavView(nextView);
     localStorage.setItem('workspace_nav_view', nextView);
+    if (nextView === 'staff') {
+      navigate('/internal-tools');
+      return;
+    }
     const isHallOfFamePage = location.pathname === '/business/hall-of-fame'
       || location.pathname === '/business/goals'
       || location.pathname === '/downlines/hall-of-fame';
@@ -4922,6 +4933,9 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/commissions')) return 'Commissions';
     if (path.startsWith('/debts')) return 'Debt Recovery';
     if (path.startsWith('/tickets')) return 'Help';
+    if (path.startsWith('/internal-tools/hcms')) return 'HCMS Resources';
+    if (path.startsWith('/internal-tools/swcrm')) return 'SWCRM';
+    if (path.startsWith('/internal-tools')) return 'Staff Tickets';
     if (path.startsWith('/settings')) return 'Settings';
     if (path.startsWith('/call-report/policytek')) return 'PolicyTek';
     if (path.startsWith('/call-report/wavv')) return 'Wavv';
@@ -4949,6 +4963,7 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/commissions')) return 'commissions';
     if (path.startsWith('/debts')) return 'debts';
     if (path.startsWith('/tickets')) return 'ticketing';
+    if (path.startsWith('/internal-tools')) return 'ticketing';
     if (path.startsWith('/leaderboard/realtime')) return 'overview';
     if (path.startsWith('/stats')) return 'overview';
     if (path.startsWith('/my-profile')) return 'overview';
@@ -5069,7 +5084,7 @@ const AgentLayout: React.FC = () => {
                 <SidebarItem to="/business/expense-log" label="Expense Log" active={location.pathname === '/business/expense-log'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<ReceiptText size={16} />} />
               </div>
             </>
-          ) : (
+          ) : workspaceNavView === 'agency' ? (
             <>
               <div className="h-1 w-full shrink-0" />
               <div className="w-full space-y-0.5">
@@ -5081,17 +5096,26 @@ const AgentLayout: React.FC = () => {
                 <SidebarItem to="/downlines/expenses" label="Expense Management" active={location.pathname === '/downlines/expenses'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<ReceiptText size={16} />} />
               </div>
             </>
+          ) : (
+            <>
+              <div className="h-1 w-full shrink-0" />
+              <div className="w-full space-y-0.5">
+                <SidebarItem to="/internal-tools" label="Tickets" active={location.pathname === '/internal-tools'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Ticket size={16} />} />
+                <SidebarItem to="/internal-tools/hcms" label="HCMS" active={location.pathname === '/internal-tools/hcms'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Database size={16} />} />
+                <SidebarItem to="/internal-tools/swcrm" label="SWCRM" active={location.pathname === '/internal-tools/swcrm'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Building2 size={16} />} />
+              </div>
+            </>
           )}
 
           <div className="h-1 w-full shrink-0" />
 
           <div className="w-full space-y-0.5">
-            <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isSidebarCompact} dark={isDarkRoute} />
+            {/* Services navigation is temporarily hidden; the route remains available. */}
           </div>
         </nav>
 
         {/* Current-month AP goal shortcut */}
-        <button
+        {workspaceNavView !== 'staff' && <button
           type="button"
           onClick={() => navigate(workspaceNavView === 'agency' ? '/downlines' : '/business/income-game-plan')}
           className={`group mb-3 mt-3 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-left text-white shadow-lg shadow-slate-300/40 transition-all hover:-translate-y-0.5 hover:shadow-xl ${
@@ -5144,20 +5168,22 @@ const AgentLayout: React.FC = () => {
               <p className="mt-3 text-[8px] font-semibold leading-4 text-white/45">{incomePlanLoading ? 'Checking for your current plan' : incomePlanError ? 'Open to retry loading your plan' : 'Build your current month income plan'}</p>
             )
           )}
-        </button>
+        </button>}
 
         {/* Bottom utilities and user account */}
         <div className={`mt-auto w-full pt-3 border-t ${isDarkRoute ? 'border-white/8' : 'border-slate-300/60'}`}>
             <div className="mb-2 space-y-0.5">
-              <SidebarItem
-                to="/tickets"
-                icon={<CircleHelp size={16} />}
-                label="Help"
-                active={isActive('/tickets')}
-                locked={isLocked('ticketing')}
-                collapsed={isSidebarCompact}
-                dark={isDarkRoute}
-              />
+              {workspaceNavView !== 'staff' && (
+                <SidebarItem
+                  to="/tickets"
+                  icon={<CircleHelp size={16} />}
+                  label="Help"
+                  active={isActive('/tickets')}
+                  locked={isLocked('ticketing')}
+                  collapsed={isSidebarCompact}
+                  dark={isDarkRoute}
+                />
+              )}
               <SidebarItem
                 to="/settings"
                 icon={<Settings size={16} />}
@@ -5260,6 +5286,24 @@ const AgentLayout: React.FC = () => {
                       <Building2 className={`h-3 w-3 ${workspaceNavView === 'agency' ? 'text-brand-400' : 'text-slate-400'}`} strokeWidth={2.2} />
                       Agency View
                     </button>
+                    {isStaff && (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={workspaceNavView === 'staff'}
+                        onClick={() => selectWorkspaceNavView('staff')}
+                        className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-[9px] font-semibold leading-none transition-all active:scale-[0.98] ${
+                          workspaceNavView === 'staff'
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : isDarkRoute
+                              ? 'text-slate-400 hover:text-white'
+                              : 'text-slate-500 hover:text-slate-900'
+                        }`}
+                      >
+                        <Briefcase className={`h-3 w-3 ${workspaceNavView === 'staff' ? 'text-amber-400' : 'text-slate-400'}`} strokeWidth={2.2} />
+                        Staff View
+                      </button>
+                    )}
                   </div>}
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -5451,6 +5495,27 @@ const AgentLayout: React.FC = () => {
                   <Route path="/splits" element={<Navigate to="/business/splits" replace />} />
                   <Route path="/debts" element={<Navigate to="/business/debt-recovery" replace />} />
                   <Route path="/tickets" element={<AgentTickets />} />
+                  <Route path="/internal-tools" element={
+                    !isStaffChecked
+                      ? <div className="py-20 text-center text-sm font-bold text-slate-500">Checking staff access…</div>
+                      : isStaff
+                        ? <AgentTickets initialView="tickets" staffWorkspace />
+                        : <Navigate to="/" replace />
+                  } />
+                  <Route path="/internal-tools/hcms" element={
+                    !isStaffChecked
+                      ? <div className="py-20 text-center text-sm font-bold text-slate-500">Checking staff access…</div>
+                      : isStaff
+                        ? <HcmsResourceWorkspace />
+                        : <Navigate to="/" replace />
+                  } />
+                  <Route path="/internal-tools/swcrm" element={
+                    !isStaffChecked
+                      ? <div className="py-20 text-center text-sm font-bold text-slate-500">Checking staff access…</div>
+                      : isStaff
+                        ? <SwcrmWorkspace />
+                        : <Navigate to="/" replace />
+                  } />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </div>

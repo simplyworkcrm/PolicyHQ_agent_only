@@ -12,8 +12,8 @@ const TICKET_DASHBOARD_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/ticket
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
-const authHeader = () => ({
-  'Authorization': `Bearer ${getAuthToken()}`,
+const authHeader = (token = getAuthToken()) => ({
+  'Authorization': `Bearer ${token}`,
   'Content-Type': 'application/json',
 });
 
@@ -306,16 +306,21 @@ export const agentTicketsApi = {
   /**
    * Checks whether the authenticated user can access staff ticket views.
    */
-  isStaff: async (): Promise<boolean> => {
+  isStaff: async (token?: string | null): Promise<boolean> => {
     const response = await fetch(IS_STAFF_URL, {
       method: 'GET',
-      headers: authHeader(),
+      headers: authHeader(token),
     });
 
     if (!response.ok) throw new ApiError('Failed to check ticket staff access', response.status);
     const body = await response.text();
     try {
-      return JSON.parse(body) === true;
+      const payload = JSON.parse(body);
+      if (payload === true) return true;
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        return (payload as Record<string, unknown>).is_staff === true;
+      }
+      return false;
     } catch {
       return body.trim().toLowerCase() === 'true';
     }

@@ -2,11 +2,14 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, AgentAccess, AgencyAccess, HybridAccess } from '../shared/types/index';
 import { authApi } from '../services/api';
+import { agentTicketsApi } from '../features/agent-workspace/services/agentTicketsApi';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  isStaff: boolean;
+  isStaffChecked: boolean;
   login: (email: string, pass: string) => Promise<void>;
   signup: (firstName: string, lastName: string, email: string, phone: string, pass: string) => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -18,6 +21,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isStaff, setIsStaff] = useState(false);
+  const [isStaffChecked, setIsStaffChecked] = useState(false);
   
   // Initialize token from localStorage if available, otherwise use dev default
   const [token, setToken] = useState<string | null>(() => {
@@ -25,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const hasCheckedAutoLogin = useRef(false);
+  const staffAccessRequestRef = useRef<{ token: string; promise: Promise<boolean> } | null>(null);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -62,10 +68,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (token) {
         // Ensure token is persisted for API services to access
         localStorage.setItem('authToken', token);
+        setIsStaffChecked(false);
+        const staffAccessPromise = staffAccessRequestRef.current?.token === token
+          ? staffAccessRequestRef.current.promise
+          : agentTicketsApi.isStaff(token).catch(error => {
+              console.error('Staff access check failed', error);
+              return false;
+            });
+        staffAccessRequestRef.current = { token, promise: staffAccessPromise };
         try {
-          const userData = await authApi.getMe(token);
+          const [userData, staffAccess] = await Promise.all([
+            authApi.getMe(token),
+            staffAccessPromise,
+          ]);
           const mappedUser = mapApiUserToAppUser(userData);
           setUser(mappedUser);
+          setIsStaff(staffAccess === true);
+          setIsStaffChecked(true);
         } catch (error) {
           console.error("Auth check failed", error);
           logout();
@@ -73,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         localStorage.removeItem('authToken');
         setUser(null);
+        setIsStaff(false);
+        setIsStaffChecked(false);
       }
       setIsLoading(false);
     };
@@ -222,12 +243,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     localStorage.removeItem('authToken');
+    staffAccessRequestRef.current = null;
     setToken(null);
     setUser(null);
+    setIsStaff(false);
+    setIsStaffChecked(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, signup, refreshUser, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, isStaff, isStaffChecked, login, signup, refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   );
