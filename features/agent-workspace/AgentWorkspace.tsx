@@ -1078,7 +1078,7 @@ const formatManualActivityDate = (value?: string | null) => {
   });
 };
 
-const toAppointmentRequestDate = (timestamp: number | undefined) => {
+const toActivityRequestDate = (timestamp: number | undefined) => {
   if (timestamp === undefined) return null;
   return new Date(timestamp).toISOString().slice(0, 10);
 };
@@ -1890,8 +1890,8 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
       sort: { [appointmentSort.key]: appointmentSort.direction },
       filter: buildAppointmentFilter(appliedAppointmentQuickFilter),
       timeframe,
-      startDate: timeframe === 'custom' ? toAppointmentRequestDate(startDate) : null,
-      endDate: timeframe === 'custom' ? toAppointmentRequestDate(endDate) : null,
+      startDate: timeframe === 'custom' ? toActivityRequestDate(startDate) : null,
+      endDate: timeframe === 'custom' ? toActivityRequestDate(endDate) : null,
     })
       .then(response => {
         if (cancelled) return;
@@ -1938,8 +1938,8 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
         const response = await myBusinessActivityApi.getManualActivity({
           agentId: currentAgentId,
           timeframe,
-          startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
-          endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+          startDate: timeframe === 'custom' && startDate ? toActivityRequestDate(startDate) : null,
+          endDate: timeframe === 'custom' && endDate ? toActivityRequestDate(endDate) : null,
         });
 
         if (cancelled) return;
@@ -2360,8 +2360,8 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
     const response = await myBusinessActivityApi.getManualActivity({
       agentId: currentAgentId,
       timeframe,
-      startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
-      endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+      startDate: timeframe === 'custom' && startDate ? toActivityRequestDate(startDate) : null,
+      endDate: timeframe === 'custom' && endDate ? toActivityRequestDate(endDate) : null,
     });
     const manual = response.manual_activity;
     const rows = Array.isArray(manual?.rundown) ? manual.rundown : [];
@@ -3807,8 +3807,8 @@ const AgencyActivityLog = () => {
       const response = await myBusinessActivityApi.getManualActivity({
         agentId: agent.agentId,
         timeframe,
-        startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
-        endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+        startDate: timeframe === 'custom' && startDate ? toActivityRequestDate(startDate) : null,
+        endDate: timeframe === 'custom' && endDate ? toActivityRequestDate(endDate) : null,
       });
       const rows = Array.isArray(response.manual_activity?.rundown) ? response.manual_activity.rundown : [];
       setManualRundownByAgent(current => ({
@@ -3894,8 +3894,8 @@ const AgencyActivityLog = () => {
           const response = await myAgencyActivityApi.getManualActivity({
             agentId: currentAgentId,
             timeframe,
-            startDate: timeframe === 'custom' && startDate ? toPolicyRequestDate(startDate) : null,
-            endDate: timeframe === 'custom' && endDate ? toPolicyRequestDate(endDate) : null,
+            startDate: timeframe === 'custom' && startDate ? toActivityRequestDate(startDate) : null,
+            endDate: timeframe === 'custom' && endDate ? toActivityRequestDate(endDate) : null,
           });
           if (cancelled) return;
           const rows = Array.isArray(response.manual_activity) ? response.manual_activity : [];
