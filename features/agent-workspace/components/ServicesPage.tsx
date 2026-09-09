@@ -484,15 +484,17 @@ const ComingSoonService = ({ service }: { service: (typeof serviceCatalog)[numbe
   return <section className="flex min-h-[24rem] items-center justify-center rounded-[2rem] border border-slate-100 bg-white p-8 text-center shadow-sm"><div className="max-w-lg"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-amber-300"><Icon className="h-6 w-6" /></span><p className="mt-5 text-xs font-black uppercase tracking-[0.18em] text-amber-600">Coming soon</p><h2 className="mt-2 text-2xl font-black text-slate-950">{service.label}</h2><p className="mt-2 text-sm font-semibold leading-6 text-slate-500">{service.description}</p></div></section>;
 };
 
-export const ServicesPage: React.FC = () => {
+export const ServicesPage: React.FC<{ staffWorkspace?: boolean }> = ({ staffWorkspace = false }) => {
   const { currentAgentId } = useAgentContext();
   const { isStaff } = useAuth();
   const [activeService, setActiveService] = useState<ServiceId>('lead-servicing');
-  const [view, setView] = useState<ServiceView>('home');
+  const [view, setView] = useState<ServiceView>(staffWorkspace ? 'requests' : 'home');
   const [requestFilter, setRequestFilter] = useState<LeadServiceStatus | ''>('');
   const openRequests = (status: LeadServiceStatus | '' = '') => { setRequestFilter(status); setView('requests'); };
   const selectService = (service: ServiceId) => { setActiveService(service); setView('home'); };
-  const shell = (content: React.ReactNode) => <ServicesShell activeService={activeService} onServiceChange={selectService}>{content}</ServicesShell>;
+  const shell = (content: React.ReactNode) => staffWorkspace
+    ? <div className="space-y-5 animate-in fade-in duration-300">{content}</div>
+    : <ServicesShell activeService={activeService} onServiceChange={selectService}>{content}</ServicesShell>;
   if (activeService !== 'lead-servicing') {
     const service = serviceCatalog.find(item => item.id === activeService) || serviceCatalog[1];
     return shell(<ComingSoonService service={service} />);

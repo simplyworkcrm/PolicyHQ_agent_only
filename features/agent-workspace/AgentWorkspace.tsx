@@ -6035,6 +6035,7 @@ const AgentLayout: React.FC = () => {
     if (path.startsWith('/tickets')) return 'Help';
     if (path.startsWith('/internal-tools/hcms')) return 'HCMS Resources';
     if (path.startsWith('/internal-tools/swcrm')) return 'SWCRM';
+    if (path.startsWith('/internal-tools/lead-servicing')) return 'Lead Servicing';
     if (path.startsWith('/internal-tools')) return 'Staff Tickets';
     if (path.startsWith('/settings')) return 'Settings';
     if (path.startsWith('/call-report/policytek')) return 'PolicyTek';
@@ -6201,6 +6202,7 @@ const AgentLayout: React.FC = () => {
               <div className="h-1 w-full shrink-0" />
               <div className="w-full space-y-0.5">
                 <SidebarItem to="/internal-tools" label="Tickets" active={location.pathname === '/internal-tools'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Ticket size={16} />} />
+                <SidebarItem to="/internal-tools/lead-servicing" label="Lead Servicing" active={location.pathname === '/internal-tools/lead-servicing'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Store size={16} />} />
                 <SidebarItem to="/internal-tools/hcms" label="HCMS" active={location.pathname === '/internal-tools/hcms'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Database size={16} />} />
                 <SidebarItem to="/internal-tools/swcrm" label="SWCRM" active={location.pathname === '/internal-tools/swcrm'} collapsed={isSidebarCompact} dark={isDarkRoute} icon={<Building2 size={16} />} />
               </div>
@@ -6209,9 +6211,9 @@ const AgentLayout: React.FC = () => {
 
           <div className="h-1 w-full shrink-0" />
 
-          <div className="w-full space-y-0.5">
-            {/* Services navigation is temporarily hidden; the route remains available. */}
-          </div>
+          {workspaceNavView !== 'staff' && <div className="w-full space-y-0.5">
+            <SidebarItem to="/services" icon={<Store size={16} />} label="Services" active={isActive('/services')} collapsed={isSidebarCompact} dark={isDarkRoute} />
+          </div>}
         </nav>
 
         {/* Current-month AP goal shortcut */}
@@ -6607,6 +6609,13 @@ const AgentLayout: React.FC = () => {
                       ? <div className="py-20 text-center text-sm font-bold text-slate-500">Checking staff access…</div>
                       : isStaff
                         ? <HcmsResourceWorkspace />
+                        : <Navigate to="/" replace />
+                  } />
+                  <Route path="/internal-tools/lead-servicing" element={
+                    !isStaffChecked
+                      ? <div className="py-20 text-center text-sm font-bold text-slate-500">Checking staff access…</div>
+                      : isStaff
+                        ? <ServicesPage key="staff-lead-servicing" staffWorkspace />
                         : <Navigate to="/" replace />
                   } />
                   <Route path="/internal-tools/swcrm" element={
