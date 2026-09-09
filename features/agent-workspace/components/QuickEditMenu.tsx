@@ -15,10 +15,11 @@ export const QuickEditMenu: React.FC<{
   showDots?: boolean;
   searchable?: boolean;
   multiple?: boolean;
+  fullWidth?: boolean;
   values?: string[];
   onValuesChange?: (values: string[]) => void;
   onChange?: (value: string) => void;
-}> = ({ ariaLabel, value, placeholder, options, disabled, title, triggerTone = 'bg-white text-slate-700 ring-slate-200', showDots = true, searchable = false, multiple = false, values = [], onValuesChange, onChange }) => {
+}> = ({ ariaLabel, value, placeholder, options, disabled, title, triggerTone = 'bg-white text-slate-700 ring-slate-200', showDots = true, searchable = false, multiple = false, fullWidth = false, values = [], onValuesChange, onChange }) => {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [position, setPosition] = useState({ top: 0, left: 0, width: 190, maxHeight: 300 });
@@ -77,10 +78,10 @@ export const QuickEditMenu: React.FC<{
   }, [open]);
 
   return <>
-    <button ref={anchorRef} type="button" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} title={title} onClick={event => { event.stopPropagation(); open ? setOpen(false) : openMenu(); }} onKeyDown={event => event.stopPropagation()} className={`inline-flex min-h-8 w-full min-w-[96px] max-w-[165px] items-center justify-between gap-2 rounded-full px-3 py-1.5 text-left text-[10px] font-black ring-1 transition duration-200 hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:ring-slate-100 disabled:hover:translate-y-0 disabled:hover:shadow-none ${triggerTone}`}>
+    <button ref={anchorRef} type="button" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} title={title} onClick={event => { event.stopPropagation(); open ? setOpen(false) : openMenu(); }} onKeyDown={event => event.stopPropagation()} className={`inline-flex min-h-8 w-full min-w-[96px] items-center justify-between gap-2 rounded-full px-3 py-1.5 text-left text-[10px] font-black ring-1 transition duration-200 hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:ring-slate-100 disabled:hover:translate-y-0 disabled:hover:shadow-none ${fullWidth ? 'max-w-none' : 'max-w-[165px]'} ${triggerTone}`}>
       <span className="flex min-w-0 items-center gap-2">{showDots && <span className={`h-2 w-2 shrink-0 rounded-full ${selected?.dot || 'bg-slate-400'}`} />}<span className="truncate">{triggerLabel}</span></span><ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
     </button>
-    {open && createPortal(<div ref={menuRef} role="listbox" aria-multiselectable={multiple} aria-label={ariaLabel} style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }} onClick={event => event.stopPropagation()} className="z-[500] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-900/15 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-150">
+    {open && createPortal(<div ref={menuRef} role="listbox" aria-multiselectable={multiple} aria-label={ariaLabel} style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }} onClick={event => event.stopPropagation()} className="z-[10010] overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-2xl shadow-slate-900/15 backdrop-blur-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-150">
       {(searchable || (multiple && selectedValues.length > 0)) && <div className="sticky top-0 z-10 mb-1 space-y-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
         {searchable && <label className="flex items-center gap-2 rounded-lg px-2 py-1.5"><Search className="h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="sr-only">Search {ariaLabel}</span><input autoFocus value={searchQuery} onChange={event => setSearchQuery(event.target.value)} onKeyDown={event => event.stopPropagation()} placeholder="Search options…" className="min-w-0 flex-1 bg-transparent text-[10px] font-bold text-slate-800 outline-none placeholder:text-slate-400" /></label>}
         {multiple && selectedValues.length > 0 && <button type="button" onClick={() => onValuesChange?.([])} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-50 px-2 py-2 text-[9px] font-black text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"><X className="h-3 w-3" />Clear this filter</button>}

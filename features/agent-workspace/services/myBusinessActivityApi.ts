@@ -7,6 +7,12 @@ const WAVV_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/wavv`;
 const POLICYTEK_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/policytek`;
 const CALLX_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/callx`;
 const SALE_ACTIVITY_URL = `${ACTIVITY_LOG_BASE_URL}/sale`;
+const UTILITY_SOURCES_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/utility/sources';
+const UTILITY_CARRIERS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/utility/carriers';
+const MANUAL_APPOINTMENTS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/appointments/manual';
+const SWCRM_ACCOUNT_ACCESS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/user/ghl_location/access';
+const SYNC_APPOINTMENTS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/appointments/sync';
+const APPOINTMENTS_URL = 'https://api1.simplyworkcrm.com/api:SZgR1JsR/my_business/appointments';
 
 const getAuthToken = () => localStorage.getItem('authToken');
 
@@ -245,6 +251,127 @@ export interface MyBusinessSubmittedSaleActivityResponse {
   } | null;
 }
 
+export interface AppointmentSourceOption {
+  id: string;
+  name: string;
+}
+
+export interface SwcrmAccountOption extends AppointmentSourceOption {}
+
+export interface AppointmentCarrierOption extends AppointmentSourceOption {
+  statuses?: unknown[];
+  logo?: {
+    url?: string | null;
+    [key: string]: unknown;
+  } | null;
+}
+
+export interface ManualAppointmentInput {
+  client_name: string;
+  booked_type: string | null;
+  lead_source_id: string | null;
+  lead_source: string | null;
+  appointment_result: string | null;
+  monthly_payment: number | null;
+  ap: number | null;
+  carrier_placement_id: string | null;
+  carrier_placement: string | null;
+  policy_status: string | null;
+  date_booked: string;
+  appointment_date: string;
+}
+
+export interface ManualAppointmentResponse extends ManualAppointmentInput {
+  id: string;
+  created_at: number;
+  [key: string]: unknown;
+}
+
+export interface SyncAppointmentsInput {
+  start_date: number;
+  end_date: number;
+  swcrm_account_id: string;
+}
+
+export interface UpdateAppointmentInput {
+  id: string;
+  booked_type: string | null;
+  lead_source_id: string | null;
+  lead_source: string | null;
+  appointment_result: string | null;
+  monthly_payment: number | null;
+  ap: number | null;
+  carrier_placement_id: string | null;
+  carrier_placement: string | null;
+  policy_status: string | null;
+}
+
+export interface SyncedAppointmentRow {
+  id: string;
+  created_at: number;
+  ghl_event_id?: string | null;
+  calendar_id?: string | null;
+  contact_id?: string | null;
+  client_name?: string | null;
+  location_id?: string | null;
+  assigned_user_id?: string | null;
+  dateAdded?: number | null;
+  startTime?: number | null;
+  title?: string | null;
+  appointmentStatus?: string | null;
+  date_booked?: string | null;
+  appointment_date?: string | null;
+  booked_type?: string | null;
+  lead_source_id?: string | null;
+  lead_source?: string | null;
+  appointment_result?: string | null;
+  monthly_payment?: number | null;
+  ap?: number | null;
+  carrier_placement_id?: string | null;
+  carrier_placement?: string | null;
+  policy_status?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AppointmentsQuery {
+  page: number;
+  perPage: number;
+  sort: Record<string, 'asc' | 'desc'>;
+  filter: Record<string, unknown>;
+  timeframe: string;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+export interface AppointmentsResponse {
+  itemsReceived: number;
+  curPage: number;
+  nextPage: number | null;
+  prevPage: number | null;
+  offset: number;
+  perPage: number;
+  itemsTotal: number;
+  pageTotal: number;
+  items: SyncedAppointmentRow[];
+}
+
+const readLookupOptions = async <T extends AppointmentSourceOption>(url: string): Promise<T[]> => {
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: authHeader(),
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
+  return rows
+    .filter((item: unknown): item is T => Boolean(item && typeof item === 'object' && 'id' in item && 'name' in item))
+    .map(item => ({ ...item, id: String(item.id), name: String(item.name) }));
+};
+
 const buildActivityQuery = (query: MyBusinessManualActivityQuery) => {
   const params = new URLSearchParams();
 
@@ -377,6 +504,97 @@ export const myBusinessActivityApi = {
     }
 
     return response.json();
+  },
+
+  getAppointmentSources(): Promise<AppointmentSourceOption[]> {
+    return readLookupOptions<AppointmentSourceOption>(UTILITY_SOURCES_URL);
+  },
+
+  getAppointmentCarriers(): Promise<AppointmentCarrierOption[]> {
+    return readLookupOptions<AppointmentCarrierOption>(UTILITY_CARRIERS_URL);
+  },
+
+  getSwcrmAccounts(): Promise<SwcrmAccountOption[]> {
+    return readLookupOptions<SwcrmAccountOption>(SWCRM_ACCOUNT_ACCESS_URL);
+  },
+
+  async saveManualAppointment(input: ManualAppointmentInput): Promise<ManualAppointmentResponse> {
+    const response = await fetch(MANUAL_APPOINTMENTS_URL, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  async updateAppointment(input: UpdateAppointmentInput): Promise<SyncedAppointmentRow | null> {
+    const response = await fetch(APPOINTMENTS_URL, {
+      method: 'PATCH',
+      headers: authHeader(),
+      body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const body = await response.text();
+    return body ? JSON.parse(body) : null;
+  },
+
+  async syncAppointments(input: SyncAppointmentsInput): Promise<SyncedAppointmentRow[]> {
+    const response = await fetch(SYNC_APPOINTMENTS_URL, {
+      method: 'POST',
+      headers: authHeader(),
+      body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return Array.isArray(payload) ? payload : [];
+  },
+
+  async getAppointments(query: AppointmentsQuery): Promise<AppointmentsResponse> {
+    const params = new URLSearchParams({
+      page: String(query.page),
+      per_page: String(query.perPage),
+      sort: JSON.stringify(query.sort),
+      filter: JSON.stringify(query.filter),
+      timeframe: query.timeframe,
+    });
+    if (query.startDate) params.set('start_date', query.startDate);
+    if (query.endDate) params.set('end_date', query.endDate);
+
+    const response = await fetch(`${APPOINTMENTS_URL}?${params.toString()}`, {
+      method: 'GET',
+      headers: authHeader(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    return {
+      itemsReceived: Number(payload?.itemsReceived ?? items.length),
+      curPage: Number(payload?.curPage ?? query.page),
+      nextPage: payload?.nextPage == null ? null : Number(payload.nextPage),
+      prevPage: payload?.prevPage == null ? null : Number(payload.prevPage),
+      offset: Number(payload?.offset ?? 0),
+      perPage: Number(payload?.perPage ?? query.perPage),
+      itemsTotal: Number(payload?.itemsTotal ?? items.length),
+      pageTotal: Math.max(1, Number(payload?.pageTotal ?? 1)),
+      items,
+    };
   },
 };
 

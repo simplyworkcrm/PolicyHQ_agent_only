@@ -15,13 +15,18 @@ import {
   AlertCircle, 
   LogOut,
   ChevronDown, 
+  ChevronUp,
   Lock, 
   ChevronLeft, 
   ChevronRight, 
   Briefcase, 
   BarChart3,
   Calendar,
+  Columns3,
   Database,
+  Eye,
+  EyeOff,
+  GripVertical,
   History,
   Loader2,
   MapPinned,
@@ -75,6 +80,7 @@ import { AgentPolicyDetails } from './components/AgentPolicyDetails';
 import { AgentCommissions } from './components/AgentCommissions';
 import { AgentSplits } from './components/AgentSplits';
 import { AgentDebtRecovery } from './components/AgentDebtRecovery';
+import { QuickEditMenu } from './components/QuickEditMenu';
 import { AgentDownlines } from './components/AgentDownlines';
 import { DownlineAgentDetails } from './components/DownlineAgentDetails';
 import { AgentTickets } from './components/TicketDeskWorkspace';
@@ -98,7 +104,7 @@ import { NotificationBell } from '../../shared/components/NotificationBell';
 import { NotificationDirect } from '../../shared/components/NotificationDirect';
 import { myBusinessOverviewApi, MyBusinessOverviewResponse } from './services/myBusinessOverviewApi';
 import { bookOfBusinessApi } from './services/bookOfBusinessApi';
-import { CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, WavvActivityRundownRow, myAgencyActivityApi, myBusinessActivityApi } from './services/myBusinessActivityApi';
+import { AppointmentCarrierOption, AppointmentSourceOption, CallXActivityRundownRow, ManualActivityRundownRow, PolicyTekCallRundownRow, PolicyTekLeadStatRow, SubmittedSaleActivityRundownRow, SwcrmAccountOption, SyncedAppointmentRow, WavvActivityRundownRow, myAgencyActivityApi, myBusinessActivityApi } from './services/myBusinessActivityApi';
 import { AssistPolicySplit, MyBusinessExpenseRow, UtilityAgent, myBusinessExpenseApi } from './services/myBusinessExpenseApi';
 import { agentTicketsApi, type ImageMetadata } from './services/agentTicketsApi';
 
@@ -783,6 +789,149 @@ const MyBusinessOverviewContent = ({
 type ManualActivityKey = 'leads' | 'dials' | 'contacts' | 'appointments' | 'presentations' | 'sold' | 'totalAp';
 type PlatformActivityName = 'Wavv' | 'PolicyTek' | 'CallX' | 'Submitted Sale';
 type PolicyTekRundownTab = 'lead_stat' | 'call_rundown';
+type AppointmentLookupOption = AppointmentSourceOption | AppointmentCarrierOption;
+
+type ManualAppointmentForm = {
+  clientName: string;
+  dateBooked: string;
+  appointmentDate: string;
+  bookedType: '' | 'text' | 'phone' | 'dialer';
+  leadSourceId: string;
+  appointmentResult: string;
+  monthlyPayment: string;
+  carrierId: string;
+  policyStatus: string;
+};
+
+type AppointmentQuickFilter = {
+  client: string;
+  origin: '' | 'sync' | 'manual';
+  appointmentStatus: string;
+  bookedType: string;
+  leadSourceId: string;
+  appointmentResult: string;
+  carrierId: string;
+  policyStatus: string;
+};
+
+type AppointmentSortField = 'client_name' | 'ghl_event_id' | 'dateAdded' | 'startTime' | 'appointmentStatus' | 'booked_type' | 'lead_source' | 'appointment_result' | 'monthly_payment' | 'ap' | 'carrier_placement' | 'policy_status';
+type AppointmentSortConfig = { key: AppointmentSortField | 'created_at'; direction: 'asc' | 'desc' };
+type AppointmentColumnKey = 'client' | 'origin' | 'dateBooked' | 'appointmentDate' | 'swcrmStatus' | 'bookedType' | 'leadSource' | 'result' | 'monthlyPayment' | 'ap' | 'carrier' | 'policyStatus';
+
+const appointmentColumnConfig: Record<AppointmentColumnKey, { label: string; sortField: AppointmentSortField; width: number }> = {
+  client: { label: 'Client', sortField: 'client_name', width: 210 },
+  origin: { label: 'Origin', sortField: 'ghl_event_id', width: 120 },
+  dateBooked: { label: 'Date booked', sortField: 'dateAdded', width: 155 },
+  appointmentDate: { label: 'Appointment date', sortField: 'startTime', width: 165 },
+  swcrmStatus: { label: 'SWCRM status', sortField: 'appointmentStatus', width: 120 },
+  bookedType: { label: 'Booked type', sortField: 'booked_type', width: 145 },
+  leadSource: { label: 'Lead source', sortField: 'lead_source', width: 165 },
+  result: { label: 'Result', sortField: 'appointment_result', width: 155 },
+  monthlyPayment: { label: 'Monthly payment', sortField: 'monthly_payment', width: 145 },
+  ap: { label: 'AP', sortField: 'ap', width: 105 },
+  carrier: { label: 'Carrier', sortField: 'carrier_placement', width: 165 },
+  policyStatus: { label: 'Policy status', sortField: 'policy_status', width: 145 },
+};
+const defaultAppointmentColumnOrder = Object.keys(appointmentColumnConfig) as AppointmentColumnKey[];
+const APPOINTMENT_COLUMNS_STORAGE_KEY = 'policyhq.appointments.columns.v1';
+
+const readAppointmentColumnPreferences = () => {
+  if (typeof window === 'undefined') return { order: defaultAppointmentColumnOrder, visible: defaultAppointmentColumnOrder };
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(APPOINTMENT_COLUMNS_STORAGE_KEY) || '{}');
+    const savedOrder = Array.isArray(saved.order) ? saved.order.filter((key: unknown): key is AppointmentColumnKey => typeof key === 'string' && key in appointmentColumnConfig) : [];
+    const order = [...savedOrder, ...defaultAppointmentColumnOrder.filter(key => !savedOrder.includes(key))];
+    const savedVisible = Array.isArray(saved.visible) ? saved.visible.filter((key: unknown): key is AppointmentColumnKey => typeof key === 'string' && key in appointmentColumnConfig) : defaultAppointmentColumnOrder;
+    return { order, visible: savedVisible.length ? savedVisible : ['client' as AppointmentColumnKey] };
+  } catch {
+    return { order: defaultAppointmentColumnOrder, visible: defaultAppointmentColumnOrder };
+  }
+};
+
+const appointmentResults = ['No Show', 'Reschedule', 'Hung Up', 'Thinker', "Didn't Trust", 'Not Interested', 'No Money', 'Closed 1st', 'Closed 2nd', 'Closed 3rd', 'Closed 4th'] as const;
+const appointmentPolicyStatuses = ['Instant Approve', 'Approved', 'Approved/Mod', 'UW', 'Declined'] as const;
+const appointmentStatuses = ['confirmed', 'showed', 'cancelled', 'invalid'] as const;
+const appointmentBookedTypeTone = (value?: string | null) => value === 'text'
+  ? { tone: 'bg-sky-50 text-sky-700 ring-sky-200', dot: 'bg-sky-500' }
+  : value === 'phone'
+    ? { tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' }
+    : value === 'dialer'
+      ? { tone: 'bg-violet-50 text-violet-700 ring-violet-200', dot: 'bg-violet-500' }
+      : { tone: 'bg-white text-slate-500 ring-slate-200', dot: 'bg-slate-300' };
+const appointmentResultTone = (value?: string | null) => value?.startsWith('Closed')
+  ? { tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' }
+  : value === 'Reschedule'
+    ? { tone: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500' }
+    : value === 'Thinker'
+      ? { tone: 'bg-violet-50 text-violet-700 ring-violet-200', dot: 'bg-violet-500' }
+      : ['No Show', 'Hung Up', "Didn't Trust", 'No Money'].includes(value || '')
+        ? { tone: 'bg-rose-50 text-rose-700 ring-rose-200', dot: 'bg-rose-500' }
+        : value === 'Not Interested'
+          ? { tone: 'bg-slate-100 text-slate-600 ring-slate-200', dot: 'bg-slate-500' }
+          : { tone: 'bg-white text-slate-500 ring-slate-200', dot: 'bg-slate-300' };
+const appointmentPolicyStatusTone = (value?: string | null) => value === 'Instant Approve' || value === 'Approved'
+  ? { tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500' }
+  : value === 'Approved/Mod'
+    ? { tone: 'bg-sky-50 text-sky-700 ring-sky-200', dot: 'bg-sky-500' }
+    : value === 'UW'
+      ? { tone: 'bg-amber-50 text-amber-700 ring-amber-200', dot: 'bg-amber-500' }
+      : value === 'Declined'
+        ? { tone: 'bg-rose-50 text-rose-700 ring-rose-200', dot: 'bg-rose-500' }
+        : { tone: 'bg-white text-slate-500 ring-slate-200', dot: 'bg-slate-300' };
+const emptyAppointmentQuickFilter = (): AppointmentQuickFilter => ({ client: '', origin: '', appointmentStatus: '', bookedType: '', leadSourceId: '', appointmentResult: '', carrierId: '', policyStatus: '' });
+
+const buildAppointmentFilter = (filter: AppointmentQuickFilter): Record<string, unknown> => {
+  const statement = (field: string, op: '==' | '!=' | 'ilike', value: string | null, or = false) => ({
+    or,
+    type: 'statement',
+    statement: {
+      left: { tag: 'col', operand: field },
+      op,
+      right: { operand: value },
+    },
+  });
+  const expression: Record<string, unknown>[] = [];
+  const client = filter.client.trim();
+
+  if (client) {
+    expression.push({
+      or: false,
+      type: 'group',
+      group: {
+        expression: [
+          statement('client_name', 'ilike', `%${client}%`),
+          statement('title', 'ilike', `%${client}%`, true),
+        ],
+      },
+    });
+  }
+  if (filter.origin) expression.push(statement('ghl_event_id', filter.origin === 'sync' ? '!=' : '==', null));
+  if (filter.appointmentStatus) expression.push(statement('appointmentStatus', '==', filter.appointmentStatus));
+  if (filter.bookedType) expression.push(statement('booked_type', '==', filter.bookedType));
+  if (filter.leadSourceId) expression.push(statement('lead_source_id', '==', filter.leadSourceId));
+  if (filter.appointmentResult) expression.push(statement('appointment_result', '==', filter.appointmentResult));
+  if (filter.carrierId) expression.push(statement('carrier_placement_id', '==', filter.carrierId));
+  if (filter.policyStatus) expression.push(statement('policy_status', '==', filter.policyStatus));
+  if (!expression.length) return {};
+
+  return { expression: [{ or: false, type: 'group', group: { expression } }] };
+};
+
+const createEmptyAppointmentForm = (): ManualAppointmentForm => {
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return {
+    clientName: '',
+    dateBooked: date,
+    appointmentDate: date,
+    bookedType: '',
+    leadSourceId: '',
+    appointmentResult: '',
+    monthlyPayment: '',
+    carrierId: '',
+    policyStatus: '',
+  };
+};
 
 const emptyManualActivity: Record<ManualActivityKey, number> = {
   leads: 0,
@@ -929,6 +1078,11 @@ const formatManualActivityDate = (value?: string | null) => {
   });
 };
 
+const toAppointmentRequestDate = (timestamp: number | undefined) => {
+  if (timestamp === undefined) return null;
+  return new Date(timestamp).toISOString().slice(0, 10);
+};
+
 const formatActivityTimestamp = (value?: number | string | null) => {
   if (value === null || value === undefined || value === '') return 'Not set';
 
@@ -944,6 +1098,35 @@ const formatActivityTimestamp = (value?: number | string | null) => {
     minute: '2-digit',
   });
 };
+
+const formatUtcAppointmentTimestamp = (value?: number | string | null) => {
+  if (value === null || value === undefined || value === '' || Number(value) === 0) return 'Not set';
+
+  const timestamp = Number(value);
+  const date = Number.isFinite(timestamp) ? new Date(timestamp) : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  });
+};
+
+const hasAppointmentTimestamp = (value?: number | string | null) => (
+  value !== null && value !== undefined && value !== '' && Number(value) !== 0
+);
+
+const resolveAppointmentDisplayDate = (
+  syncTimestamp: number | string | null | undefined,
+  manualDate: string | null | undefined,
+) => hasAppointmentTimestamp(syncTimestamp)
+  ? formatUtcAppointmentTimestamp(syncTimestamp)
+  : formatManualActivityDate(manualDate);
 
 const mockActivityChart = [
   { date: 'Mon', manual: 62, wavv: 48, policytek: 18, callx: 22, sold: 2 },
@@ -1201,9 +1384,389 @@ const ActivityMetricQuickInput = ({
   </div>
 );
 
+const AppointmentLookupSelect = ({
+  label,
+  placeholder,
+  options,
+  selectedId,
+  onSelect,
+  loading,
+  error,
+}: {
+  label: string;
+  placeholder: string;
+  options: AppointmentLookupOption[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  loading: boolean;
+  error: string | null;
+}) => {
+  const selectedOption = options.find(option => option.id === selectedId);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 240, maxHeight: 224 });
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = normalizedQuery
+    ? options.filter(option => option.name.toLowerCase().includes(normalizedQuery))
+    : options;
+
+  useEffect(() => {
+    if (!open) setQuery(selectedOption?.name || '');
+  }, [open, selectedOption?.name]);
+
+  const openMenu = () => {
+    if (!anchorRef.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    const estimatedHeight = Math.min(280, Math.max(100, filteredOptions.length * 42 + 16));
+    const roomBelow = window.innerHeight - rect.bottom - 12;
+    const opensAbove = roomBelow < estimatedHeight && rect.top > roomBelow;
+    setPosition({
+      top: opensAbove ? Math.max(10, rect.top - estimatedHeight - 7) : rect.bottom + 7,
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - rect.width - 12)),
+      width: rect.width,
+      maxHeight: Math.max(96, opensAbove ? rect.top - 18 : roomBelow),
+    });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!anchorRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    const closePositionChange = () => setOpen(false);
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    window.addEventListener('resize', closePositionChange);
+    window.addEventListener('scroll', closePositionChange, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+      window.removeEventListener('resize', closePositionChange);
+      window.removeEventListener('scroll', closePositionChange, true);
+    };
+  }, [open]);
+
+  return (
+    <label className="block" onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+    }}>
+      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</span>
+      <div ref={anchorRef} className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={open ? query : selectedOption?.name || ''}
+          onFocus={() => {
+            setQuery(selectedOption?.name || '');
+            openMenu();
+          }}
+          onChange={event => {
+            setQuery(event.target.value);
+            onSelect('');
+            openMenu();
+          }}
+          placeholder={loading ? `Loading ${label.toLowerCase()}...` : placeholder}
+          disabled={loading}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={`${label.replace(/\s+/g, '-').toLowerCase()}-options`}
+          className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-9 text-sm font-bold text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100 disabled:cursor-wait disabled:opacity-60"
+        />
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        {open && !loading && typeof document !== 'undefined' ? createPortal(
+          <div ref={menuRef} id={`${label.replace(/\s+/g, '-').toLowerCase()}-options`} role="listbox" style={{ position: 'fixed', top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }} className="z-[10010] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/15">
+            {error ? (
+              <p className="px-3 py-4 text-xs font-bold text-red-600">{error}</p>
+            ) : filteredOptions.length > 0 ? filteredOptions.slice(0, 100).map(option => (
+              <button
+                key={option.id}
+                type="button"
+                role="option"
+                aria-selected={option.id === selectedId}
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  onSelect(option.id);
+                  setQuery(option.name);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${option.id === selectedId ? 'bg-amber-50 text-amber-800' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950'}`}
+              >
+                <span className="truncate">{option.name}</span>
+                {option.id === selectedId ? <Check className="h-4 w-4 shrink-0 text-amber-500" /> : null}
+              </button>
+            )) : (
+              <p className="px-3 py-4 text-xs font-bold text-slate-400">No matches found.</p>
+            )}
+          </div>, document.body
+        ) : null}
+      </div>
+    </label>
+  );
+};
+
+const AppointmentMoneyQuickEdit = ({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value?: number | null;
+  disabled: boolean;
+  onCommit: (value: number | null) => Promise<void>;
+}) => {
+  const storedValue = value == null ? '' : String(value);
+  const [draft, setDraft] = useState(storedValue);
+
+  useEffect(() => setDraft(storedValue), [storedValue]);
+
+  const commit = async () => {
+    const nextValue = draft.trim() === '' ? null : Math.max(0, Number(draft) || 0);
+    const currentValue = value == null ? null : Number(value);
+    if (nextValue === currentValue) return;
+    await onCommit(nextValue);
+  };
+
+  return (
+    <div className="relative max-w-[125px]">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">$</span>
+      <input
+        type="number"
+        min={0}
+        step={0.01}
+        value={draft}
+        disabled={disabled}
+        aria-label="Edit monthly payment"
+        onChange={event => setDraft(event.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={event => {
+          if (event.key === 'Enter') event.currentTarget.blur();
+          if (event.key === 'Escape') {
+            setDraft(storedValue);
+            event.currentTarget.blur();
+          }
+        }}
+        placeholder="—"
+        className="h-8 w-full rounded-full border-0 bg-white py-1.5 pl-7 pr-3 text-[10px] font-black tabular-nums text-slate-700 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-amber-300 disabled:cursor-wait disabled:bg-slate-50 disabled:text-slate-400"
+      />
+      {disabled ? <Loader2 className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 animate-spin text-amber-500" /> : null}
+    </div>
+  );
+};
+
+const AppointmentSortableHeader = ({
+  label,
+  field,
+  sort,
+  onSort,
+}: {
+  label: string;
+  field: AppointmentSortField;
+  sort: AppointmentSortConfig;
+  onSort: (field: AppointmentSortField) => void;
+}) => {
+  const active = sort.key === field;
+  return (
+    <button type="button" onClick={() => onSort(field)} className="group inline-flex items-center gap-1 text-left transition hover:text-slate-800" aria-label={`Sort by ${label}`}>
+      <span>{label}</span>
+      <span className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full text-[8px] ${active ? 'bg-amber-100 px-1.5 text-amber-800' : 'text-slate-300 group-hover:text-slate-500'}`}>
+        {active ? sort.direction.toUpperCase() : <ChevronDown className="h-3 w-3" />}
+      </span>
+    </button>
+  );
+};
+
+const AppointmentColumnControl = ({
+  order,
+  visible,
+  onOrderChange,
+  onVisibleChange,
+}: {
+  order: AppointmentColumnKey[];
+  visible: AppointmentColumnKey[];
+  onOrderChange: (order: AppointmentColumnKey[]) => void;
+  onVisibleChange: (visible: AppointmentColumnKey[]) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [draggedColumn, setDraggedColumn] = useState<AppointmentColumnKey | null>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const openMenu = () => {
+    if (!anchorRef.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    setPosition({ top: rect.bottom + 8, left: Math.max(12, Math.min(rect.right - 330, window.innerWidth - 342)) });
+    setOpen(true);
+  };
+  const moveColumn = (key: AppointmentColumnKey, step: -1 | 1) => {
+    const index = order.indexOf(key);
+    const nextIndex = index + step;
+    if (index < 0 || nextIndex < 0 || nextIndex >= order.length) return;
+    const next = [...order];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    onOrderChange(next);
+  };
+  const toggleColumn = (key: AppointmentColumnKey) => {
+    const shown = visible.includes(key);
+    if (shown && visible.length === 1) return;
+    onVisibleChange(shown ? visible.filter(item => item !== key) : [...visible, key]);
+  };
+  const dropColumn = (target: AppointmentColumnKey) => {
+    if (!draggedColumn || draggedColumn === target) return setDraggedColumn(null);
+    const nextOrder = order.filter(key => key !== draggedColumn);
+    nextOrder.splice(nextOrder.indexOf(target), 0, draggedColumn);
+    onOrderChange(nextOrder);
+    setDraggedColumn(null);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!anchorRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    const closeForPositionChange = () => setOpen(false);
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    window.addEventListener('resize', closeForPositionChange);
+    window.addEventListener('scroll', closeForPositionChange, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+      window.removeEventListener('resize', closeForPositionChange);
+      window.removeEventListener('scroll', closeForPositionChange, true);
+    };
+  }, [open]);
+
+  return <>
+    <button ref={anchorRef} type="button" aria-haspopup="dialog" aria-expanded={open} onClick={() => open ? setOpen(false) : openMenu()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-600 transition hover:border-amber-300 hover:bg-amber-50"><Columns3 className="h-4 w-4" />Columns</button>
+    {open && typeof document !== 'undefined' ? createPortal(<div ref={menuRef} role="dialog" aria-label="Visible appointment columns" style={{ position: 'fixed', top: position.top, left: position.left, width: 300, maxHeight: Math.max(220, window.innerHeight - position.top - 16) }} className="z-[1500] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-900/15">
+      <div className="flex items-center justify-between px-3 pb-1 pt-1"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Appointment columns</p><div className="flex gap-2"><button type="button" onClick={() => onVisibleChange(defaultAppointmentColumnOrder)} className="text-[8px] font-black uppercase text-amber-600 hover:text-amber-800">All</button><button type="button" onClick={() => { onVisibleChange(defaultAppointmentColumnOrder); onOrderChange(defaultAppointmentColumnOrder); }} className="text-[8px] font-black uppercase text-slate-400 hover:text-slate-700">Default</button></div></div>
+      <p className="px-3 pb-2 text-[8px] font-semibold text-slate-400">Drag rows or use the arrows to reorder.</p>
+      <div className="space-y-0.5">{order.map((key, index) => {
+        const shown = visible.includes(key);
+        const lastVisible = shown && visible.length === 1;
+        return <div key={key} onDragOver={event => event.preventDefault()} onDrop={() => dropColumn(key)} className={`flex items-center rounded-xl transition ${draggedColumn === key ? 'bg-amber-50 ring-1 ring-amber-200' : 'hover:bg-slate-50'}`}>
+          <span draggable onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; setDraggedColumn(key); }} onDragEnd={() => setDraggedColumn(null)} title={`Drag ${appointmentColumnConfig[key].label} to reorder`} className="ml-1 flex cursor-grab items-center justify-center rounded-lg p-1.5 text-slate-300 hover:bg-white hover:text-amber-500 active:cursor-grabbing"><GripVertical className="h-3.5 w-3.5" /></span>
+          <button type="button" aria-pressed={shown} disabled={lastVisible} title={lastVisible ? 'At least one column must remain visible' : undefined} onClick={() => toggleColumn(key)} className={`flex min-w-0 flex-1 items-center gap-2.5 px-1.5 py-2 text-left text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${shown ? 'text-slate-800' : 'text-slate-400'}`}>{shown ? <Eye className="h-3.5 w-3.5 shrink-0" /> : <EyeOff className="h-3.5 w-3.5 shrink-0" />}<span className="truncate">{appointmentColumnConfig[key].label}</span></button>
+          <button type="button" disabled={index === 0} onClick={() => moveColumn(key, -1)} aria-label={`Move ${appointmentColumnConfig[key].label} up`} title="Move up" className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-amber-600 disabled:opacity-20"><ChevronUp className="h-3.5 w-3.5" /></button>
+          <button type="button" disabled={index === order.length - 1} onClick={() => moveColumn(key, 1)} aria-label={`Move ${appointmentColumnConfig[key].label} down`} title="Move down" className="mr-1 rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-amber-600 disabled:opacity-20"><ChevronDown className="h-3.5 w-3.5" /></button>
+        </div>;
+      })}</div>
+    </div>, document.body) : null}
+  </>;
+};
+
+const AppointmentDatePickerField = ({
+  label,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const toggleCalendar = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (!anchorRef.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    const calendarHeight = 390;
+    const opensAbove = window.innerHeight - rect.bottom < calendarHeight && rect.top > calendarHeight;
+    setPosition({
+      top: opensAbove ? Math.max(12, rect.top - calendarHeight - 8) : rect.bottom + 8,
+      left: Math.max(12, Math.min(rect.left, window.innerWidth - 316)),
+    });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!anchorRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    const closeForPositionChange = () => setOpen(false);
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    window.addEventListener('resize', closeForPositionChange);
+    window.addEventListener('scroll', closeForPositionChange, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+      window.removeEventListener('resize', closeForPositionChange);
+      window.removeEventListener('scroll', closeForPositionChange, true);
+    };
+  }, [open]);
+
+  return (
+    <div>
+      <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</span>
+      <button ref={anchorRef} type="button" disabled={disabled} aria-expanded={open} onClick={toggleCalendar} className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 text-left text-sm font-medium text-slate-900 outline-none transition hover:border-amber-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400">
+        <span className="flex items-center gap-2.5"><Calendar className="h-4 w-4 text-amber-500" />{formatManualActivityDate(value)}</span>
+        <ChevronDown className={`h-4 w-4 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && typeof document !== 'undefined' ? createPortal(<div ref={menuRef} style={{ position: 'fixed', top: position.top, left: position.left, width: 304 }} className="z-[10000] rounded-3xl border border-slate-200 bg-white p-1 shadow-2xl shadow-slate-900/20"><ExpenseDatePicker value={value} onChange={onChange} onSelect={() => setOpen(false)} /></div>, document.body) : null}
+    </div>
+  );
+};
+
 const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string }) => {
   const currentAgentId = selectedAgentId;
-  const [activityView, setActivityView] = useState<'manual' | 'wavv' | 'policytek' | 'callx' | 'submitted'>('manual');
+  const [activityView, setActivityView] = useState<'manual' | 'appointments' | 'wavv' | 'policytek' | 'callx' | 'submitted'>('manual');
+  const [appointmentModalOpen, setAppointmentModalOpen] = useState(false);
+  const [appointmentForm, setAppointmentForm] = useState<ManualAppointmentForm>(createEmptyAppointmentForm);
+  const [appointmentSources, setAppointmentSources] = useState<AppointmentSourceOption[]>([]);
+  const [appointmentCarriers, setAppointmentCarriers] = useState<AppointmentCarrierOption[]>([]);
+  const [appointmentLookupsLoading, setAppointmentLookupsLoading] = useState(false);
+  const [appointmentLookupsError, setAppointmentLookupsError] = useState<string | null>(null);
+  const [appointmentSaving, setAppointmentSaving] = useState(false);
+  const [appointmentSaveError, setAppointmentSaveError] = useState<string | null>(null);
+  const [appointmentQuickEditing, setAppointmentQuickEditing] = useState<string[]>([]);
+  const [appointmentQuickEditError, setAppointmentQuickEditError] = useState<string | null>(null);
+  const [syncAppointmentsModalOpen, setSyncAppointmentsModalOpen] = useState(false);
+  const [syncAppointmentsStartDate, setSyncAppointmentsStartDate] = useState(toLocalActivityDate());
+  const [syncAppointmentsEndDate, setSyncAppointmentsEndDate] = useState(toLocalActivityDate());
+  const [syncAppointmentsAccountId, setSyncAppointmentsAccountId] = useState('');
+  const [swcrmAccounts, setSwcrmAccounts] = useState<SwcrmAccountOption[]>([]);
+  const [swcrmAccountsLoading, setSwcrmAccountsLoading] = useState(false);
+  const [swcrmAccountsError, setSwcrmAccountsError] = useState<string | null>(null);
+  const [syncAppointmentsSaving, setSyncAppointmentsSaving] = useState(false);
+  const [syncAppointmentsError, setSyncAppointmentsError] = useState<string | null>(null);
+  const [appointmentRows, setAppointmentRows] = useState<SyncedAppointmentRow[]>([]);
+  const [appointmentRowsLoading, setAppointmentRowsLoading] = useState(false);
+  const [appointmentRowsError, setAppointmentRowsError] = useState<string | null>(null);
+  const [appointmentRowsPage, setAppointmentRowsPage] = useState(1);
+  const [appointmentRowsPerPage, setAppointmentRowsPerPage] = useState(25);
+  const [appointmentRowsPageTotal, setAppointmentRowsPageTotal] = useState(1);
+  const [appointmentRowsTotal, setAppointmentRowsTotal] = useState(0);
+  const [appointmentRowsRefreshVersion, setAppointmentRowsRefreshVersion] = useState(0);
+  const [appointmentQuickFilter, setAppointmentQuickFilter] = useState<AppointmentQuickFilter>(emptyAppointmentQuickFilter);
+  const [appliedAppointmentQuickFilter, setAppliedAppointmentQuickFilter] = useState<AppointmentQuickFilter>(emptyAppointmentQuickFilter);
+  const [appointmentSort, setAppointmentSort] = useState<AppointmentSortConfig>({ key: 'created_at', direction: 'desc' });
+  const [appointmentColumnOrder, setAppointmentColumnOrder] = useState<AppointmentColumnKey[]>(() => readAppointmentColumnPreferences().order);
+  const [visibleAppointmentColumns, setVisibleAppointmentColumns] = useState<AppointmentColumnKey[]>(() => readAppointmentColumnPreferences().visible);
+  const orderedVisibleAppointmentColumns = appointmentColumnOrder.filter(key => visibleAppointmentColumns.includes(key));
+  const appointmentColumnGridTemplate = orderedVisibleAppointmentColumns.map(key => `${appointmentColumnConfig[key].width}px`).join(' ');
+  const appointmentTableMinWidth = orderedVisibleAppointmentColumns.reduce((total, key) => total + appointmentColumnConfig[key].width, 0);
   const [manualDisplay, setManualDisplay] = useState<'dashboard' | 'rundown'>('dashboard');
   const [selectedManualJourneyStage, setSelectedManualJourneyStage] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState<PoliciesTimeframe>('weekly');
@@ -1231,6 +1794,13 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
   const manualCellCancelRef = useRef(false);
 
   useEffect(() => {
+    window.localStorage.setItem(APPOINTMENT_COLUMNS_STORAGE_KEY, JSON.stringify({
+      order: appointmentColumnOrder,
+      visible: visibleAppointmentColumns,
+    }));
+  }, [appointmentColumnOrder, visibleAppointmentColumns]);
+
+  useEffect(() => {
     if (!manualSaveMessage) return;
     const timeoutId = window.setTimeout(() => setManualSaveMessage(null), 2400);
     return () => window.clearTimeout(timeoutId);
@@ -1254,6 +1824,97 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
   const [submittedSaleLoading, setSubmittedSaleLoading] = useState(false);
   const [submittedSaleError, setSubmittedSaleError] = useState<string | null>(null);
   const [selectedRundown, setSelectedRundown] = useState<PlatformActivityName | null>(null);
+
+  useEffect(() => {
+    if ((activityView !== 'appointments' && !appointmentModalOpen) || (appointmentSources.length > 0 && appointmentCarriers.length > 0)) return;
+
+    let cancelled = false;
+    setAppointmentLookupsLoading(true);
+    setAppointmentLookupsError(null);
+
+    Promise.all([
+      myBusinessActivityApi.getAppointmentSources(),
+      myBusinessActivityApi.getAppointmentCarriers(),
+    ])
+      .then(([sources, carriers]) => {
+        if (cancelled) return;
+        setAppointmentSources([...sources].sort((left, right) => left.name.localeCompare(right.name)));
+        setAppointmentCarriers([...carriers].sort((left, right) => left.name.localeCompare(right.name)));
+      })
+      .catch(error => {
+        if (!cancelled) setAppointmentLookupsError(error instanceof Error ? error.message : 'Unable to load sources and carriers.');
+      })
+      .finally(() => {
+        if (!cancelled) setAppointmentLookupsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activityView, appointmentCarriers.length, appointmentModalOpen, appointmentSources.length]);
+
+  useEffect(() => {
+    if (!syncAppointmentsModalOpen || swcrmAccounts.length > 0) return;
+
+    let cancelled = false;
+    setSwcrmAccountsLoading(true);
+    setSwcrmAccountsError(null);
+
+    myBusinessActivityApi.getSwcrmAccounts()
+      .then(accounts => {
+        if (!cancelled) setSwcrmAccounts([...accounts].sort((left, right) => left.name.localeCompare(right.name)));
+      })
+      .catch(error => {
+        if (!cancelled) setSwcrmAccountsError(error instanceof Error ? error.message : 'Unable to load SWCRM accounts.');
+      })
+      .finally(() => {
+        if (!cancelled) setSwcrmAccountsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [swcrmAccounts.length, syncAppointmentsModalOpen]);
+
+  useEffect(() => {
+    if (activityView !== 'appointments') return;
+    if (timeframe === 'custom' && (!startDate || !endDate)) return;
+
+    let cancelled = false;
+    setAppointmentRowsLoading(true);
+    setAppointmentRowsError(null);
+
+    myBusinessActivityApi.getAppointments({
+      page: appointmentRowsPage,
+      perPage: appointmentRowsPerPage,
+      sort: { [appointmentSort.key]: appointmentSort.direction },
+      filter: buildAppointmentFilter(appliedAppointmentQuickFilter),
+      timeframe,
+      startDate: timeframe === 'custom' ? toAppointmentRequestDate(startDate) : null,
+      endDate: timeframe === 'custom' ? toAppointmentRequestDate(endDate) : null,
+    })
+      .then(response => {
+        if (cancelled) return;
+        setAppointmentRows(response.items);
+        setAppointmentRowsPage(response.curPage);
+        setAppointmentRowsPageTotal(response.pageTotal);
+        setAppointmentRowsTotal(response.itemsTotal);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setAppointmentRows([]);
+        setAppointmentRowsPageTotal(1);
+        setAppointmentRowsTotal(0);
+        setAppointmentRowsError(error instanceof Error ? error.message : 'Failed to load appointments.');
+      })
+      .finally(() => {
+        if (!cancelled) setAppointmentRowsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activityView, appliedAppointmentQuickFilter, appointmentRowsPage, appointmentRowsPerPage, appointmentRowsRefreshVersion, appointmentSort, endDate, startDate, timeframe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2144,14 +2805,298 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
     document.body,
   ) : null;
 
+  const appointmentAnnualPremium = Math.max(0, Number(appointmentForm.monthlyPayment) || 0) * 12;
+  const openAppointmentModal = () => {
+    setAppointmentForm(createEmptyAppointmentForm());
+    setAppointmentSaveError(null);
+    setAppointmentModalOpen(true);
+  };
+  const closeAppointmentModal = () => {
+    if (!appointmentSaving) setAppointmentModalOpen(false);
+  };
+  const updateAppointmentForm = <K extends keyof ManualAppointmentForm>(key: K, value: ManualAppointmentForm[K]) => {
+    setAppointmentForm(current => ({ ...current, [key]: value }));
+    setAppointmentSaveError(null);
+  };
+  const appointmentRequiredFieldsComplete = Boolean(
+    appointmentForm.clientName.trim() && appointmentForm.dateBooked && appointmentForm.appointmentDate,
+  );
+  const handleSaveAppointment = async () => {
+    if (!appointmentRequiredFieldsComplete || appointmentSaving) return;
+
+    const selectedSource = appointmentSources.find(source => source.id === appointmentForm.leadSourceId);
+    const selectedCarrier = appointmentCarriers.find(carrier => carrier.id === appointmentForm.carrierId);
+    const hasMonthlyPayment = appointmentForm.monthlyPayment.trim() !== '';
+
+    setAppointmentSaving(true);
+    setAppointmentSaveError(null);
+    setManualSaveMessage(null);
+
+    try {
+      await myBusinessActivityApi.saveManualAppointment({
+        client_name: appointmentForm.clientName.trim(),
+        booked_type: appointmentForm.bookedType || null,
+        lead_source_id: selectedSource?.id || null,
+        lead_source: selectedSource?.name || null,
+        appointment_result: appointmentForm.appointmentResult || null,
+        monthly_payment: hasMonthlyPayment ? Math.max(0, Number(appointmentForm.monthlyPayment) || 0) : null,
+        ap: hasMonthlyPayment ? appointmentAnnualPremium : null,
+        carrier_placement_id: selectedCarrier?.id || null,
+        carrier_placement: selectedCarrier?.name || null,
+        policy_status: appointmentForm.policyStatus || null,
+        date_booked: appointmentForm.dateBooked,
+        appointment_date: appointmentForm.appointmentDate,
+      });
+
+      setAppointmentModalOpen(false);
+      setAppointmentForm(createEmptyAppointmentForm());
+      setAppointmentRowsPage(1);
+      setAppointmentRowsRefreshVersion(version => version + 1);
+      setManualSaveMessage('Appointment saved.');
+    } catch (error) {
+      setAppointmentSaveError(error instanceof Error ? error.message : 'Failed to save appointment.');
+    } finally {
+      setAppointmentSaving(false);
+    }
+  };
+  const quickEditAppointment = async (
+    appointment: SyncedAppointmentRow,
+    field: string,
+    updates: Partial<SyncedAppointmentRow>,
+  ) => {
+    const editKey = `${appointment.id}-${field}`;
+    const next = { ...appointment, ...updates };
+    const monthlyPayment = next.monthly_payment == null ? null : Math.max(0, Number(next.monthly_payment) || 0);
+    const annualPremium = monthlyPayment == null ? null : monthlyPayment * 12;
+
+    setAppointmentQuickEditing(current => [...current, editKey]);
+    setAppointmentQuickEditError(null);
+
+    try {
+      await myBusinessActivityApi.updateAppointment({
+        id: appointment.id,
+        booked_type: next.booked_type || null,
+        lead_source_id: next.lead_source_id || null,
+        lead_source: next.lead_source || null,
+        appointment_result: next.appointment_result || null,
+        monthly_payment: monthlyPayment,
+        ap: annualPremium,
+        carrier_placement_id: next.carrier_placement_id || null,
+        carrier_placement: next.carrier_placement || null,
+        policy_status: next.policy_status || null,
+      });
+      setAppointmentRows(current => current.map(row => row.id === appointment.id ? {
+        ...row,
+        ...updates,
+        monthly_payment: monthlyPayment,
+        ap: annualPremium,
+      } : row));
+    } catch (error) {
+      setAppointmentQuickEditError(error instanceof Error ? error.message : 'The appointment could not be updated.');
+    } finally {
+      setAppointmentQuickEditing(current => current.filter(key => key !== editKey));
+    }
+  };
+  const handleAppointmentSort = (field: AppointmentSortField) => {
+    setAppointmentRowsPage(1);
+    setAppointmentSort(current => current.key === field
+      ? { key: field, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+      : { key: field, direction: 'asc' });
+  };
+  const applyAppointmentQuickFilter = () => {
+    setAppointmentRowsPage(1);
+    setAppliedAppointmentQuickFilter({ ...appointmentQuickFilter });
+  };
+  const clearAppointmentQuickFilter = () => {
+    const empty = emptyAppointmentQuickFilter();
+    setAppointmentQuickFilter(empty);
+    setAppliedAppointmentQuickFilter(empty);
+    setAppointmentRowsPage(1);
+  };
+  const appointmentModal = appointmentModalOpen && typeof document !== 'undefined' ? createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="add-appointment-title">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-white/20">
+        <header className="flex items-start justify-between border-b border-slate-100 px-7 py-5">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-amber-600"><Calendar className="h-3 w-3" /> Appointments</div>
+            <h3 id="add-appointment-title" className="text-xl font-semibold tracking-tight text-slate-950">Add appointment</h3>
+            <p className="mt-1 text-sm font-normal text-slate-500">Record the booking details and outcome for a client appointment.</p>
+          </div>
+          <button type="button" onClick={closeAppointmentModal} disabled={appointmentSaving} aria-label="Close add appointment modal" className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"><X className="h-4 w-4" /></button>
+        </header>
+
+        <div className="overflow-y-auto p-7">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label className="sm:col-span-2">
+              <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Client name</span>
+              <input type="text" value={appointmentForm.clientName} onChange={event => updateAppointmentForm('clientName', event.target.value)} placeholder="Enter client name" className="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-100" />
+            </label>
+
+            <AppointmentDatePickerField label="Date booked" value={appointmentForm.dateBooked} onChange={value => updateAppointmentForm('dateBooked', value)} disabled={appointmentSaving} />
+
+            <AppointmentDatePickerField label="Appointment date" value={appointmentForm.appointmentDate} onChange={value => updateAppointmentForm('appointmentDate', value)} disabled={appointmentSaving} />
+
+            <div>
+              <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Booked type</span>
+              <QuickEditMenu ariaLabel="Choose booked type" value={appointmentForm.bookedType} placeholder="Select booking type" options={['text', 'phone', 'dialer'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1), ...appointmentBookedTypeTone(value) }))} triggerTone={appointmentBookedTypeTone(appointmentForm.bookedType).tone} fullWidth onChange={value => updateAppointmentForm('bookedType', value as ManualAppointmentForm['bookedType'])} />
+            </div>
+
+            <AppointmentLookupSelect label="Lead source" placeholder="Search lead sources" options={appointmentSources} selectedId={appointmentForm.leadSourceId} onSelect={value => updateAppointmentForm('leadSourceId', value)} loading={appointmentLookupsLoading} error={appointmentLookupsError} />
+
+            <div className="sm:col-span-2">
+              <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Appointment result</span>
+              <QuickEditMenu ariaLabel="Choose appointment result" value={appointmentForm.appointmentResult} placeholder="Select appointment result" options={appointmentResults.map(result => ({ value: result, label: result, ...appointmentResultTone(result) }))} triggerTone={appointmentResultTone(appointmentForm.appointmentResult).tone} fullWidth onChange={value => updateAppointmentForm('appointmentResult', value)} />
+            </div>
+
+            <label>
+              <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Monthly payment</span>
+              <div className="relative"><span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">$</span><input type="number" min={0} step={0.01} value={appointmentForm.monthlyPayment} onChange={event => updateAppointmentForm('monthlyPayment', event.target.value)} placeholder="0.00" className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-8 pr-4 text-sm font-medium tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-100" /></div>
+            </label>
+
+            <label>
+              <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">AP <span className="normal-case tracking-normal text-slate-300">(monthly payment × 12)</span></span>
+              <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold tabular-nums text-slate-700">{currencyFormatter.format(appointmentAnnualPremium)}</div>
+            </label>
+
+            <AppointmentLookupSelect label="Carrier placement" placeholder="Search carriers" options={appointmentCarriers} selectedId={appointmentForm.carrierId} onSelect={value => updateAppointmentForm('carrierId', value)} loading={appointmentLookupsLoading} error={appointmentLookupsError} />
+
+            <div>
+              <span className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Policy status</span>
+              <QuickEditMenu ariaLabel="Choose policy status" value={appointmentForm.policyStatus} placeholder="Select policy status" options={appointmentPolicyStatuses.map(status => ({ value: status, label: status, ...appointmentPolicyStatusTone(status) }))} triggerTone={appointmentPolicyStatusTone(appointmentForm.policyStatus).tone} fullWidth onChange={value => updateAppointmentForm('policyStatus', value)} />
+            </div>
+          </div>
+
+          {appointmentLookupsError ? <p className="mt-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{appointmentLookupsError}</p> : null}
+          {appointmentSaveError ? <p className="mt-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{appointmentSaveError}</p> : null}
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-7 py-5">
+          <p className="max-w-xl text-[11px] font-medium leading-relaxed text-slate-500">Client name, date booked, and appointment date are required. All other blank values are submitted as null.</p>
+          <div className="flex items-center gap-2"><button type="button" onClick={closeAppointmentModal} disabled={appointmentSaving} className="rounded-full px-5 py-2.5 text-xs font-black text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40">Cancel</button><button type="button" onClick={() => void handleSaveAppointment()} disabled={!appointmentRequiredFieldsComplete || appointmentSaving} className="rounded-full bg-slate-950 px-6 py-2.5 text-xs font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{appointmentSaving ? 'Saving...' : 'Save appointment'}</button></div>
+        </footer>
+      </div>
+    </div>,
+    document.body,
+  ) : null;
+
+  const openSyncAppointmentsModal = () => {
+    const today = toLocalActivityDate();
+    setSyncAppointmentsStartDate(today);
+    setSyncAppointmentsEndDate(today);
+    setSyncAppointmentsAccountId('');
+    setSwcrmAccountsError(null);
+    setSyncAppointmentsError(null);
+    setSyncAppointmentsModalOpen(true);
+  };
+  const syncAppointmentsDateRangeValid = Boolean(
+    syncAppointmentsStartDate
+      && syncAppointmentsEndDate
+      && syncAppointmentsStartDate <= syncAppointmentsEndDate,
+  );
+  const syncAppointmentsFormComplete = syncAppointmentsDateRangeValid && Boolean(syncAppointmentsAccountId);
+  const closeSyncAppointmentsModal = () => {
+    if (!syncAppointmentsSaving) setSyncAppointmentsModalOpen(false);
+  };
+  const handleSyncAppointments = async () => {
+    if (!syncAppointmentsFormComplete || syncAppointmentsSaving) return;
+
+    const startTimestamp = dateKeyToUtcDate(syncAppointmentsStartDate).getTime();
+    const endTimestamp = dateKeyToUtcDate(syncAppointmentsEndDate).getTime() + 86_400_000 - 1;
+
+    setSyncAppointmentsSaving(true);
+    setSyncAppointmentsError(null);
+    setManualSaveMessage(null);
+
+    try {
+      const syncedAppointments = await myBusinessActivityApi.syncAppointments({
+        start_date: startTimestamp,
+        end_date: endTimestamp,
+        swcrm_account_id: syncAppointmentsAccountId,
+      });
+      setSyncAppointmentsModalOpen(false);
+      setAppointmentRowsPage(1);
+      setAppointmentRowsRefreshVersion(version => version + 1);
+      setManualSaveMessage(`Synced ${syncedAppointments.length} ${syncedAppointments.length === 1 ? 'appointment' : 'appointments'}.`);
+    } catch (error) {
+      setSyncAppointmentsError(error instanceof Error ? error.message : 'Failed to sync appointments.');
+    } finally {
+      setSyncAppointmentsSaving(false);
+    }
+  };
+  const syncAppointmentsModal = syncAppointmentsModalOpen && typeof document !== 'undefined' ? createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="sync-appointments-title">
+      <div className="w-full max-w-2xl overflow-hidden rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-white/20">
+        <header className="flex items-start justify-between border-b border-slate-100 px-7 py-5">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-amber-600"><RotateCcw className="h-3 w-3" /> SWCRM appointments</div>
+            <h3 id="sync-appointments-title" className="text-xl font-semibold tracking-tight text-slate-950">Sync SWCRM appointments</h3>
+            <p className="mt-1 text-sm font-normal text-slate-500">Choose the account and appointment date range to import.</p>
+          </div>
+          <button type="button" onClick={closeSyncAppointmentsModal} disabled={syncAppointmentsSaving} aria-label="Close sync appointments modal" className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"><X className="h-4 w-4" /></button>
+        </header>
+
+        <div className="space-y-5 p-7">
+          <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
+            <p className="text-xs font-semibold text-sky-800">Date range is based on UTC timezone.</p>
+            <p className="mt-1 text-[11px] font-medium text-sky-600">Appointments are matched against their UTC dates, which may differ from your local calendar date near midnight.</p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <AppointmentDatePickerField label="Start date" value={syncAppointmentsStartDate} onChange={value => { setSyncAppointmentsStartDate(value); setSyncAppointmentsError(null); }} disabled={syncAppointmentsSaving} />
+            <AppointmentDatePickerField label="End date" value={syncAppointmentsEndDate} onChange={value => { setSyncAppointmentsEndDate(value); setSyncAppointmentsError(null); }} disabled={syncAppointmentsSaving} />
+          </div>
+          {!syncAppointmentsDateRangeValid ? <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">End date must be on or after the start date.</p> : null}
+
+          <AppointmentLookupSelect label="SWCRM account" placeholder="Search SWCRM accounts" options={swcrmAccounts} selectedId={syncAppointmentsAccountId} onSelect={value => { setSyncAppointmentsAccountId(value); setSyncAppointmentsError(null); }} loading={swcrmAccountsLoading || syncAppointmentsSaving} error={swcrmAccountsError} />
+          {swcrmAccountsError ? <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{swcrmAccountsError}</p> : null}
+          {syncAppointmentsError ? <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{syncAppointmentsError}</p> : null}
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-7 py-5">
+          <p className="max-w-md text-[11px] font-medium leading-relaxed text-slate-500">The complete selected dates are sent as an inclusive UTC timestamp range.</p>
+          <div className="flex items-center gap-2"><button type="button" onClick={closeSyncAppointmentsModal} disabled={syncAppointmentsSaving} className="rounded-full px-5 py-2.5 text-xs font-black text-slate-500 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40">Cancel</button><button type="button" onClick={() => void handleSyncAppointments()} disabled={!syncAppointmentsFormComplete || syncAppointmentsSaving} className="rounded-full bg-slate-950 px-6 py-2.5 text-xs font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{syncAppointmentsSaving ? 'Syncing...' : 'Sync appointments'}</button></div>
+        </footer>
+      </div>
+    </div>,
+    document.body,
+  ) : null;
+
   return (
     <div className="business-activity-page space-y-5 animate-in fade-in duration-300">
       <style>{`.business-activity-page > .space-y-8 > .fixed.inset-0 { display: none; }`}</style>
       {historicalEntryModal}
+      {appointmentModal}
+      {syncAppointmentsModal}
       {manualSaveMessage ? <div className="pointer-events-none fixed left-1/2 top-5 z-[160] -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-200" role="status" aria-live="polite"><div className="flex items-center gap-2 rounded-full border border-emerald-200/80 bg-white/95 px-4 py-2.5 text-xs font-black text-emerald-700 shadow-lg shadow-slate-900/10 backdrop-blur"><Check className="h-3.5 w-3.5" />{manualSaveMessage}</div></div> : null}
+      {activityView === 'appointments' && <section className="relative overflow-hidden rounded-[1.75rem] border border-amber-300/20 bg-slate-950 px-6 py-7 text-white shadow-xl shadow-slate-300/50">
+        <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-amber-300/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-52 w-52 rounded-full bg-sky-400/10 blur-3xl" />
+        <div className="relative grid gap-6 xl:grid-cols-[1.1fr_1.9fr] xl:items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-amber-300"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300" /> Coming soon</span>
+            <h4 className="mt-4 text-2xl font-black tracking-tight">Your next layer of appointment intelligence</h4>
+            <p className="mt-2 max-w-xl text-sm font-medium leading-relaxed text-slate-400">See what is driving production, where business is landing, and how your managed book is growing—all in one KPI view.</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {([
+              [Database, 'Sources', 'Compare appointment and production performance by lead source.'],
+              [Building2, 'Carriers', 'See placement volume and AP across carrier partners.'],
+              [Briefcase, 'Managed Book of Business', 'Track the policies and premium under active management.'],
+            ] as const).map(([Icon, title, description]) => (
+              <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur-sm">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-300/10 text-amber-300"><Icon className="h-4 w-4" /></div>
+                <p className="mt-4 text-sm font-black text-white">{title}</p>
+                <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-slate-400">{description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>}
       <nav aria-label="Activity sections" className="flex max-w-full items-center gap-1 overflow-x-auto border-b border-slate-200">
         {[
           { key: 'manual' as const, label: 'Manual Activity', note: 'Log today’s effort and review history', icon: Pencil },
+          { key: 'appointments' as const, label: 'Appointments', note: 'Appointment funnel and daily outcomes', icon: Calendar },
           { key: 'wavv' as const, label: 'WAVV', note: 'WAVV calling activity', icon: PhoneCall },
           { key: 'policytek' as const, label: 'PolicyTek', note: 'PolicyTek call activity', icon: PhoneCall },
           { key: 'callx' as const, label: 'CallX', note: 'CallX call activity', icon: PhoneCall },
@@ -2311,7 +3256,162 @@ const MyBusinessActivityLog = ({ selectedAgentId }: { selectedAgentId: string })
         {historicalEntryOpen ? <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="historical-activity-title"><div className="w-full max-w-3xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl"><div className="flex items-start justify-between border-b border-slate-100 px-6 py-5"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500">Manual activity</p><h3 id="historical-activity-title" className="mt-1 text-2xl font-black text-slate-950">Add historical data</h3><p className="mt-1 text-sm font-semibold text-slate-400">Choose the activity date and enter the recorded totals.</p></div><button type="button" onClick={closeHistoricalEntry} aria-label="Close historical activity modal" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-950"><X className="h-4 w-4" /></button></div><div className="space-y-5 p-6"><label className="block"><span className="mb-2 block text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Activity date</span><div className="relative max-w-xs"><Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input type="date" value={historicalEntryDate} max={toLocalActivityDate()} onChange={event => setHistoricalEntryDate(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-black text-slate-900 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100" /></div></label><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{([['leads', 'Leads'], ['dials', 'Dials'], ['contacts', 'Contacts'], ['appointments', 'Appointments'], ['presentations', 'Presentations'], ['sold', 'Sold'], ['totalAp', 'Total AP']] as Array<[ManualActivityKey, string]>).map(([key, label]) => <label key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3"><span className="mb-2 block text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</span><div className="relative">{key === 'totalAp' ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">$</span> : null}<input type="number" min={0} step={key === 'totalAp' ? 0.01 : 1} value={historicalActivity[key]} onChange={event => setHistoricalActivity(current => ({ ...current, [key]: Math.max(0, Number(event.target.value) || 0) }))} className={`h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-black outline-none focus:border-amber-400 ${key === 'totalAp' ? 'pl-7 pr-3' : 'px-3'}`} /></div></label>)}</div>{historicalError ? <p className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs font-bold text-red-600">{historicalError}</p> : null}</div><div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4"><button type="button" onClick={closeHistoricalEntry} disabled={historicalSaving} className="rounded-full px-5 py-2.5 text-xs font-black text-slate-500 hover:text-slate-900 disabled:opacity-40">Cancel</button><button type="button" onClick={handleSaveHistoricalActivity} disabled={!historicalEntryDate || historicalSaving} className="rounded-full bg-slate-950 px-6 py-2.5 text-xs font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{historicalSaving ? 'Saving...' : 'Save historical entry'}</button></div></div></div> : null}
       </div>}
 
-      {activityView !== 'manual' && <>
+      {activityView === 'appointments' && <div className="space-y-3">
+        <PolicyDateRangeFilter
+          timeframe={timeframe}
+          startDate={startDate}
+          endDate={endDate}
+          onTimeframeChange={value => {
+            setAppointmentRowsPage(1);
+            setTimeframe(value);
+          }}
+          onDateChange={(start, end) => {
+            setAppointmentRowsPage(1);
+            setStartDate(start);
+            setEndDate(end);
+          }}
+          variant="inline"
+        />
+
+        <section className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-sm">
+          <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-500">Appointments</p>
+              <h3 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Appointment performance</h3>
+              <p className="mt-1 text-xs font-semibold text-slate-400">Appointments recorded in PolicyHQ and synced from SWCRM.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={openSyncAppointmentsModal} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-700 transition hover:-translate-y-px hover:border-amber-300 hover:text-slate-950"><RotateCcw className="h-3.5 w-3.5" /> Sync SWCRM appointments</button>
+              <button type="button" onClick={openAppointmentModal} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-[10px] font-black text-white transition hover:-translate-y-px hover:bg-amber-400 hover:text-slate-950"><Plus className="h-3.5 w-3.5" /> Add appointment</button>
+              <span className={`rounded-full border px-3 py-1 text-xs font-black ${
+              appointmentRowsError
+                ? 'border-red-100 bg-red-50 text-red-600'
+                : appointmentRowsLoading
+                  ? 'border-amber-100 bg-amber-50 text-amber-700'
+                  : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+            }`}>
+              {appointmentRowsError ? 'Unavailable' : appointmentRowsLoading ? 'Loading' : 'Live data'}
+              </span>
+            </div>
+          </header>
+
+          {appointmentQuickEditError ? <div className="border-b border-red-100 bg-red-50 px-6 py-3 text-xs font-bold text-red-600">{appointmentQuickEditError}</div> : null}
+
+          <div className="overflow-x-auto border-b border-slate-200 bg-slate-50/80">
+            <div className="grid min-w-[1450px] grid-cols-[1.3fr_repeat(7,minmax(145px,1fr))_170px] items-center">
+              <label className="flex items-center gap-2 border-r border-slate-200 px-3 py-2">
+                <Search className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span className="sr-only">Filter appointments by client</span>
+                <input value={appointmentQuickFilter.client} onChange={event => setAppointmentQuickFilter(current => ({ ...current, client: event.target.value }))} onKeyDown={event => { if (event.key === 'Enter') applyAppointmentQuickFilter(); }} placeholder="Client or title" className="h-8 min-w-0 flex-1 rounded-full border-0 bg-white px-3 text-[10px] font-black text-slate-700 outline-none ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-amber-300" />
+              </label>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by origin" value={appointmentQuickFilter.origin} placeholder="Origin" options={[{ value: '', label: 'All origins' }, { value: 'sync', label: 'SWCRM Sync' }, { value: 'manual', label: 'Manual' }]} showDots={false} onChange={value => setAppointmentQuickFilter(current => ({ ...current, origin: value as AppointmentQuickFilter['origin'] }))} /></div>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by SWCRM status" value={appointmentQuickFilter.appointmentStatus} placeholder="SWCRM status" options={[{ value: '', label: 'All statuses' }, ...appointmentStatuses.map(status => ({ value: status, label: status[0].toUpperCase() + status.slice(1) }))]} showDots={false} onChange={value => setAppointmentQuickFilter(current => ({ ...current, appointmentStatus: value }))} /></div>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by booked type" value={appointmentQuickFilter.bookedType} placeholder="Booked type" options={[{ value: '', label: 'All types' }, { value: 'text', label: 'Text' }, { value: 'phone', label: 'Phone' }, { value: 'dialer', label: 'Dialer' }]} showDots={false} onChange={value => setAppointmentQuickFilter(current => ({ ...current, bookedType: value }))} /></div>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by lead source" value={appointmentQuickFilter.leadSourceId} placeholder="Lead source" options={[{ value: '', label: 'All sources' }, ...appointmentSources.map(source => ({ value: source.id, label: source.name }))]} disabled={appointmentLookupsLoading} showDots={false} searchable onChange={value => setAppointmentQuickFilter(current => ({ ...current, leadSourceId: value }))} /></div>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by result" value={appointmentQuickFilter.appointmentResult} placeholder="Result" options={[{ value: '', label: 'All results' }, ...appointmentResults.map(result => ({ value: result, label: result }))]} showDots={false} onChange={value => setAppointmentQuickFilter(current => ({ ...current, appointmentResult: value }))} /></div>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by carrier" value={appointmentQuickFilter.carrierId} placeholder="Carrier" options={[{ value: '', label: 'All carriers' }, ...appointmentCarriers.map(carrier => ({ value: carrier.id, label: carrier.name }))]} disabled={appointmentLookupsLoading} showDots={false} searchable onChange={value => setAppointmentQuickFilter(current => ({ ...current, carrierId: value }))} /></div>
+              <div className="border-r border-slate-200 px-2 py-2"><QuickEditMenu ariaLabel="Filter appointments by policy status" value={appointmentQuickFilter.policyStatus} placeholder="Policy status" options={[{ value: '', label: 'All statuses' }, ...appointmentPolicyStatuses.map(status => ({ value: status, label: status }))]} showDots={false} onChange={value => setAppointmentQuickFilter(current => ({ ...current, policyStatus: value }))} /></div>
+              <div className="flex items-center gap-1.5 px-2 py-2"><button type="button" onClick={clearAppointmentQuickFilter} className="flex-1 rounded-full bg-white px-3 py-2 text-[10px] font-black text-slate-500 ring-1 ring-slate-200 transition hover:bg-slate-100 hover:text-slate-900">Clear</button><button type="button" onClick={applyAppointmentQuickFilter} className="flex-1 rounded-full bg-slate-950 px-3 py-2 text-[10px] font-black text-white transition hover:bg-amber-400 hover:text-slate-950">Apply</button></div>
+            </div>
+          </div>
+
+          {appointmentRowsLoading ? (
+            <div className="flex items-center justify-center gap-2 px-6 py-16 text-sm font-bold text-slate-400">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading appointments...
+            </div>
+          ) : appointmentRowsError ? (
+            <div className="m-6 rounded-2xl border border-red-100 bg-red-50 px-5 py-8 text-center text-sm font-bold text-red-600">
+              {appointmentRowsError}
+            </div>
+          ) : (
+            <div className="space-y-6 p-6">
+              <section className="overflow-hidden rounded-3xl border border-slate-100">
+                <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50 px-5 py-4">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Daily rundown</p>
+                    <h4 className="mt-1 text-base font-black text-slate-950">Appointment records</h4>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <AppointmentColumnControl
+                      order={appointmentColumnOrder}
+                      visible={visibleAppointmentColumns}
+                      onOrderChange={setAppointmentColumnOrder}
+                      onVisibleChange={setVisibleAppointmentColumns}
+                    />
+                    <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black text-slate-500 shadow-sm">{appointmentRowsTotal} {appointmentRowsTotal === 1 ? 'appointment' : 'appointments'}</span>
+                  </div>
+                </header>
+                <div className="overflow-x-auto">
+                  <div
+                    className="grid bg-white px-5 py-3 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400"
+                    style={{ gridTemplateColumns: appointmentColumnGridTemplate, minWidth: appointmentTableMinWidth }}
+                  >
+                    {orderedVisibleAppointmentColumns.map(key => {
+                      const column = appointmentColumnConfig[key];
+                      return <AppointmentSortableHeader key={key} label={column.label} field={column.sortField} sort={appointmentSort} onSort={handleAppointmentSort} />;
+                    })}
+                  </div>
+                  {appointmentRows.length > 0 ? appointmentRows.map(row => {
+                    const isSyncedAppointment = Boolean(row.ghl_event_id);
+                    const dateBooked = resolveAppointmentDisplayDate(row.dateAdded, row.date_booked);
+                    const appointmentDate = resolveAppointmentDisplayDate(row.startTime, row.appointment_date);
+                    const rowEditing = appointmentQuickEditing.some(key => key.startsWith(`${row.id}-`));
+                    const sourceOptions = [
+                      { value: '', label: 'Not set' },
+                      ...appointmentSources.map(source => ({ value: source.id, label: source.name })),
+                      ...(row.lead_source_id && !appointmentSources.some(source => source.id === row.lead_source_id)
+                        ? [{ value: row.lead_source_id, label: row.lead_source || 'Current source' }]
+                        : []),
+                    ];
+                    const carrierOptions = [
+                      { value: '', label: 'Not set' },
+                      ...appointmentCarriers.map(carrier => ({ value: carrier.id, label: carrier.name })),
+                      ...(row.carrier_placement_id && !appointmentCarriers.some(carrier => carrier.id === row.carrier_placement_id)
+                        ? [{ value: row.carrier_placement_id, label: row.carrier_placement || 'Current carrier' }]
+                        : []),
+                    ];
+                    const cells: Record<AppointmentColumnKey, React.ReactNode> = {
+                      client: <span className="min-w-0 pr-3"><span className="block truncate font-black text-slate-950">{row.client_name?.trim() || row.title?.trim() || 'Unnamed client'}</span>{row.title && row.client_name?.trim() ? <span className="mt-0.5 block truncate text-[10px] font-medium text-slate-400">{row.title}</span> : null}</span>,
+                      origin: <span><span className={`inline-flex rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.08em] ${isSyncedAppointment ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{isSyncedAppointment ? 'SWCRM Sync' : 'Manual'}</span></span>,
+                      dateBooked: <span>{dateBooked}</span>,
+                      appointmentDate: <span>{appointmentDate}</span>,
+                      swcrmStatus: <span className="capitalize">{row.appointmentStatus || '—'}</span>,
+                      bookedType: <span className="pr-2"><QuickEditMenu ariaLabel={`Edit booked type for ${row.client_name || row.title || 'appointment'}`} value={row.booked_type || ''} placeholder="Not set" options={[{ value: '', label: 'Not set', ...appointmentBookedTypeTone('') }, ...['text', 'phone', 'dialer'].map(value => ({ value, label: value[0].toUpperCase() + value.slice(1), ...appointmentBookedTypeTone(value) }))]} disabled={rowEditing} triggerTone={appointmentBookedTypeTone(row.booked_type).tone} onChange={value => void quickEditAppointment(row, 'booked_type', { booked_type: value || null })} /></span>,
+                      leadSource: <span className="pr-2"><QuickEditMenu ariaLabel={`Edit lead source for ${row.client_name || row.title || 'appointment'}`} value={row.lead_source_id || ''} placeholder={row.lead_source || 'Not set'} options={sourceOptions} disabled={rowEditing || appointmentLookupsLoading} showDots={false} searchable onChange={value => { const source = appointmentSources.find(option => option.id === value); void quickEditAppointment(row, 'lead_source', { lead_source_id: value || null, lead_source: source?.name || null }); }} /></span>,
+                      result: <span className="pr-2"><QuickEditMenu ariaLabel={`Edit appointment result for ${row.client_name || row.title || 'appointment'}`} value={row.appointment_result || ''} placeholder="Not set" options={[{ value: '', label: 'Not set', ...appointmentResultTone('') }, ...appointmentResults.map(result => ({ value: result, label: result, ...appointmentResultTone(result) }))]} disabled={rowEditing} triggerTone={appointmentResultTone(row.appointment_result).tone} onChange={value => void quickEditAppointment(row, 'appointment_result', { appointment_result: value || null })} /></span>,
+                      monthlyPayment: <span className="pr-2"><AppointmentMoneyQuickEdit value={row.monthly_payment == null ? null : Number(row.monthly_payment)} disabled={rowEditing} onCommit={value => quickEditAppointment(row, 'monthly_payment', { monthly_payment: value, ap: value == null ? null : value * 12 })} /></span>,
+                      ap: <span>{row.ap == null ? '—' : formatActivityCurrency(Number(row.ap))}</span>,
+                      carrier: <span className="pr-2"><QuickEditMenu ariaLabel={`Edit carrier for ${row.client_name || row.title || 'appointment'}`} value={row.carrier_placement_id || ''} placeholder={row.carrier_placement || 'Not set'} options={carrierOptions} disabled={rowEditing || appointmentLookupsLoading} showDots={false} searchable onChange={value => { const carrier = appointmentCarriers.find(option => option.id === value); void quickEditAppointment(row, 'carrier_placement', { carrier_placement_id: value || null, carrier_placement: carrier?.name || null }); }} /></span>,
+                      policyStatus: <span className="pr-2"><QuickEditMenu ariaLabel={`Edit policy status for ${row.client_name || row.title || 'appointment'}`} value={row.policy_status || ''} placeholder="Not set" options={[{ value: '', label: 'Not set', ...appointmentPolicyStatusTone('') }, ...appointmentPolicyStatuses.map(status => ({ value: status, label: status, ...appointmentPolicyStatusTone(status) }))]} disabled={rowEditing} triggerTone={appointmentPolicyStatusTone(row.policy_status).tone} onChange={value => void quickEditAppointment(row, 'policy_status', { policy_status: value || null })} /></span>,
+                    };
+                    return (
+                      <div
+                        key={row.id}
+                        className={`grid items-center border-t border-slate-100 px-5 py-3 text-xs font-bold text-slate-600 transition ${rowEditing ? 'bg-amber-50/40' : 'bg-white hover:bg-slate-50/70'}`}
+                        style={{ gridTemplateColumns: appointmentColumnGridTemplate, minWidth: appointmentTableMinWidth }}
+                      >
+                        {orderedVisibleAppointmentColumns.map(key => <React.Fragment key={key}>{cells[key]}</React.Fragment>)}
+                      </div>
+                    );
+                  }) : (
+                    <div className="border-t border-slate-100 px-5 py-10 text-center text-sm font-bold text-slate-400">No appointment activity found for this range.</div>
+                  )}
+                </div>
+                <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500"><span>Rows per page</span><select value={appointmentRowsPerPage} onChange={event => { setAppointmentRowsPerPage(Number(event.target.value)); setAppointmentRowsPage(1); }} disabled={appointmentRowsLoading} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 outline-none focus:border-amber-400 disabled:cursor-wait disabled:opacity-50">{[10, 25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500"><span>Page</span><select value={appointmentRowsPage} onChange={event => setAppointmentRowsPage(Number(event.target.value))} disabled={appointmentRowsLoading || appointmentRowsPageTotal <= 1} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-black text-slate-700 outline-none focus:border-amber-400 disabled:cursor-not-allowed disabled:opacity-50">{Array.from({ length: appointmentRowsPageTotal }, (_, index) => index + 1).map(page => <option key={page} value={page}>{page}</option>)}</select><span>of {appointmentRowsPageTotal}</span></label>
+                  </div>
+                  <div className="flex items-center gap-2"><button type="button" onClick={() => setAppointmentRowsPage(page => Math.max(1, page - 1))} disabled={appointmentRowsPage <= 1 || appointmentRowsLoading} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-slate-600 transition hover:border-amber-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Previous</button><button type="button" onClick={() => setAppointmentRowsPage(page => Math.min(appointmentRowsPageTotal, page + 1))} disabled={appointmentRowsPage >= appointmentRowsPageTotal || appointmentRowsLoading} className="rounded-full bg-slate-950 px-4 py-2 text-[10px] font-black text-white transition hover:bg-amber-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Next</button></div>
+                </footer>
+              </section>
+            </div>
+          )}
+
+        </section>
+      </div>}
+
+      {activityView !== 'manual' && activityView !== 'appointments' && <>
       <PolicyDateRangeFilter
         timeframe={timeframe}
         startDate={startDate}
